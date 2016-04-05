@@ -1440,6 +1440,10 @@ public class SelectStatement implements CQLStatement
     private void validateDistinctSelection()
     throws InvalidRequestException
     {
+        for (Restriction r:  columnRestrictions)
+            if (r != null)
+                throw new InvalidRequestException("SELECT DISTINCT queries are currently only supported with queries that do not require filtering");
+
         Collection<ColumnDefinition> requestedColumns = selection.getColumns();
         for (ColumnDefinition def : requestedColumns)
             if (def.kind != ColumnDefinition.Kind.PARTITION_KEY && def.kind != ColumnDefinition.Kind.STATIC)
