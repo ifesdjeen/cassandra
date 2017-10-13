@@ -17,6 +17,7 @@
  */
 package org.apache.cassandra.cql3.statements;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
@@ -35,6 +36,7 @@ import static com.google.common.collect.Lists.newArrayList;
 import static org.apache.cassandra.cql3.statements.RequestValidations.checkContainsNoDuplicates;
 import static org.apache.cassandra.cql3.statements.RequestValidations.checkFalse;
 import static org.apache.cassandra.cql3.statements.RequestValidations.checkTrue;
+import static org.apache.cassandra.cql3.statements.RequestValidations.invalidRequest;
 
 /**
  * An <code>UPDATE</code> statement parsed from a CQL query statement.
@@ -163,9 +165,20 @@ public class UpdateStatement extends ModificationStatement
             }
             else
             {
+                List<String> undefinedColumns = new ArrayList<>(2);
                 for (int i = 0; i < columnNames.size(); i++)
                 {
                     ColumnDefinition def = getColumnDefinition(cfm, columnNames.get(i));
+
+                    // Check for hidden columns if the table is created WITH COMPACT STORAGE
+                    if (cfm.isStaticCompactTable())
+                    {
+                        // column1 or value
+                        if(def.kind == ColumnDefinition.Kind.CLUSTERING || def.kind == ColumnDefinition.Kind.REGULAR)
+                        {
+                            undefinedColumns.add(def.name.toString());
+                        }
+                    }
 
                     if (def.isClusteringColumn())
                         hasClusteringColumnsSet = true;
@@ -182,6 +195,15 @@ public class UpdateStatement extends ModificationStatement
                         operation.collectMarkerSpecification(boundNames);
                         operations.add(operation);
                     }
+                }
+
+                if (undefinedColumns.size() == 1)
+                {
+                    throw invalidRequest("Undefined column name %s", undefinedColumns.get(0));
+                }
+                else if (undefinedColumns.size() > 1)
+                {
+                    throw invalidRequest("Undefined column names %s", String.join(", ", undefinedColumns));
                 }
             }
 
