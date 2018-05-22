@@ -20,14 +20,17 @@ package org.apache.cassandra.db.streaming;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import com.google.common.base.Predicate;
 import com.google.common.base.Predicates;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Sets;
+import com.google.common.collect.Streams;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -39,6 +42,8 @@ import org.apache.cassandra.db.lifecycle.View;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
+import org.apache.cassandra.locator.Replica;
+import org.apache.cassandra.locator.ReplicaList;
 import org.apache.cassandra.service.ActiveRepairService;
 import org.apache.cassandra.streaming.IncomingStream;
 import org.apache.cassandra.streaming.OutgoingStream;
@@ -96,14 +101,14 @@ public class CassandraStreamManager implements TableStreamManager
     }
 
     @Override
-    public Collection<OutgoingStream> createOutgoingStreams(StreamSession session, Collection<Range<Token>> ranges, UUID pendingRepair, PreviewKind previewKind)
+    public Collection<OutgoingStream> createOutgoingStreams(StreamSession session, ReplicaList replicas, UUID pendingRepair, PreviewKind previewKind)
     {
         Refs<SSTableReader> refs = new Refs<>();
         try
         {
-            final List<Range<PartitionPosition>> keyRanges = new ArrayList<>(ranges.size());
-            for (Range<Token> range : ranges)
-                keyRanges.add(Range.makeRowRange(range));
+            final List<Range<PartitionPosition>> keyRanges = new ArrayList<>(replicas.size());
+            for (Replica replica : replicas)
+                keyRanges.add(Range.makeRowRange(replica.getRange()));
             refs.addAll(cfs.selectAndReference(view -> {
                 Set<SSTableReader> sstables = Sets.newHashSet();
                 SSTableIntervalTree intervalTree = SSTableIntervalTree.build(view.select(SSTableSet.CANONICAL));
@@ -142,9 +147,22 @@ public class CassandraStreamManager implements TableStreamManager
 
 
             List<OutgoingStream> streams = new ArrayList<>(refs.size());
-            for (SSTableReader sstable: refs)
+
+            //Create outgoing file streams for ranges possibly skipping repaired ranges in sstables
+            for (SSTableReader sstable : refs)
             {
                 Ref<SSTableReader> ref = refs.get(sstable);
+
+                Set<Range<Token>> ranges;
+                if (!sstable.isRepaired())
+                {
+                    ranges = replicas.asRangeSet();
+                }
+                else
+                {
+                    ranges = Sets.newHashSet(replicas.fullRanges());
+                }
+
                 List<SSTableReader.PartitionPositionBounds> sections = sstable.getPositionsForRanges(ranges);
                 if (sections.isEmpty())
                 {

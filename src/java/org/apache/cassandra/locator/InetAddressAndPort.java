@@ -25,6 +25,7 @@ import java.net.UnknownHostException;
 import com.google.common.base.Preconditions;
 import com.google.common.net.HostAndPort;
 
+import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.FastByteOperations;
 
 /**
@@ -193,7 +194,7 @@ public final class InetAddressAndPort implements Comparable<InetAddressAndPort>,
 
     public static InetAddressAndPort getLocalHost() throws UnknownHostException
     {
-        return InetAddressAndPort.getByAddress(InetAddress.getLocalHost());
+        return FBUtilities.getLocalAddressAndPort();
     }
 
     public static void initializeDefaultPort(int port)

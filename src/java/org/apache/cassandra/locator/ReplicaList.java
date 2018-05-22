@@ -303,7 +303,7 @@ public class ReplicaList extends ReplicaCollection
      * @return
      */
     @VisibleForTesting
-    static ReplicaList toDummyList(Collection<Range<Token>> ranges)
+    public static ReplicaList toDummyList(Collection<Range<Token>> ranges)
     {
         InetAddressAndPort dummy;
         try

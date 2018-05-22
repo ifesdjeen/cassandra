@@ -128,21 +128,13 @@ public class Replica implements Comparable<Replica>
      */
     public ReplicaSet subtractByRange(ReplicaCollection toSubtract)
     {
-        if (isFull() && Iterables.all(toSubtract, Replica::isFull))
+        Set<Range<Token>> subtractedRanges = getRange().subtractAll(toSubtract.asRangeSet());
+        ReplicaSet replicaSet = new ReplicaSet(subtractedRanges.size());
+        for (Range<Token> range : subtractedRanges)
         {
-            Set<Range<Token>> subtractedRanges = getRange().subtractAll(toSubtract.asRangeSet());
-            ReplicaSet replicaSet = new ReplicaSet(subtractedRanges.size());
-            for (Range<Token> range : subtractedRanges)
-            {
-                replicaSet.add(new Replica(getEndpoint(), range, isFull()));
-            }
-            return replicaSet;
+            replicaSet.add(decorateSubrange(range));
         }
-        else
-        {
-            // FIXME: add support for transient replicas
-            throw new UnsupportedOperationException("transient replicas are currently unsupported");
-        }
+        return replicaSet;
     }
 
     public ReplicaSet subtractIgnoreTransientStatus(Replica that)

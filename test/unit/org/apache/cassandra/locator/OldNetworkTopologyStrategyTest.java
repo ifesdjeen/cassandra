@@ -26,22 +26,33 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
+import com.google.common.base.Predicates;
+import com.google.common.collect.ArrayListMultimap;
+import com.google.common.collect.HashMultimap;
+import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableSet;
+import com.google.common.collect.Multimap;
 import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
 import org.apache.cassandra.config.DatabaseDescriptor;
+import org.apache.cassandra.dht.Murmur3Partitioner;
 import org.apache.cassandra.dht.RandomPartitioner.BigIntegerToken;
 import org.apache.cassandra.dht.Range;
+import org.apache.cassandra.dht.RangeStreamer;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.utils.Pair;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
 public class OldNetworkTopologyStrategyTest
 {
+
     private List<Token> keyTokens;
     private TokenMetadata tmd;
     private Map<String, ArrayList<InetAddressAndPort>> expectedResults;
@@ -53,7 +64,7 @@ public class OldNetworkTopologyStrategyTest
     }
 
     @Before
-    public void init()
+    public void init() throws Exception
     {
         keyTokens = new ArrayList<Token>();
         tmd = new TokenMetadata();
@@ -188,7 +199,6 @@ public class OldNetworkTopologyStrategyTest
         assertEquals(ranges.left.iterator().next().left, tokensAfterMove[movingNodeIdx]);
         assertEquals(ranges.left.iterator().next().right, tokens[movingNodeIdx]);
         assertEquals("No data should be fetched", ranges.right.size(), 0);
-
     }
 
     @Test
@@ -205,7 +215,6 @@ public class OldNetworkTopologyStrategyTest
         assertEquals("No data should be streamed", ranges.left.size(), 0);
         assertEquals(ranges.right.iterator().next().left, tokens[movingNodeIdx]);
         assertEquals(ranges.right.iterator().next().right, tokensAfterMove[movingNodeIdx]);
-
     }
 
     @SuppressWarnings("unchecked")
@@ -369,11 +378,18 @@ public class OldNetworkTopologyStrategyTest
         ReplicaSet currentRanges = strategy.getAddressReplicas().get(movingNode);
         ReplicaSet updatedRanges = strategy.getPendingAddressRanges(tokenMetadataAfterMove, tokensAfterMove[movingNodeIdx], movingNode);
 
-        return StorageService.instance.calculateStreamAndFetchRanges(currentRanges, updatedRanges);
+        return asRanges(StorageService.calculateStreamAndFetchRanges(currentRanges, updatedRanges));
     }
 
     private static Map<String, String> optsWithRF(int rf)
     {
         return Collections.singletonMap("replication_factor", Integer.toString(rf));
+    }
+
+    public static Pair<Set<Range<Token>>, Set<Range<Token>>> asRanges(Pair<ReplicaSet, ReplicaSet> replicas)
+    {
+        Set<Range<Token>> leftRanges = replicas.left.asRangeSet();
+        Set<Range<Token>> rightRanges = replicas.right.asRangeSet();
+        return Pair.create(leftRanges, rightRanges);
     }
 }

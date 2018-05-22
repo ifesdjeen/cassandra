@@ -21,9 +21,9 @@ import java.util.*;
 
 import com.google.common.annotations.VisibleForTesting;
 
-import org.apache.cassandra.dht.Range;
-import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.locator.InetAddressAndPort;
+import org.apache.cassandra.locator.Replica;
+import org.apache.cassandra.locator.ReplicaCollection;
 import org.apache.cassandra.utils.UUIDGen;
 
 import static org.apache.cassandra.service.ActiveRepairService.NO_PENDING_REPAIR;
@@ -71,12 +71,13 @@ public class StreamPlan
      *
      * @param from endpoint address to fetch data from.
      * @param keyspace name of keyspace
-     * @param ranges ranges to fetch
+     * @param fullRanges ranges to fetch that from provides the full version of
+     * @param transientRanges ranges to fetch that from provides only transient data of
      * @return this object for chaining
      */
-    public StreamPlan requestRanges(InetAddressAndPort from, String keyspace, Collection<Range<Token>> ranges)
+    public StreamPlan requestRanges(InetAddressAndPort from, String keyspace, ReplicaCollection fullRanges, ReplicaCollection transientRanges)
     {
-        return requestRanges(from, keyspace, ranges, EMPTY_COLUMN_FAMILIES);
+        return requestRanges(from, keyspace, fullRanges, transientRanges, EMPTY_COLUMN_FAMILIES);
     }
 
     /**
@@ -84,14 +85,20 @@ public class StreamPlan
      *
      * @param from endpoint address to fetch data from.
      * @param keyspace name of keyspace
-     * @param ranges ranges to fetch
+     * @param fullRanges ranges to fetch that from provides the full data for
+     * @param transientRanges ranges to fetch that from provides only transient data for
      * @param columnFamilies specific column families
      * @return this object for chaining
      */
-    public StreamPlan requestRanges(InetAddressAndPort from, String keyspace, Collection<Range<Token>> ranges, String... columnFamilies)
+    public StreamPlan requestRanges(InetAddressAndPort from, String keyspace, ReplicaCollection fullRanges, ReplicaCollection transientRanges, String... columnFamilies)
     {
+        //It should either be a dummy address for repair or if it's a bootstrap/move/rebuild it should be this node
+        assert fullRanges.allMatch(Replica::isLocal) | fullRanges.allMatch(range -> range.getEndpoint().getHostAddress(true).equals("0.0.0.0:0")) :
+             fullRanges.toString();
+        assert transientRanges.allMatch(Replica::isLocal) | transientRanges.allMatch(range -> range.getEndpoint().getHostAddress(true).equals("0.0.0.0:0")) :
+        transientRanges.toString();
         StreamSession session = coordinator.getOrCreateNextSession(from);
-        session.addStreamRequest(keyspace, ranges, Arrays.asList(columnFamilies));
+        session.addStreamRequest(keyspace, fullRanges, transientRanges, Arrays.asList(columnFamilies));
         return this;
     }
 
@@ -100,14 +107,14 @@ public class StreamPlan
      *
      * @param to endpoint address of receiver
      * @param keyspace name of keyspace
-     * @param ranges ranges to send
+     * @param replicas ranges to send
      * @param columnFamilies specific column families
      * @return this object for chaining
      */
-    public StreamPlan transferRanges(InetAddressAndPort to, String keyspace, Collection<Range<Token>> ranges, String... columnFamilies)
+    public StreamPlan transferRanges(InetAddressAndPort to, String keyspace, ReplicaCollection replicas, String... columnFamilies)
     {
         StreamSession session = coordinator.getOrCreateNextSession(to);
-        session.addTransferRanges(keyspace, ranges, Arrays.asList(columnFamilies), flushBeforeTransfer);
+        session.addTransferRanges(keyspace, replicas, Arrays.asList(columnFamilies), flushBeforeTransfer);
         return this;
     }
 

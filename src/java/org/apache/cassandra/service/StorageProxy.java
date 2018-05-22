@@ -367,8 +367,8 @@ public class StorageProxy implements StorageProxyMBean
             // Restrict naturalReplicas and pendingReplicas to node in the local DC only
             String localDc = DatabaseDescriptor.getEndpointSnitch().getDatacenter(FBUtilities.getBroadcastAddressAndPort());
             Predicate<Replica> isLocalDc = sameDCPredicateFor(localDc);
-            naturalReplicas = ReplicaList.immutableCopyOf(naturalReplicas.filter(isLocalDc));
-            pendingReplicas = ReplicaList.immutableCopyOf(pendingReplicas.filter(isLocalDc));
+            naturalReplicas = ReplicaList.immutableCopyOf(naturalReplicas.stream().filter(isLocalDc).collect(Collectors3.toImmutableList()));
+            pendingReplicas = ReplicaList.immutableCopyOf(pendingReplicas.stream().filter(isLocalDc).collect(Collectors3.toImmutableList()));
         }
         int participants = pendingReplicas.size() + naturalReplicas.size();
         int requiredParticipants = participants / 2 + 1; // See CASSANDRA-8346, CASSANDRA-833

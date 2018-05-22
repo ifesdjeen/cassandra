@@ -51,6 +51,11 @@ public final class ReplicationParams
         return new ReplicationParams(SimpleStrategy.class, ImmutableMap.of("replication_factor", Integer.toString(replicationFactor)));
     }
 
+    static ReplicationParams simple(String replicationFactor)
+    {
+        return new ReplicationParams(SimpleStrategy.class, ImmutableMap.of("replication_factor", replicationFactor));
+    }
+
     static ReplicationParams nts(Object... args)
     {
         assert args.length % 2 == 0;
