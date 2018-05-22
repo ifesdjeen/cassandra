@@ -25,6 +25,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.Map;
 
+import com.google.common.base.Predicate;
 import com.google.common.collect.Multimap;
 import org.junit.Assert;
 import org.junit.BeforeClass;
@@ -88,7 +89,7 @@ public class RangeFetchMapCalculatorTest
         addNonTrivialRangeAndSources(rangesWithSources, 31, 40, "127.0.0.4");
         addNonTrivialRangeAndSources(rangesWithSources, 41, 50, "127.0.0.5");
 
-        RangeFetchMapCalculator calculator = new RangeFetchMapCalculator(rangesWithSources, new ArrayList<RangeStreamer.ISourceFilter>(), "Test");
+        RangeFetchMapCalculator calculator = new RangeFetchMapCalculator(rangesWithSources, Collections.emptyList(), "Test");
         Multimap<InetAddressAndPort, Range<Token>> map = calculator.getRangeFetchMap();
         validateRange(rangesWithSources, map);
 
@@ -105,7 +106,7 @@ public class RangeFetchMapCalculatorTest
         addNonTrivialRangeAndSources(rangesWithSources, 31, 40, "127.0.0.7", "127.0.0.8");
         addNonTrivialRangeAndSources(rangesWithSources, 41, 50, "127.0.0.9", "127.0.0.10");
 
-        RangeFetchMapCalculator calculator = new RangeFetchMapCalculator(rangesWithSources, new ArrayList<RangeStreamer.ISourceFilter>(), "Test");
+        RangeFetchMapCalculator calculator = new RangeFetchMapCalculator(rangesWithSources, Collections.emptyList(), "Test");
         Multimap<InetAddressAndPort, Range<Token>> map = calculator.getRangeFetchMap();
         validateRange(rangesWithSources, map);
 
@@ -120,7 +121,7 @@ public class RangeFetchMapCalculatorTest
         addNonTrivialRangeAndSources(rangesWithSources, 11, 20, "127.0.0.2", "127.0.0.3");
         addNonTrivialRangeAndSources(rangesWithSources, 21, 30, "127.0.0.3", "127.0.0.4");
 
-        RangeFetchMapCalculator calculator = new RangeFetchMapCalculator(rangesWithSources, new ArrayList<RangeStreamer.ISourceFilter>(), "Test");
+        RangeFetchMapCalculator calculator = new RangeFetchMapCalculator(rangesWithSources, Collections.emptyList(), "Test");
         Multimap<InetAddressAndPort, Range<Token>> map = calculator.getRangeFetchMap();
         validateRange(rangesWithSources, map);
 
@@ -138,7 +139,7 @@ public class RangeFetchMapCalculatorTest
         addNonTrivialRangeAndSources(rangesWithSources, 31, 40, "127.0.0.3");
         addNonTrivialRangeAndSources(rangesWithSources, 41, 50, "127.0.0.3", "127.0.0.2");
 
-        RangeFetchMapCalculator calculator = new RangeFetchMapCalculator(rangesWithSources, new ArrayList<RangeStreamer.ISourceFilter>(), "Test");
+        RangeFetchMapCalculator calculator = new RangeFetchMapCalculator(rangesWithSources, Collections.emptyList(), "Test");
         Multimap<InetAddressAndPort, Range<Token>> map = calculator.getRangeFetchMap();
         validateRange(rangesWithSources, map);
 
@@ -160,7 +161,7 @@ public class RangeFetchMapCalculatorTest
         addNonTrivialRangeAndSources(rangesWithSources, 31, 40, "127.0.0.1");
         addNonTrivialRangeAndSources(rangesWithSources, 41, 50, "127.0.0.1", "127.0.0.2");
 
-        RangeFetchMapCalculator calculator = new RangeFetchMapCalculator(rangesWithSources, new ArrayList<RangeStreamer.ISourceFilter>(), "Test");
+        RangeFetchMapCalculator calculator = new RangeFetchMapCalculator(rangesWithSources, Collections.emptyList(), "Test");
         Multimap<InetAddressAndPort, Range<Token>> map = calculator.getRangeFetchMap();
         validateRange(rangesWithSources, map);
 
@@ -180,7 +181,7 @@ public class RangeFetchMapCalculatorTest
         addNonTrivialRangeAndSources(rangesWithSources, 31, 40, "127.0.0.1");
         addNonTrivialRangeAndSources(rangesWithSources, 41, 50, "127.0.0.1");
 
-        RangeFetchMapCalculator calculator = new RangeFetchMapCalculator(rangesWithSources, new ArrayList<RangeStreamer.ISourceFilter>(), "Test");
+        RangeFetchMapCalculator calculator = new RangeFetchMapCalculator(rangesWithSources, Collections.emptyList(), "Test");
         Multimap<InetAddressAndPort, Range<Token>> map = calculator.getRangeFetchMap();
         //All ranges map to local host so we will not stream anything.
         assertTrue(map.isEmpty());
@@ -195,21 +196,18 @@ public class RangeFetchMapCalculatorTest
         addNonTrivialRangeAndSources(rangesWithSources, 21, 30, "127.0.0.3");
 
         //Return false for all except 127.0.0.5
-        final RangeStreamer.ISourceFilter filter = new RangeStreamer.ISourceFilter()
+        final Predicate<Replica> filter = replica ->
         {
-            public boolean shouldInclude(Replica replica)
+            try
             {
-                try
-                {
-                    if (replica.getEndpoint().equals(InetAddressAndPort.getByName("127.0.0.5")))
-                        return false;
-                    else
-                        return true;
-                }
-                catch (UnknownHostException e)
-                {
+                if (replica.getEndpoint().equals(InetAddressAndPort.getByName("127.0.0.5")))
+                    return false;
+                else
                     return true;
-                }
+            }
+            catch (UnknownHostException e)
+            {
+                return true;
             }
         };
 
@@ -233,13 +231,7 @@ public class RangeFetchMapCalculatorTest
         addNonTrivialRangeAndSources(rangesWithSources, 11, 20, "127.0.0.2");
         addNonTrivialRangeAndSources(rangesWithSources, 21, 30, "127.0.0.3");
 
-        final RangeStreamer.ISourceFilter allDeadFilter = new RangeStreamer.ISourceFilter()
-        {
-            public boolean shouldInclude(Replica replica)
-            {
-                return false;
-            }
-        };
+        final Predicate<Replica> allDeadFilter = replica -> false;
 
         RangeFetchMapCalculator calculator = new RangeFetchMapCalculator(rangesWithSources, Arrays.asList(allDeadFilter), "Test");
         calculator.getRangeFetchMap();
@@ -272,21 +264,18 @@ public class RangeFetchMapCalculatorTest
         addNonTrivialRangeAndSources(rangesWithSources, 21, 30, "127.0.0.2", "127.0.0.59");
 
         //Reject only 127.0.0.3 and accept everyone else
-        final RangeStreamer.ISourceFilter localHostFilter = new RangeStreamer.ISourceFilter()
+        final Predicate<Replica> localHostFilter = replica ->
         {
-            public boolean shouldInclude(Replica replica)
+            try
             {
-                try
-                {
-                    if (replica.getEndpoint().equals(InetAddressAndPort.getByName("127.0.0.3")))
-                        return false;
-                    else
-                        return true;
-                }
-                catch (UnknownHostException e)
-                {
+                if (replica.getEndpoint().equals(InetAddressAndPort.getByName("127.0.0.3")))
+                    return false;
+                else
                     return true;
-                }
+            }
+            catch (UnknownHostException e)
+            {
+                return true;
             }
         };
 
@@ -330,21 +319,18 @@ public class RangeFetchMapCalculatorTest
         // and a trivial one:
         addTrivialRangeAndSources(rangesWithSources, 1, 10, "127.0.0.3");
 
-        RangeStreamer.ISourceFilter filter = new RangeStreamer.ISourceFilter()
+        Predicate<Replica> filter = replica ->
         {
-            public boolean shouldInclude(Replica replica)
+            try
             {
-                try
-                {
-                    if (replica.getEndpoint().equals(InetAddressAndPort.getByName("127.0.0.3")))
-                        return false;
-                }
-                catch (UnknownHostException e)
-                {
-                    throw new RuntimeException(e);
-                }
-                return true;
+                if (replica.getEndpoint().equals(InetAddressAndPort.getByName("127.0.0.3")))
+                    return false;
             }
+            catch (UnknownHostException e)
+            {
+                throw new RuntimeException(e);
+            }
+            return true;
         };
         RangeFetchMapCalculator calculator = new RangeFetchMapCalculator(rangesWithSources, Collections.singleton(filter), "Test");
         Multimap<InetAddressAndPort, Range<Token>> optMap = calculator.getRangeFetchMapForNonTrivialRanges();

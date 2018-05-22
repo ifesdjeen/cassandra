@@ -24,6 +24,7 @@ import java.util.UUID;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.locator.InetAddressAndPort;
+import org.apache.cassandra.locator.ReplicaList;
 import org.apache.cassandra.streaming.PreviewKind;
 import org.apache.cassandra.streaming.ProgressInfo;
 import org.apache.cassandra.streaming.StreamEvent;
@@ -55,7 +56,7 @@ public class AsymmetricLocalSyncTask extends AsymmetricSyncTask implements Strea
                           .listeners(this)
                           .flushBeforeTransfer(pendingRepair == null)
                           // request ranges from the remote node
-                          .requestRanges(fetchFrom, desc.keyspace, rangesToFetch, desc.columnFamily);
+                          .requestRanges(fetchFrom, desc.keyspace, ReplicaList.toDummyList(rangesToFetch), ReplicaList.empty(), desc.columnFamily);
         plan.execute();
 
     }

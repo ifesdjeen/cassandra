@@ -25,6 +25,8 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.base.Predicate;
+import com.google.common.base.Predicates;
 import com.google.common.collect.HashMultimap;
 import com.google.common.collect.Multimap;
 
@@ -74,7 +76,7 @@ public class RangeFetchMapCalculator
     private static final Logger logger = LoggerFactory.getLogger(RangeFetchMapCalculator.class);
     private static final long TRIVIAL_RANGE_LIMIT = 1000;
     private final ReplicaMultimap<Range<Token>, ReplicaList> rangesWithSources;
-    private final Collection<RangeStreamer.ISourceFilter> sourceFilters;
+    private final Predicate<Replica> sourceFilters;
     private final String keyspace;
     //We need two Vertices to act as source and destination in the algorithm
     private final Vertex sourceVertex = OuterVertex.getSourceVertex();
@@ -82,11 +84,11 @@ public class RangeFetchMapCalculator
     private final Set<Range<Token>> trivialRanges;
 
     public RangeFetchMapCalculator(ReplicaMultimap<Range<Token>, ReplicaList> rangesWithSources,
-                                   Collection<RangeStreamer.ISourceFilter> sourceFilters,
+                                   Collection<Predicate<Replica>> sourceFilters,
                                    String keyspace)
     {
         this.rangesWithSources = rangesWithSources;
-        this.sourceFilters = sourceFilters;
+        this.sourceFilters = Predicates.and(sourceFilters);
         this.keyspace = keyspace;
         this.trivialRanges = rangesWithSources.keySet()
                                               .stream()
@@ -379,13 +381,7 @@ public class RangeFetchMapCalculator
      */
     private boolean passFilters(final Replica replica, boolean localDCCheck)
     {
-        for (RangeStreamer.ISourceFilter filter : sourceFilters)
-        {
-            if (!filter.shouldInclude(replica))
-                return false;
-        }
-
-        return !localDCCheck || isInLocalDC(replica);
+        return sourceFilters.apply(replica) && (!localDCCheck || isInLocalDC(replica));
     }
 
     private static abstract class Vertex

@@ -123,6 +123,17 @@ public abstract class ReplicaCollection implements Iterable<Replica>
         return false;
     }
 
+    public boolean containsRange(Range<Token> range)
+    {
+        Preconditions.checkNotNull(range);
+        for (Replica replica : this)
+        {
+            if (replica.getRange().equals(range))
+                return true;
+        }
+        return false;
+    }
+
     public void removeReplicas(ReplicaCollection toRemove)
     {
         Preconditions.checkNotNull(toRemove);
@@ -140,20 +151,17 @@ public abstract class ReplicaCollection implements Iterable<Replica>
         }
     }
 
-    public void removeEndpoints(ReplicaCollection toRemove)
+    public void removeRanges(ReplicaCollection toRemove)
     {
         Preconditions.checkNotNull(toRemove);
-        if (Iterables.all(this, Replica::isFull) && Iterables.all(toRemove, Replica::isFull))
+        Iterator<Replica> replicaIterator = iterator();
+        while (replicaIterator.hasNext())
         {
-            for (Replica remove: toRemove)
+            Replica replica = replicaIterator.next();
+            if (toRemove.containsRange(replica.getRange()))
             {
-                removeEndpoint(remove.getEndpoint());
+                replicaIterator.remove();
             }
-        }
-        else
-        {
-            // FIXME: add support for transient replicas
-            throw new UnsupportedOperationException("transient replicas are currently unsupported");
         }
     }
 

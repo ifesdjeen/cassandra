@@ -134,6 +134,19 @@ public class ReplicaCollectionTest extends ReplicaCollectionTestBase
     }
 
     @Test(expected = NullPointerException.class)
+    public void testContainsRangeNull()
+    {
+        ReplicaSet.of().containsEndpoint(null);
+    }
+
+    @Test
+    public void testContainsRange()
+    {
+        ReplicaSet set = ReplicaSet.of(A, B, C);
+        assertTrue(Stream.of(A, B, C).map(Replica::getRange).allMatch(set::containsRange));
+    }
+
+    @Test(expected = NullPointerException.class)
     public void testRemoveReplicasNull()
     {
         ReplicaSet.of().removeEndpoint(null);
@@ -144,6 +157,20 @@ public class ReplicaCollectionTest extends ReplicaCollectionTestBase
     {
         ReplicaSet set = ReplicaSet.of(A, B, Replica.full(C.getEndpoint(), C.getRange()));
         set.removeReplicas(Replicas.of(B));
+        assertEquals(ReplicaSet.of(A, Replica.full(C.getEndpoint(), C.getRange())), set);
+    }
+
+    @Test(expected = NullPointerException.class)
+    public void testRemoveRangesNull()
+    {
+        ReplicaSet.of().removeRanges(null);
+    }
+
+    @Test
+    public void testRemoveRanges()
+    {
+        ReplicaSet set = ReplicaSet.of(A, B, Replica.full(C.getEndpoint(), C.getRange()));
+        set.removeRanges(Replicas.of(B));
         assertEquals(ReplicaSet.of(A, Replica.full(C.getEndpoint(), C.getRange())), set);
     }
 

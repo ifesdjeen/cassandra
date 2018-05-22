@@ -47,6 +47,7 @@ public abstract class AsymmetricSyncTask extends AbstractFuture<SyncStat> implem
 
     public AsymmetricSyncTask(RepairJobDesc desc, InetAddressAndPort fetchingNode, InetAddressAndPort fetchFrom, List<Range<Token>> rangesToFetch, PreviewKind previewKind)
     {
+        assert !fetchFrom.equals(fetchingNode) : "Fetching from self " + fetchFrom;
         this.desc = desc;
         this.fetchFrom = fetchFrom;
         this.fetchingNode = fetchingNode;

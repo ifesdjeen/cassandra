@@ -180,17 +180,8 @@ public class ReplicaSet extends ReplicaCollection
 
     public ReplicaSet differenceOnEndpoint(ReplicaCollection differenceOn)
     {
-        if (Iterables.all(this, Replica::isFull) && Iterables.all(differenceOn, Replica::isFull))
-        {
-            Set<InetAddressAndPort> diffEndpoints = differenceOn.asEndpointSet();
-            return new ReplicaSet(Replicas.filterOnEndpoints(this, e -> !diffEndpoints.contains(e)));
-        }
-        else
-        {
-            // FIXME: add support for transient replicas
-            throw new UnsupportedOperationException("transient replicas are currently unsupported");
-        }
-
+        Set<InetAddressAndPort> diffEndpoints = differenceOn.asEndpointSet();
+        return new ReplicaSet(Replicas.filterOnEndpoints(this, e -> !diffEndpoints.contains(e)));
     }
 
     public ReplicaSet filter(Predicate<Replica>... predicates)

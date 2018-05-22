@@ -83,7 +83,7 @@ public class PendingRangeCalculatorService
     public void update()
     {
         updateJobs.incrementAndGet();
-        executor.submit(new PendingRangeTask());
+        executor.execute(new PendingRangeTask());
     }
 
     public void blockUntilFinished()
