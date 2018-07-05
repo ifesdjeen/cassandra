@@ -68,6 +68,7 @@ import org.apache.cassandra.gms.GossiperMBean;
 import org.apache.cassandra.db.HintedHandOffManager;
 import org.apache.cassandra.locator.DynamicEndpointSnitchMBean;
 import org.apache.cassandra.locator.EndpointSnitchInfoMBean;
+import org.apache.cassandra.locator.ReplicaList;
 import org.apache.cassandra.metrics.CassandraMetricsRegistry;
 import org.apache.cassandra.metrics.TableMetrics.Sampler;
 import org.apache.cassandra.metrics.StorageMetrics;
@@ -817,6 +818,11 @@ public class NodeProbe implements AutoCloseable
     public List<InetAddress> getEndpoints(String keyspace, String cf, String key)
     {
         return ssProxy.getNaturalEndpoints(keyspace, cf, key);
+    }
+
+    public List<String> getReplicas(String keyspace, String cf, String key)
+    {
+        return ssProxy.getReplicas(keyspace, cf, key);
     }
 
     public List<String> getSSTables(String keyspace, String cf, String key, boolean hexFormat)

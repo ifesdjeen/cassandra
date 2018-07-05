@@ -23,48 +23,66 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
 
+import org.apache.cassandra.db.ConsistencyLevel;
+import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.Mutation;
 import org.apache.cassandra.db.ReadCommand;
 import org.apache.cassandra.db.partitions.PartitionIterator;
 import org.apache.cassandra.db.partitions.UnfilteredPartitionIterators;
+import org.apache.cassandra.db.rows.UnfilteredRowIterator;
+import org.apache.cassandra.db.rows.UnfilteredRowIterators;
 import org.apache.cassandra.exceptions.ReadTimeoutException;
 import org.apache.cassandra.locator.InetAddressAndPort;
+import org.apache.cassandra.locator.Replica;
+import org.apache.cassandra.locator.ReplicaList;
 import org.apache.cassandra.service.reads.DigestResolver;
 
-public class TestableReadRepair implements ReadRepair, RepairListener
+public class TestableReadRepair implements ReadRepair
 {
     public final Map<InetAddressAndPort, Mutation> sent = new HashMap<>();
 
     private final ReadCommand command;
+    private final ConsistencyLevel consistency;
 
-    public TestableReadRepair(ReadCommand command)
+    private boolean partitionListenerClosed = false;
+    private boolean rowListenerClosed = true;
+
+    public TestableReadRepair(ReadCommand command, ConsistencyLevel consistency)
     {
         this.command = command;
-    }
-
-    private class TestablePartitionRepair implements RepairListener.PartitionRepair
-    {
-        @Override
-        public void reportMutation(InetAddressAndPort endpoint, Mutation mutation)
-        {
-            sent.put(endpoint, mutation);
-        }
-
-        @Override
-        public void finish()
-        {
-
-        }
+        this.consistency = consistency;
     }
 
     @Override
-    public UnfilteredPartitionIterators.MergeListener getMergeListener(InetAddressAndPort[] endpoints)
+    public UnfilteredPartitionIterators.MergeListener getMergeListener(ReplicaList endpoints)
     {
-        return new PartitionIteratorMergeListener(endpoints, command, this);
+        return new PartitionIteratorMergeListener(endpoints, command, consistency, this) {
+            @Override
+            public void close()
+            {
+                super.close();
+                partitionListenerClosed = true;
+            }
+
+            @Override
+            public UnfilteredRowIterators.MergeListener getRowMergeListener(DecoratedKey partitionKey, List<UnfilteredRowIterator> versions)
+            {
+                assert rowListenerClosed;
+                rowListenerClosed = false;
+                return new RowIteratorMergeListener(partitionKey, columns(versions), isReversed(versions), endpoints, command, consistency, TestableReadRepair.this) {
+                    @Override
+                    public void close()
+                    {
+                        super.close();
+                        rowListenerClosed = true;
+                    }
+                };
+            }
+        };
     }
 
     @Override
-    public void startRepair(DigestResolver digestResolver, List<InetAddressAndPort> allEndpoints, List<InetAddressAndPort> contactedEndpoints, Consumer<PartitionIterator> resultConsumer)
+    public void startRepair(DigestResolver digestResolver, Consumer<PartitionIterator> resultConsumer)
     {
 
     }
@@ -76,19 +94,37 @@ public class TestableReadRepair implements ReadRepair, RepairListener
     }
 
     @Override
-    public PartitionRepair startPartitionRepair()
+    public void maybeSendAdditionalDataRequests()
     {
-        return new TestablePartitionRepair();
+
     }
 
     @Override
-    public void awaitRepairs(long timeoutMillis)
+    public void maybeSendAdditionalRepairs()
     {
 
+    }
+
+    @Override
+    public void awaitRepairs()
+    {
+
+    }
+
+    @Override
+    public void repairPartition(Map<Replica, Mutation> mutations, ReplicaList destinations)
+    {
+        for (Map.Entry<Replica, Mutation> entry: mutations.entrySet())
+            sent.put(entry.getKey().getEndpoint(), entry.getValue());
     }
 
     public Mutation getForEndpoint(InetAddressAndPort endpoint)
     {
         return sent.get(endpoint);
+    }
+
+    public boolean dataWasConsumed()
+    {
+        return partitionListenerClosed && rowListenerClosed;
     }
 }

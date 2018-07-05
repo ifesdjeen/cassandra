@@ -24,6 +24,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
+import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.dht.Token;
 
@@ -36,34 +37,40 @@ import org.apache.cassandra.dht.Token;
  */
 public class SimpleStrategy extends AbstractReplicationStrategy
 {
+    private final ReplicationFactor rf;
+
     public SimpleStrategy(String keyspaceName, TokenMetadata tokenMetadata, IEndpointSnitch snitch, Map<String, String> configOptions)
     {
         super(keyspaceName, tokenMetadata, snitch, configOptions);
+        this.rf = ReplicationFactor.fromString(this.configOptions.get("replication_factor"));
     }
 
-    public List<InetAddressAndPort> calculateNaturalEndpoints(Token token, TokenMetadata metadata)
+    public ReplicaList calculateNaturalReplicas(Token token, TokenMetadata metadata)
     {
-        int replicas = getReplicationFactor();
         ArrayList<Token> tokens = metadata.sortedTokens();
-        List<InetAddressAndPort> endpoints = new ArrayList<InetAddressAndPort>(replicas);
+        ReplicaList replicas = new ReplicaList(rf.replicas);
 
         if (tokens.isEmpty())
-            return endpoints;
+            return replicas;
 
         // Add the token at the index by default
+        Token replicaEnd = TokenMetadata.firstToken(tokens, token);
+        Token replicaStart = metadata.getPredecessor(replicaEnd);
+        Range<Token> replicaRange = new Range<>(replicaStart, replicaEnd);
         Iterator<Token> iter = TokenMetadata.ringIterator(tokens, token, false);
-        while (endpoints.size() < replicas && iter.hasNext())
+        while (replicas.size() < rf.replicas && iter.hasNext())
         {
-            InetAddressAndPort ep = metadata.getEndpoint(iter.next());
-            if (!endpoints.contains(ep))
-                endpoints.add(ep);
+            Token tk = iter.next();
+            InetAddressAndPort ep = metadata.getEndpoint(tk);
+            if (!replicas.containsEndpoint(ep))
+                replicas.add(new Replica(ep, replicaRange, replicas.size() < rf.full));
         }
-        return endpoints;
+        return replicas;
     }
 
-    public int getReplicationFactor()
+    public ReplicationFactor getReplicationFactor()
     {
-        return Integer.parseInt(this.configOptions.get("replication_factor"));
+        return rf;
     }
 
     public void validateOptions() throws ConfigurationException

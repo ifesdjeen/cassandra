@@ -19,9 +19,14 @@
 package org.apache.cassandra.service.reads.repair;
 
 import java.util.Arrays;
+import java.util.Map;
+
+import com.google.common.base.Preconditions;
+import com.google.common.collect.Maps;
 
 import org.apache.cassandra.db.Clustering;
 import org.apache.cassandra.db.ClusteringBound;
+import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.DeletionTime;
 import org.apache.cassandra.db.LivenessInfo;
@@ -39,21 +44,25 @@ import org.apache.cassandra.db.rows.Row;
 import org.apache.cassandra.db.rows.RowDiffListener;
 import org.apache.cassandra.db.rows.Rows;
 import org.apache.cassandra.db.rows.UnfilteredRowIterators;
-import org.apache.cassandra.locator.InetAddressAndPort;
+import org.apache.cassandra.locator.Replica;
+import org.apache.cassandra.locator.ReplicaList;
 import org.apache.cassandra.schema.ColumnMetadata;
+
+import static org.apache.cassandra.service.reads.repair.ReadRepair.createRepairMutation;
 
 public class RowIteratorMergeListener implements UnfilteredRowIterators.MergeListener
 {
     private final DecoratedKey partitionKey;
     private final RegularAndStaticColumns columns;
     private final boolean isReversed;
-    private final InetAddressAndPort[] sources;
     private final ReadCommand command;
+    private final ConsistencyLevel consistency;
 
     private final PartitionUpdate.Builder[] repairs;
-
+    private final Replica[] sources;
     private final Row.Builder[] currentRows;
     private final RowDiffListener diffListener;
+    private final ReplicaList sourcesList;
 
     // The partition level deletion for the merge row.
     private DeletionTime partitionLevelDeletion;
@@ -64,44 +73,49 @@ public class RowIteratorMergeListener implements UnfilteredRowIterators.MergeLis
     // For each source, record if there is an open range to send as repair, and from where.
     private final ClusteringBound[] markerToRepair;
 
-    private final RepairListener repairListener;
+    private final ReadRepair readRepair;
 
-    public RowIteratorMergeListener(DecoratedKey partitionKey, RegularAndStaticColumns columns, boolean isReversed, InetAddressAndPort[] sources, ReadCommand command, RepairListener repairListener)
+    public RowIteratorMergeListener(DecoratedKey partitionKey, RegularAndStaticColumns columns, boolean isReversed, ReplicaList sources, ReadCommand command, ConsistencyLevel consistency, ReadRepair readRepair)
     {
         this.partitionKey = partitionKey;
         this.columns = columns;
         this.isReversed = isReversed;
-        this.sources = sources;
-        repairs = new PartitionUpdate.Builder[sources.length];
-        currentRows = new Row.Builder[sources.length];
-        sourceDeletionTime = new DeletionTime[sources.length];
-        markerToRepair = new ClusteringBound[sources.length];
+        this.sources = new Replica[sources.size()];
+        for (int i = 0; i < sources.size(); i++)
+            this.sources[i] = sources.get(i);
+
+        this.sourcesList = sources;
+        repairs = new PartitionUpdate.Builder[sources.size()];
+        currentRows = new Row.Builder[sources.size()];
+        sourceDeletionTime = new DeletionTime[sources.size()];
+        markerToRepair = new ClusteringBound[sources.size()];
         this.command = command;
-        this.repairListener = repairListener;
+        this.consistency = consistency;
+        this.readRepair = readRepair;
 
         this.diffListener = new RowDiffListener()
         {
             public void onPrimaryKeyLivenessInfo(int i, Clustering clustering, LivenessInfo merged, LivenessInfo original)
             {
-                if (merged != null && !merged.equals(original))
+                if (merged != null && !merged.equals(original) && !isTransient(i))
                     currentRow(i, clustering).addPrimaryKeyLivenessInfo(merged);
             }
 
             public void onDeletion(int i, Clustering clustering, Row.Deletion merged, Row.Deletion original)
             {
-                if (merged != null && !merged.equals(original))
+                if (merged != null && !merged.equals(original) && !isTransient(i))
                     currentRow(i, clustering).addRowDeletion(merged);
             }
 
             public void onComplexDeletion(int i, Clustering clustering, ColumnMetadata column, DeletionTime merged, DeletionTime original)
             {
-                if (merged != null && !merged.equals(original))
+                if (merged != null && !merged.equals(original) && !isTransient(i))
                     currentRow(i, clustering).addComplexDeletion(column, merged);
             }
 
             public void onCell(int i, Clustering clustering, Cell merged, Cell original)
             {
-                if (merged != null && !merged.equals(original) && isQueried(merged))
+                if (merged != null && !merged.equals(original) && isQueried(merged) && !isTransient(i))
                     currentRow(i, clustering).addCell(merged);
             }
 
@@ -118,6 +132,11 @@ public class RowIteratorMergeListener implements UnfilteredRowIterators.MergeLis
                 return column.isComplex() ? filter.fetchedCellIsQueried(column, cell.path()) : filter.fetchedColumnIsQueried(column);
             }
         };
+    }
+
+    private boolean isTransient(int i)
+    {
+        return sources[i].isTransient();
     }
 
     private PartitionUpdate.Builder update(int i)
@@ -153,6 +172,9 @@ public class RowIteratorMergeListener implements UnfilteredRowIterators.MergeLis
         this.partitionLevelDeletion = mergedDeletion;
         for (int i = 0; i < versions.length; i++)
         {
+            if (isTransient(i))
+                continue;
+
             if (mergedDeletion.supersedes(versions[i]))
                 update(i).addPartitionDeletion(mergedDeletion);
         }
@@ -187,6 +209,9 @@ public class RowIteratorMergeListener implements UnfilteredRowIterators.MergeLis
 
         for (int i = 0; i < versions.length; i++)
         {
+            if (isTransient(i))
+                continue;
+
             RangeTombstoneMarker marker = versions[i];
 
             // Update what the source now thinks is the current deletion
@@ -239,12 +264,12 @@ public class RowIteratorMergeListener implements UnfilteredRowIterators.MergeLis
                     if (!marker.isBoundary() && marker.isOpen(isReversed)) // (1)
                     {
                         assert currentDeletion.equals(marker.openDeletionTime(isReversed))
-                            : String.format("currentDeletion=%s, marker=%s", currentDeletion, marker.toString(command.metadata()));
+                        : String.format("currentDeletion=%s, marker=%s", currentDeletion, marker.toString(command.metadata()));
                     }
                     else // (2)
                     {
                         assert marker.isClose(isReversed) && currentDeletion.equals(marker.closeDeletionTime(isReversed))
-                            : String.format("currentDeletion=%s, marker=%s", currentDeletion, marker.toString(command.metadata()));
+                        : String.format("currentDeletion=%s, marker=%s", currentDeletion, marker.toString(command.metadata()));
                     }
 
                     // and so unless it's a boundary whose opening deletion time is still equal to the current
@@ -300,22 +325,26 @@ public class RowIteratorMergeListener implements UnfilteredRowIterators.MergeLis
 
     public void close()
     {
-        RepairListener.PartitionRepair repair = null;
+        Map<Replica, Mutation> mutations = null;
         for (int i = 0; i < repairs.length; i++)
         {
             if (repairs[i] == null)
                 continue;
 
-            if (repair == null)
-            {
-                repair = repairListener.startPartitionRepair();
-            }
-            repair.reportMutation(sources[i], new Mutation(repairs[i].build()));
+            Preconditions.checkState(!isTransient(i), "cannot read repair transient replicas");
+            Mutation mutation = createRepairMutation(repairs[i].build(), consistency, sources[i], false);
+            if (mutation == null)
+                continue;
+
+            if (mutations == null)
+                mutations = Maps.newHashMapWithExpectedSize(sources.length);
+
+            mutations.put(sources[i], mutation);
         }
 
-        if (repair != null)
+        if (mutations != null)
         {
-            repair.finish();
+            readRepair.repairPartition(mutations, sourcesList);
         }
     }
 }

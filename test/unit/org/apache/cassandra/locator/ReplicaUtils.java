@@ -16,19 +16,33 @@
  * limitations under the License.
  */
 
-package org.apache.cassandra.service.reads.repair;
+package org.apache.cassandra.locator;
 
-import org.apache.cassandra.db.Mutation;
-import org.apache.cassandra.locator.InetAddressAndPort;
+import org.apache.cassandra.dht.Murmur3Partitioner;
+import org.apache.cassandra.dht.Range;
+import org.apache.cassandra.dht.Token;
 
-public interface RepairListener
+public class ReplicaUtils
 {
-    interface PartitionRepair
+    private static final Range<Token> FULL_RANGE = new Range<>(Murmur3Partitioner.MINIMUM, Murmur3Partitioner.MINIMUM);
+
+    public static Replica full(InetAddressAndPort endpoint, Range<Token> range)
     {
-        void reportMutation(InetAddressAndPort endpoint, Mutation mutation);
-        void finish();
+        return new Replica(endpoint, range, true);
     }
 
-    PartitionRepair startPartitionRepair();
-    void awaitRepairs(long timeoutMillis);
+    public static Replica full(InetAddressAndPort endpoint)
+    {
+        return full(endpoint, FULL_RANGE);
+    }
+
+    public static Replica trans(InetAddressAndPort endpoint, Range<Token> range)
+    {
+        return new Replica(endpoint, range, false);
+    }
+
+    public static Replica trans(InetAddressAndPort endpoint)
+    {
+        return trans(endpoint, FULL_RANGE);
+    }
 }

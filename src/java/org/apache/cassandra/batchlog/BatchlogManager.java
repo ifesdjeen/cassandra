@@ -34,6 +34,9 @@ import org.slf4j.LoggerFactory;
 import org.apache.cassandra.concurrent.DebuggableScheduledThreadPoolExecutor;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.locator.InetAddressAndPort;
+import org.apache.cassandra.locator.Replica;
+import org.apache.cassandra.locator.ReplicaList;
+import org.apache.cassandra.locator.Replicas;
 import org.apache.cassandra.schema.SchemaConstants;
 import org.apache.cassandra.cql3.UntypedResultSet;
 import org.apache.cassandra.db.*;
@@ -53,6 +56,7 @@ import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.schema.TableId;
 import org.apache.cassandra.service.StorageService;
+import org.apache.cassandra.service.WritePathReplicaPlan;
 import org.apache.cassandra.service.WriteResponseHandler;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.UUIDGen;
@@ -449,35 +453,39 @@ public class BatchlogManager implements BatchlogManagerMBean
                                                                                      long writtenAt,
                                                                                      Set<InetAddressAndPort> hintedNodes)
         {
-            Set<InetAddressAndPort> liveEndpoints = new HashSet<>();
+            ReplicaList liveReplicas = new ReplicaList();
             String ks = mutation.getKeyspaceName();
+            Keyspace keyspace = Keyspace.open(ks);
             Token tk = mutation.key().getToken();
 
-            for (InetAddressAndPort endpoint : StorageService.instance.getNaturalAndPendingEndpoints(ks, tk))
+            for (Replica replica : StorageService.instance.getNaturalAndPendingReplicas(ks, tk))
             {
-                if (endpoint.equals(FBUtilities.getBroadcastAddressAndPort()))
+                Replicas.checkFull(replica);
+                if (replica.isLocal())
                 {
                     mutation.apply();
                 }
-                else if (FailureDetector.instance.isAlive(endpoint))
+                else if (FailureDetector.instance.isAlive(replica.getEndpoint()))
                 {
-                    liveEndpoints.add(endpoint); // will try delivering directly instead of writing a hint.
+                    liveReplicas.add(replica); // will try delivering directly instead of writing a hint.
                 }
                 else
                 {
-                    hintedNodes.add(endpoint);
-                    HintsService.instance.write(StorageService.instance.getHostIdForEndpoint(endpoint),
+                    hintedNodes.add(replica.getEndpoint());
+                    HintsService.instance.write(StorageService.instance.getHostIdForEndpoint(replica.getEndpoint()),
                                                 Hint.create(mutation, writtenAt));
                 }
             }
 
-            if (liveEndpoints.isEmpty())
+            if (liveReplicas.isEmpty())
                 return null;
 
-            ReplayWriteResponseHandler<Mutation> handler = new ReplayWriteResponseHandler<>(liveEndpoints, System.nanoTime());
+            Replicas.checkFull(liveReplicas);
+
+            ReplayWriteResponseHandler<Mutation> handler = new ReplayWriteResponseHandler<>(keyspace, liveReplicas, System.nanoTime());
             MessageOut<Mutation> message = mutation.createMessage();
-            for (InetAddressAndPort endpoint : liveEndpoints)
-                MessagingService.instance().sendRR(message, endpoint, handler, false);
+            for (Replica replica : liveReplicas)
+                MessagingService.instance().sendWriteRR(message, replica, handler, false);
             return handler;
         }
 
@@ -497,16 +505,17 @@ public class BatchlogManager implements BatchlogManagerMBean
         {
             private final Set<InetAddressAndPort> undelivered = Collections.newSetFromMap(new ConcurrentHashMap<>());
 
-            ReplayWriteResponseHandler(Collection<InetAddressAndPort> writeEndpoints, long queryStartNanoTime)
+            ReplayWriteResponseHandler(Keyspace keyspace, ReplicaList writeReplicas, long queryStartNanoTime)
             {
-                super(writeEndpoints, Collections.<InetAddressAndPort>emptySet(), null, null, null, WriteType.UNLOGGED_BATCH, queryStartNanoTime);
-                undelivered.addAll(writeEndpoints);
+                super(WritePathReplicaPlan.createReplicaPlan(keyspace, null, writeReplicas, ReplicaList.of()),
+                      null, null, null, WriteType.UNLOGGED_BATCH, queryStartNanoTime);
+                Iterables.addAll(undelivered, writeReplicas.asEndpoints());
             }
 
             @Override
             protected int totalBlockFor()
             {
-                return this.naturalEndpoints.size();
+                return this.replicaPlan.targetReplicas().size();
             }
 
             @Override

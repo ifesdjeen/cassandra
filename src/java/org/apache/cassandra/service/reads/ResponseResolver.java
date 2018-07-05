@@ -20,8 +20,10 @@ package org.apache.cassandra.service.reads;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.apache.cassandra.db.*;
+import org.apache.cassandra.db.ReadCommand;
+import org.apache.cassandra.db.ReadResponse;
 import org.apache.cassandra.net.MessageIn;
+import org.apache.cassandra.service.ReplicaPlan;
 import org.apache.cassandra.service.reads.repair.ReadRepair;
 import org.apache.cassandra.utils.concurrent.Accumulator;
 
@@ -29,28 +31,36 @@ public abstract class ResponseResolver
 {
     protected static final Logger logger = LoggerFactory.getLogger(ResponseResolver.class);
 
-    protected final Keyspace keyspace;
     protected final ReadCommand command;
-    protected final ConsistencyLevel consistency;
+    protected final ReplicaPlan replicaPlan;
     protected final ReadRepair readRepair;
 
     // Accumulator gives us non-blocking thread-safety with optimal algorithmic constraints
     protected final Accumulator<MessageIn<ReadResponse>> responses;
+    protected final long queryStartNanoTime;
 
-    public ResponseResolver(Keyspace keyspace, ReadCommand command, ConsistencyLevel consistency, ReadRepair readRepair, int maxResponseCount)
+    public ResponseResolver(ReadCommand command, ReplicaPlan replicaPlan, ReadRepair readRepair, long queryStartNanoTime)
     {
-        this.keyspace = keyspace;
         this.command = command;
-        this.consistency = consistency;
+        this.replicaPlan = replicaPlan;
         this.readRepair = readRepair;
-        this.responses = new Accumulator<>(maxResponseCount);
+        this.responses = new Accumulator<>(replicaPlan.allReplicas().size());
+        this.queryStartNanoTime = queryStartNanoTime;
     }
 
     public abstract boolean isDataPresent();
 
     public void preprocess(MessageIn<ReadResponse> message)
     {
-        responses.add(message);
+        try
+        {
+            responses.add(message);
+        }
+        catch (IllegalStateException e)
+        {
+            logger.error("Encountered error while trying to preprocess the message {}: %s in command {}, replicas: {}", message, command, readRepair, replicaPlan.consistencyLevel(), replicaPlan.targetReplicas());
+            throw e;
+        }
     }
 
     public Accumulator<MessageIn<ReadResponse>> getMessages()

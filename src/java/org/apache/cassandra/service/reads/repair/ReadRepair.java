@@ -17,31 +17,44 @@
  */
 package org.apache.cassandra.service.reads.repair;
 
-import java.util.List;
+import java.util.Map;
 import java.util.function.Consumer;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.ConsistencyLevel;
-import org.apache.cassandra.db.ReadCommand;
+import org.apache.cassandra.db.DecoratedKey;
+import org.apache.cassandra.db.Keyspace;
+import org.apache.cassandra.db.Mutation;
 import org.apache.cassandra.db.partitions.PartitionIterator;
+import org.apache.cassandra.db.partitions.PartitionUpdate;
 import org.apache.cassandra.db.partitions.UnfilteredPartitionIterators;
 import org.apache.cassandra.exceptions.ReadTimeoutException;
-import org.apache.cassandra.locator.InetAddressAndPort;
+import org.apache.cassandra.locator.Replica;
+import org.apache.cassandra.locator.ReplicaList;
+import org.apache.cassandra.net.MessagingService;
+import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.service.reads.DigestResolver;
+import org.apache.cassandra.tracing.Tracing;
 
 public interface ReadRepair
 {
+    static final Logger logger = LoggerFactory.getLogger(ReadRepair.class);
+    static final boolean DROP_OVERSIZED_READ_REPAIR_MUTATIONS = Boolean.getBoolean("cassandra.drop_oversized_readrepair_mutations");
+
+
     /**
      * Used by DataResolver to generate corrections as the partition iterator is consumed
      */
-    UnfilteredPartitionIterators.MergeListener getMergeListener(InetAddressAndPort[] endpoints);
+    UnfilteredPartitionIterators.MergeListener getMergeListener(ReplicaList replicas);
 
     /**
      * Called when the digests from the initial read don't match. Reads may block on the
      * repair started by this method.
      */
     public void startRepair(DigestResolver digestResolver,
-                            List<InetAddressAndPort> allEndpoints,
-                            List<InetAddressAndPort> contactedEndpoints,
                             Consumer<PartitionIterator> resultConsumer);
 
     /**
@@ -49,8 +62,83 @@ public interface ReadRepair
      */
     public void awaitRepair() throws ReadTimeoutException;
 
-    static ReadRepair create(ReadCommand command, List<InetAddressAndPort> endpoints, long queryStartNanoTime, ConsistencyLevel consistency)
+    /**
+     * if it looks like we might not receive data requests from everyone in time, send additional requests
+     * to additional replicas not contacted in the initial full data read. If the collection of nodes that
+     * end up responding in time end up agreeing on the data, and we don't consider the response from the
+     * disagreeing replica that triggered the read repair, that's ok, since the disagreeing data would not
+     * have been successfully written and won't be included in the response the the client, preserving the
+     * expectation of monotonic quorum reads
+     */
+    public void maybeSendAdditionalDataRequests();
+
+    /**
+     * If it looks like we might not receive acks for all the repair mutations we sent out, combine all
+     * the unacked mutations and send them to the minority of nodes not involved in the read repair data
+     * read / write cycle. We will accept acks from them in lieu of acks from the initial mutations sent
+     * out, so long as we receive the same number of acks as repair mutations transmitted. This prevents
+     * misbehaving nodes from killing a quorum read, while continuing to guarantee monotonic quorum reads
+     */
+    public void maybeSendAdditionalRepairs();
+
+    public void awaitRepairs();
+
+    /**
+     * Repairs a partition _after_ receiving data responses. This method receives replica list, since
+     * we will block repair only on the replicas that have responded.
+     */
+    void repairPartition(Map<Replica, Mutation> mutations, ReplicaList targets);
+
+    /**
+     * Create a read repair mutation from the given update, if the mutation is not larger than the maximum
+     * mutation size, otherwise return null. Or, if we're configured to be strict, throw an exception.
+     */
+    public static Mutation createRepairMutation(PartitionUpdate update, ConsistencyLevel consistency, Replica destination, boolean suppressException)
     {
-        return new BlockingReadRepair(command, endpoints, queryStartNanoTime, consistency);
+        if (update == null)
+            return null;
+
+        DecoratedKey key = update.partitionKey();
+        Mutation mutation = new Mutation(update);
+        Keyspace keyspace = Keyspace.open(mutation.getKeyspaceName());
+        TableMetadata metadata = update.metadata();
+
+        int messagingVersion = MessagingService.instance().getVersion(destination.getEndpoint());
+
+        int    mutationSize = (int) Mutation.serializer.serializedSize(mutation, messagingVersion);
+        int maxMutationSize = DatabaseDescriptor.getMaxMutationSize();
+
+
+        if (mutationSize <= maxMutationSize)
+        {
+            return mutation;
+        }
+        else if (DROP_OVERSIZED_READ_REPAIR_MUTATIONS)
+        {
+            logger.debug("Encountered an oversized ({}/{}) read repair mutation for table {}, key {}, node {}",
+                         mutationSize,
+                         maxMutationSize,
+                         metadata,
+                         metadata.partitionKeyType.getString(key.getKey()),
+                         destination);
+            return null;
+        }
+        else
+        {
+            logger.warn("Encountered an oversized ({}/{}) read repair mutation for table {}, key {}, node {}",
+                        mutationSize,
+                        maxMutationSize,
+                        metadata,
+                        metadata.partitionKeyType.getString(key.getKey()),
+                        destination);
+
+            if (!suppressException)
+            {
+                int blockFor = consistency.blockFor(keyspace);
+                Tracing.trace("Timed out while read-repairing after receiving all {} data and digest responses", blockFor);
+                throw new ReadTimeoutException(consistency, blockFor - 1, blockFor, true);
+            }
+            return null;
+        }
     }
 }

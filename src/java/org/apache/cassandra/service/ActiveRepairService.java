@@ -60,6 +60,8 @@ import org.apache.cassandra.gms.IEndpointStateChangeSubscriber;
 import org.apache.cassandra.gms.IFailureDetectionEventListener;
 import org.apache.cassandra.gms.VersionedValue;
 import org.apache.cassandra.locator.InetAddressAndPort;
+import org.apache.cassandra.locator.ReplicaList;
+import org.apache.cassandra.locator.Replicas;
 import org.apache.cassandra.locator.TokenMetadata;
 import org.apache.cassandra.net.IAsyncCallbackWithFailure;
 import org.apache.cassandra.net.MessageIn;
@@ -78,8 +80,6 @@ import org.apache.cassandra.utils.Clock;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.Pair;
 import org.apache.cassandra.utils.UUIDGen;
-
-import static org.apache.cassandra.config.Config.RepairCommandPoolFullStrategy.queue;
 
 /**
  * ActiveRepairService is the starting point for manual "active" repairs.
@@ -296,12 +296,12 @@ public class ActiveRepairService implements IEndpointStateChangeSubscriber, IFai
      *
      * @return neighbors with whom we share the provided range
      */
-    public static Set<InetAddressAndPort> getNeighbors(String keyspaceName, Collection<Range<Token>> keyspaceLocalRanges,
+    public static Set<InetAddressAndPort> getNeighbors(String keyspaceName, Iterable<Range<Token>> keyspaceLocalRanges,
                                                        Range<Token> toRepair, Collection<String> dataCenters,
                                                        Collection<String> hosts)
     {
         StorageService ss = StorageService.instance;
-        Map<Range<Token>, List<InetAddressAndPort>> replicaSets = ss.getRangeToAddressMap(keyspaceName);
+        Map<Range<Token>, ReplicaList> replicaSets = ss.getRangeToAddressMap(keyspaceName);
         Range<Token> rangeSuperSet = null;
         for (Range<Token> range : keyspaceLocalRanges)
         {
@@ -321,7 +321,9 @@ public class ActiveRepairService implements IEndpointStateChangeSubscriber, IFai
         if (rangeSuperSet == null || !replicaSets.containsKey(rangeSuperSet))
             return Collections.emptySet();
 
-        Set<InetAddressAndPort> neighbors = new HashSet<>(replicaSets.get(rangeSuperSet));
+
+        Replicas.checkFull(replicaSets.get(rangeSuperSet));
+        Set<InetAddressAndPort> neighbors = replicaSets.get(rangeSuperSet).asEndpointSet();
         neighbors.remove(FBUtilities.getBroadcastAddressAndPort());
 
         if (dataCenters != null && !dataCenters.isEmpty())
@@ -333,7 +335,7 @@ public class ActiveRepairService implements IEndpointStateChangeSubscriber, IFai
             {
                 Collection<InetAddressAndPort> c = dcEndpointsMap.get(dc);
                 if (c != null)
-                   dcEndpoints.addAll(c);
+                    dcEndpoints.addAll(c);
             }
             return Sets.intersection(neighbors, dcEndpoints);
         }

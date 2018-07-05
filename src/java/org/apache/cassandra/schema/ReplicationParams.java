@@ -58,9 +58,7 @@ public final class ReplicationParams
         Map<String, String> options = new HashMap<>();
         for (int i = 0; i < args.length; i += 2)
         {
-            String dc = (String) args[i];
-            Integer rf = (Integer) args[i + 1];
-            options.put(dc, rf.toString());
+            options.put((String) args[i], args[i + 1].toString());
         }
 
         return new ReplicationParams(NetworkTopologyStrategy.class, options);

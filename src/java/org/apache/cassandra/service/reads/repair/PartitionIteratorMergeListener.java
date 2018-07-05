@@ -20,35 +20,38 @@ package org.apache.cassandra.service.reads.repair;
 
 import java.util.List;
 
-import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.Columns;
+import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.ReadCommand;
 import org.apache.cassandra.db.RegularAndStaticColumns;
 import org.apache.cassandra.db.partitions.UnfilteredPartitionIterators;
 import org.apache.cassandra.db.rows.UnfilteredRowIterator;
 import org.apache.cassandra.db.rows.UnfilteredRowIterators;
-import org.apache.cassandra.locator.InetAddressAndPort;
+import org.apache.cassandra.locator.Replica;
+import org.apache.cassandra.locator.ReplicaList;
 
 public class PartitionIteratorMergeListener implements UnfilteredPartitionIterators.MergeListener
 {
-    private final InetAddressAndPort[] sources;
+    private final ReplicaList sources;
     private final ReadCommand command;
-    private final RepairListener repairListener;
+    private final ConsistencyLevel consistency;
+    private final ReadRepair readRepair;
 
-    public PartitionIteratorMergeListener(InetAddressAndPort[] sources, ReadCommand command, RepairListener repairListener)
+    public PartitionIteratorMergeListener(ReplicaList sources, ReadCommand command, ConsistencyLevel consistency, ReadRepair readRepair)
     {
         this.sources = sources;
         this.command = command;
-        this.repairListener = repairListener;
+        this.consistency = consistency;
+        this.readRepair = readRepair;
     }
 
     public UnfilteredRowIterators.MergeListener getRowMergeListener(DecoratedKey partitionKey, List<UnfilteredRowIterator> versions)
     {
-        return new RowIteratorMergeListener(partitionKey, columns(versions), isReversed(versions), sources, command, repairListener);
+        return new RowIteratorMergeListener(partitionKey, columns(versions), isReversed(versions), sources, command, consistency, readRepair);
     }
 
-    private RegularAndStaticColumns columns(List<UnfilteredRowIterator> versions)
+    protected RegularAndStaticColumns columns(List<UnfilteredRowIterator> versions)
     {
         Columns statics = Columns.NONE;
         Columns regulars = Columns.NONE;
@@ -64,7 +67,7 @@ public class PartitionIteratorMergeListener implements UnfilteredPartitionIterat
         return new RegularAndStaticColumns(statics, regulars);
     }
 
-    private boolean isReversed(List<UnfilteredRowIterator> versions)
+    protected boolean isReversed(List<UnfilteredRowIterator> versions)
     {
         for (UnfilteredRowIterator iter : versions)
         {
@@ -81,7 +84,6 @@ public class PartitionIteratorMergeListener implements UnfilteredPartitionIterat
 
     public void close()
     {
-        repairListener.awaitRepairs(DatabaseDescriptor.getWriteRpcTimeout());
     }
 }
 

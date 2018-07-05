@@ -17,8 +17,6 @@
  */
 package org.apache.cassandra.service;
 
-import java.util.Collection;
-
 import org.apache.cassandra.db.Keyspace;
 import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.net.MessageIn;
@@ -30,15 +28,14 @@ import org.apache.cassandra.db.WriteType;
  */
 public class DatacenterWriteResponseHandler<T> extends WriteResponseHandler<T>
 {
-    public DatacenterWriteResponseHandler(Collection<InetAddressAndPort> naturalEndpoints,
-                                          Collection<InetAddressAndPort> pendingEndpoints,
+    public DatacenterWriteResponseHandler(WritePathReplicaPlan replicaPlan,
                                           ConsistencyLevel consistencyLevel,
                                           Keyspace keyspace,
                                           Runnable callback,
                                           WriteType writeType,
                                           long queryStartNanoTime)
     {
-        super(naturalEndpoints, pendingEndpoints, consistencyLevel, keyspace, callback, writeType, queryStartNanoTime);
+        super(replicaPlan, consistencyLevel, keyspace, callback, writeType, queryStartNanoTime);
         assert consistencyLevel.isDatacenterLocal();
     }
 
@@ -62,7 +59,7 @@ public class DatacenterWriteResponseHandler<T> extends WriteResponseHandler<T>
     {
         // during bootstrap, include pending endpoints (only local here) in the count
         // or we may fail the consistency level guarantees (see #833, #8058)
-        return consistencyLevel.blockFor(keyspace) + consistencyLevel.countLocalEndpoints(pendingEndpoints);
+        return consistencyLevel.blockFor(keyspace) + consistencyLevel.countLocalEndpoints(replicaPlan.pendingReplicas());
     }
 
     @Override

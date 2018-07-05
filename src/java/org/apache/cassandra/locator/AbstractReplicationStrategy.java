@@ -22,8 +22,7 @@ import java.lang.reflect.InvocationTargetException;
 import java.util.*;
 
 import com.google.common.annotations.VisibleForTesting;
-import com.google.common.collect.HashMultimap;
-import com.google.common.collect.Multimap;
+import com.google.common.base.Preconditions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -38,6 +37,7 @@ import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.service.AbstractWriteResponseHandler;
 import org.apache.cassandra.service.DatacenterSyncWriteResponseHandler;
 import org.apache.cassandra.service.DatacenterWriteResponseHandler;
+import org.apache.cassandra.service.WritePathReplicaPlan;
 import org.apache.cassandra.service.WriteResponseHandler;
 import org.apache.cassandra.utils.FBUtilities;
 
@@ -73,9 +73,9 @@ public abstract class AbstractReplicationStrategy
         // lazy-initialize keyspace itself since we don't create them until after the replication strategies
     }
 
-    private final Map<Token, ArrayList<InetAddressAndPort>> cachedEndpoints = new NonBlockingHashMap<Token, ArrayList<InetAddressAndPort>>();
+    private final Map<Token, ReplicaList> cachedReplicas = new NonBlockingHashMap<>();
 
-    public ArrayList<InetAddressAndPort> getCachedEndpoints(Token t)
+    public ReplicaList getCachedReplicas(Token t)
     {
         long lastVersion = tokenMetadata.getRingVersion();
 
@@ -86,13 +86,13 @@ public abstract class AbstractReplicationStrategy
                 if (lastVersion > lastInvalidatedVersion)
                 {
                     logger.trace("clearing cached endpoints");
-                    cachedEndpoints.clear();
+                    cachedReplicas.clear();
                     lastInvalidatedVersion = lastVersion;
                 }
             }
         }
 
-        return cachedEndpoints.get(t);
+        return cachedReplicas.get(t);
     }
 
     /**
@@ -102,45 +102,43 @@ public abstract class AbstractReplicationStrategy
      * @param searchPosition the position the natural endpoints are requested for
      * @return a copy of the natural endpoints for the given token
      */
-    public ArrayList<InetAddressAndPort> getNaturalEndpoints(RingPosition searchPosition)
+    public ReplicaList getNaturalReplicas(RingPosition searchPosition)
     {
         Token searchToken = searchPosition.getToken();
         Token keyToken = TokenMetadata.firstToken(tokenMetadata.sortedTokens(), searchToken);
-        ArrayList<InetAddressAndPort> endpoints = getCachedEndpoints(keyToken);
+        ReplicaList endpoints = getCachedReplicas(keyToken);
         if (endpoints == null)
         {
             TokenMetadata tm = tokenMetadata.cachedOnlyTokenMap();
             // if our cache got invalidated, it's possible there is a new token to account for too
             keyToken = TokenMetadata.firstToken(tm.sortedTokens(), searchToken);
-            endpoints = new ArrayList<InetAddressAndPort>(calculateNaturalEndpoints(searchToken, tm));
-            cachedEndpoints.put(keyToken, endpoints);
+            endpoints = calculateNaturalReplicas(searchToken, tm);
+            cachedReplicas.put(keyToken, endpoints);
         }
 
-        return new ArrayList<InetAddressAndPort>(endpoints);
+        return new ReplicaList(endpoints);
     }
 
     /**
      * calculate the natural endpoints for the given token
      *
-     * @see #getNaturalEndpoints(org.apache.cassandra.dht.RingPosition)
+     * @see #getNaturalReplicas(org.apache.cassandra.dht.RingPosition)
      *
      * @param searchToken the token the natural endpoints are requested for
      * @return a copy of the natural endpoints for the given token
      */
-    public abstract List<InetAddressAndPort> calculateNaturalEndpoints(Token searchToken, TokenMetadata tokenMetadata);
+    public abstract ReplicaList calculateNaturalReplicas(Token searchToken, TokenMetadata tokenMetadata);
 
-    public <T> AbstractWriteResponseHandler<T> getWriteResponseHandler(Collection<InetAddressAndPort> naturalEndpoints,
-                                                                       Collection<InetAddressAndPort> pendingEndpoints,
+    public <T> AbstractWriteResponseHandler<T> getWriteResponseHandler(WritePathReplicaPlan replicaPlan,
                                                                        ConsistencyLevel consistency_level,
                                                                        Runnable callback,
                                                                        WriteType writeType,
                                                                        long queryStartNanoTime)
     {
-        return getWriteResponseHandler(naturalEndpoints, pendingEndpoints, consistency_level, callback, writeType, queryStartNanoTime, DatabaseDescriptor.getIdealConsistencyLevel());
+        return getWriteResponseHandler(replicaPlan, consistency_level, callback, writeType, queryStartNanoTime, DatabaseDescriptor.getIdealConsistencyLevel());
     }
 
-    public <T> AbstractWriteResponseHandler<T> getWriteResponseHandler(Collection<InetAddressAndPort> naturalEndpoints,
-                                                                       Collection<InetAddressAndPort> pendingEndpoints,
+    public <T> AbstractWriteResponseHandler<T> getWriteResponseHandler(WritePathReplicaPlan replicaPlan,
                                                                        ConsistencyLevel consistency_level,
                                                                        Runnable callback,
                                                                        WriteType writeType,
@@ -151,15 +149,15 @@ public abstract class AbstractReplicationStrategy
         if (consistency_level.isDatacenterLocal())
         {
             // block for in this context will be localnodes block.
-            resultResponseHandler = new DatacenterWriteResponseHandler<T>(naturalEndpoints, pendingEndpoints, consistency_level, getKeyspace(), callback, writeType, queryStartNanoTime);
+            resultResponseHandler = new DatacenterWriteResponseHandler<T>(replicaPlan, consistency_level, getKeyspace(), callback, writeType, queryStartNanoTime);
         }
         else if (consistency_level == ConsistencyLevel.EACH_QUORUM && (this instanceof NetworkTopologyStrategy))
         {
-            resultResponseHandler = new DatacenterSyncWriteResponseHandler<T>(naturalEndpoints, pendingEndpoints, consistency_level, getKeyspace(), callback, writeType, queryStartNanoTime);
+            resultResponseHandler = new DatacenterSyncWriteResponseHandler<T>(replicaPlan, consistency_level, getKeyspace(), callback, writeType, queryStartNanoTime);
         }
         else
         {
-            resultResponseHandler = new WriteResponseHandler<T>(naturalEndpoints, pendingEndpoints, consistency_level, getKeyspace(), callback, writeType, queryStartNanoTime);
+            resultResponseHandler = new WriteResponseHandler<T>(replicaPlan, consistency_level, getKeyspace(), callback, writeType, queryStartNanoTime);
         }
 
         //Check if tracking the ideal consistency level is configured
@@ -175,8 +173,7 @@ public abstract class AbstractReplicationStrategy
             else
             {
                 //Construct a delegate response handler to use to track the ideal consistency level
-                AbstractWriteResponseHandler idealHandler = getWriteResponseHandler(naturalEndpoints,
-                                                                                    pendingEndpoints,
+                AbstractWriteResponseHandler idealHandler = getWriteResponseHandler(replicaPlan,
                                                                                     idealConsistencyLevel,
                                                                                     callback,
                                                                                     writeType,
@@ -202,7 +199,12 @@ public abstract class AbstractReplicationStrategy
      *
      * @return the replication factor
      */
-    public abstract int getReplicationFactor();
+    public abstract ReplicationFactor getReplicationFactor();
+
+    public boolean hasTransientReplicas()
+    {
+        return getReplicationFactor().trans > 0;
+    }
 
     /*
      * NOTE: this is pretty inefficient. also the inverse (getRangeAddresses) below.
@@ -210,53 +212,82 @@ public abstract class AbstractReplicationStrategy
      * (fixing this would probably require merging tokenmetadata into replicationstrategy,
      * so we could cache/invalidate cleanly.)
      */
-    public Multimap<InetAddressAndPort, Range<Token>> getAddressRanges(TokenMetadata metadata)
+    public ReplicaMultimap<InetAddressAndPort, ReplicaSet> getAddressReplicas(TokenMetadata metadata)
     {
-        Multimap<InetAddressAndPort, Range<Token>> map = HashMultimap.create();
+        ReplicaMultimap<InetAddressAndPort, ReplicaSet> map = ReplicaMultimap.set();
 
         for (Token token : metadata.sortedTokens())
         {
             Range<Token> range = metadata.getPrimaryRangeFor(token);
-            for (InetAddressAndPort ep : calculateNaturalEndpoints(token, metadata))
+            for (Replica replica : calculateNaturalReplicas(token, metadata))
             {
-                map.put(ep, range);
+                // LocalStrategy always returns (min, min] ranges for it's replicas, so we skip the check here
+                Preconditions.checkState(range.equals(replica.getRange()) || this instanceof LocalStrategy);
+                map.put(replica.getEndpoint(), replica);
             }
         }
 
         return map;
     }
 
-    public Multimap<Range<Token>, InetAddressAndPort> getRangeAddresses(TokenMetadata metadata)
+    public ReplicaSet getAddressReplicas(TokenMetadata metadata, InetAddressAndPort endpoint)
     {
-        Multimap<Range<Token>, InetAddressAndPort> map = HashMultimap.create();
+        ReplicaSet replicaSet = new ReplicaSet();
+        for (Token token : metadata.sortedTokens())
+        {
+            Range<Token> range = metadata.getPrimaryRangeFor(token);
+            for (Replica replica : calculateNaturalReplicas(token, metadata))
+            {
+                if (!replica.getEndpoint().equals(endpoint))
+                    continue;
+                // LocalStrategy always returns (min, min] ranges for it's replicas, so we skip the check here
+                Preconditions.checkState(range.equals(replica.getRange()) || this instanceof LocalStrategy);
+                replicaSet.add(replica);
+            }
+        }
+
+        return replicaSet;
+    }
+
+
+    public ReplicaMultimap<Range<Token>, ReplicaSet> getRangeAddresses(TokenMetadata metadata)
+    {
+        ReplicaMultimap<Range<Token>, ReplicaSet> map = ReplicaMultimap.set();
 
         for (Token token : metadata.sortedTokens())
         {
             Range<Token> range = metadata.getPrimaryRangeFor(token);
-            for (InetAddressAndPort ep : calculateNaturalEndpoints(token, metadata))
+            for (Replica replica : calculateNaturalReplicas(token, metadata))
             {
-                map.put(range, ep);
+                // LocalStrategy always returns (min, min] ranges for it's replicas, so we skip the check here
+                Preconditions.checkState(range.equals(replica.getRange()) || this instanceof LocalStrategy);
+                map.put(range, replica);
             }
         }
 
         return map;
     }
 
-    public Multimap<InetAddressAndPort, Range<Token>> getAddressRanges()
+    public ReplicaMultimap<InetAddressAndPort, ReplicaSet> getAddressReplicas()
     {
-        return getAddressRanges(tokenMetadata.cloneOnlyTokenMap());
+        return getAddressReplicas(tokenMetadata.cloneOnlyTokenMap());
     }
 
-    public Collection<Range<Token>> getPendingAddressRanges(TokenMetadata metadata, Token pendingToken, InetAddressAndPort pendingAddress)
+    public ReplicaSet getAddressReplicas(InetAddressAndPort endpoint)
     {
-        return getPendingAddressRanges(metadata, Arrays.asList(pendingToken), pendingAddress);
+        return getAddressReplicas(tokenMetadata.cloneOnlyTokenMap(), endpoint);
     }
 
-    public Collection<Range<Token>> getPendingAddressRanges(TokenMetadata metadata, Collection<Token> pendingTokens, InetAddressAndPort pendingAddress)
+    public ReplicaSet getPendingAddressRanges(TokenMetadata metadata, Token pendingToken, InetAddressAndPort pendingAddress)
+    {
+        return getPendingAddressRanges(metadata, Collections.singleton(pendingToken), pendingAddress);
+    }
+
+    public ReplicaSet getPendingAddressRanges(TokenMetadata metadata, Collection<Token> pendingTokens, InetAddressAndPort pendingAddress)
     {
         TokenMetadata temp = metadata.cloneOnlyTokenMap();
         temp.updateNormalTokens(pendingTokens, pendingAddress);
-        return getAddressRanges(temp).get(pendingAddress);
+        return getAddressReplicas(temp, pendingAddress);
     }
 
     public abstract void validateOptions() throws ConfigurationException;
@@ -329,6 +360,10 @@ public abstract class AbstractReplicationStrategy
         AbstractReplicationStrategy strategy = createInternal(keyspaceName, strategyClass, tokenMetadata, snitch, strategyOptions);
         strategy.validateExpectedOptions();
         strategy.validateOptions();
+        if (strategy.getReplicationFactor().trans > 0 && !DatabaseDescriptor.isTransientReplicationEnabled())
+        {
+            throw new ConfigurationException("Transient replication is disabled. Enable in cassandra.yaml to use.");
+        }
     }
 
     public static Class<AbstractReplicationStrategy> getClass(String cls) throws ConfigurationException
@@ -344,21 +379,18 @@ public abstract class AbstractReplicationStrategy
 
     public boolean hasSameSettings(AbstractReplicationStrategy other)
     {
-        return getClass().equals(other.getClass()) && getReplicationFactor() == other.getReplicationFactor();
+        return getClass().equals(other.getClass()) && getReplicationFactor().equals(other.getReplicationFactor());
     }
 
-    protected void validateReplicationFactor(String rf) throws ConfigurationException
+    protected void validateReplicationFactor(String s) throws ConfigurationException
     {
         try
         {
-            if (Integer.parseInt(rf) < 0)
-            {
-                throw new ConfigurationException("Replication factor must be non-negative; found " + rf);
-            }
+            ReplicationFactor.fromString(s);
         }
-        catch (NumberFormatException e2)
+        catch (IllegalArgumentException e)
         {
-            throw new ConfigurationException("Replication factor must be numeric; found " + rf);
+            throw new ConfigurationException(e.getMessage());
         }
     }
 
