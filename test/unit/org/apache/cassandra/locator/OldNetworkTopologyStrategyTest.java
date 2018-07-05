@@ -160,7 +160,7 @@ public class OldNetworkTopologyStrategyTest
     {
         for (Token keyToken : keyTokens)
         {
-            List<InetAddressAndPort> endpoints = strategy.getNaturalEndpoints(keyToken);
+            List<InetAddressAndPort> endpoints = strategy.getNaturalReplicas(keyToken).asEndpointList();
             for (int j = 0; j < endpoints.size(); j++)
             {
                 ArrayList<InetAddressAndPort> hostsExpected = expectedResults.get(keyToken.toString());
@@ -366,12 +366,10 @@ public class OldNetworkTopologyStrategyTest
         TokenMetadata tokenMetadataAfterMove = initTokenMetadata(tokensAfterMove);
         AbstractReplicationStrategy strategy = new OldNetworkTopologyStrategy("Keyspace1", tokenMetadataCurrent, endpointSnitch, optsWithRF(2));
 
-        Collection<Range<Token>> currentRanges = strategy.getAddressRanges().get(movingNode);
-        Collection<Range<Token>> updatedRanges = strategy.getPendingAddressRanges(tokenMetadataAfterMove, tokensAfterMove[movingNodeIdx], movingNode);
+        ReplicaSet currentRanges = strategy.getAddressReplicas().get(movingNode);
+        ReplicaSet updatedRanges = strategy.getPendingAddressRanges(tokenMetadataAfterMove, tokensAfterMove[movingNodeIdx], movingNode);
 
-        Pair<Set<Range<Token>>, Set<Range<Token>>> ranges = StorageService.instance.calculateStreamAndFetchRanges(currentRanges, updatedRanges);
-
-        return ranges;
+        return StorageService.instance.calculateStreamAndFetchRanges(currentRanges, updatedRanges);
     }
 
     private static Map<String, String> optsWithRF(int rf)

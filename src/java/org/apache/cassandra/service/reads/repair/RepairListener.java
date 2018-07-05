@@ -20,12 +20,13 @@ package org.apache.cassandra.service.reads.repair;
 
 import org.apache.cassandra.db.Mutation;
 import org.apache.cassandra.locator.InetAddressAndPort;
+import org.apache.cassandra.locator.Replica;
 
 public interface RepairListener
 {
     interface PartitionRepair
     {
-        void reportMutation(InetAddressAndPort endpoint, Mutation mutation);
+        void reportMutation(Replica replica, Mutation mutation);
         void finish();
     }
 

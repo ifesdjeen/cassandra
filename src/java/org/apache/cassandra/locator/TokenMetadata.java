@@ -733,19 +733,19 @@ public class TokenMetadata
         return sortedTokens;
     }
 
-    public Multimap<Range<Token>, InetAddressAndPort> getPendingRangesMM(String keyspaceName)
+    public ReplicaMultimap<Range<Token>, ReplicaSet> getPendingRangesMM(String keyspaceName)
     {
-        Multimap<Range<Token>, InetAddressAndPort> map = HashMultimap.create();
+        ReplicaMultimap<Range<Token>, ReplicaSet> map = ReplicaMultimap.set();
         PendingRangeMaps pendingRangeMaps = this.pendingRanges.get(keyspaceName);
 
         if (pendingRangeMaps != null)
         {
-            for (Map.Entry<Range<Token>, List<InetAddressAndPort>> entry : pendingRangeMaps)
+            for (Map.Entry<Range<Token>, ReplicaList> entry : pendingRangeMaps)
             {
                 Range<Token> range = entry.getKey();
-                for (InetAddressAndPort address : entry.getValue())
+                for (Replica replica : entry.getValue())
                 {
-                    map.put(range, address);
+                    map.put(range, replica);
                 }
             }
         }
@@ -759,17 +759,18 @@ public class TokenMetadata
         return this.pendingRanges.get(keyspaceName);
     }
 
-    public List<Range<Token>> getPendingRanges(String keyspaceName, InetAddressAndPort endpoint)
+    public ReplicaList getPendingRanges(String keyspaceName, InetAddressAndPort endpoint)
     {
-        List<Range<Token>> ranges = new ArrayList<>();
-        for (Map.Entry<Range<Token>, InetAddressAndPort> entry : getPendingRangesMM(keyspaceName).entries())
+        ReplicaList replicas = new ReplicaList();
+        for (Map.Entry<Range<Token>, Replica> entry : getPendingRangesMM(keyspaceName).entries())
         {
-            if (entry.getValue().equals(endpoint))
+            Replica replica = entry.getValue();
+            if (replica.getEndpoint().equals(endpoint))
             {
-                ranges.add(entry.getKey());
+                replicas.add(replica);
             }
         }
-        return ranges;
+        return replicas;
     }
 
      /**
@@ -856,7 +857,7 @@ public class TokenMetadata
     {
         PendingRangeMaps newPendingRanges = new PendingRangeMaps();
 
-        Multimap<InetAddressAndPort, Range<Token>> addressRanges = strategy.getAddressRanges(metadata);
+        ReplicaMultimap<InetAddressAndPort, ReplicaSet> addressRanges = strategy.getAddressReplicas(metadata);
 
         // Copy of metadata reflecting the situation after all leave operations are finished.
         TokenMetadata allLeftMetadata = removeEndpoints(metadata.cloneOnlyTokenMap(), leavingEndpoints);
@@ -864,17 +865,17 @@ public class TokenMetadata
         // get all ranges that will be affected by leaving nodes
         Set<Range<Token>> affectedRanges = new HashSet<Range<Token>>();
         for (InetAddressAndPort endpoint : leavingEndpoints)
-            affectedRanges.addAll(addressRanges.get(endpoint));
+            affectedRanges.addAll(addressRanges.get(endpoint).asUnmodifiableRangeCollection());
 
         // for each of those ranges, find what new nodes will be responsible for the range when
         // all leaving nodes are gone.
         for (Range<Token> range : affectedRanges)
         {
-            Set<InetAddressAndPort> currentEndpoints = ImmutableSet.copyOf(strategy.calculateNaturalEndpoints(range.right, metadata));
-            Set<InetAddressAndPort> newEndpoints = ImmutableSet.copyOf(strategy.calculateNaturalEndpoints(range.right, allLeftMetadata));
-            for (InetAddressAndPort address : Sets.difference(newEndpoints, currentEndpoints))
+            ReplicaSet currentReplicas = ReplicaSet.immutableCopyOf(strategy.calculateNaturalReplicas(range.right, metadata));
+            ReplicaSet newReplicas = ReplicaSet.immutableCopyOf(strategy.calculateNaturalReplicas(range.right, allLeftMetadata));
+            for (Replica replica : newReplicas.differenceOnEndpoint(currentReplicas))
             {
-                newPendingRanges.addPendingRange(range, address);
+                newPendingRanges.addPendingRange(range, replica);
             }
         }
 
@@ -889,9 +890,9 @@ public class TokenMetadata
             Collection<Token> tokens = bootstrapAddresses.get(endpoint);
 
             allLeftMetadata.updateNormalTokens(tokens, endpoint);
-            for (Range<Token> range : strategy.getAddressRanges(allLeftMetadata).get(endpoint))
+            for (Replica replica : strategy.getAddressReplicas(allLeftMetadata).get(endpoint))
             {
-                newPendingRanges.addPendingRange(range, endpoint);
+                newPendingRanges.addPendingRange(replica.getRange(), replica);
             }
             allLeftMetadata.removeEndpoint(endpoint);
         }
@@ -904,38 +905,38 @@ public class TokenMetadata
         for (Pair<Token, InetAddressAndPort> moving : movingEndpoints)
         {
             //Calculate all the ranges which will could be affected. This will include the ranges before and after the move.
-            Set<Range<Token>> moveAffectedRanges = new HashSet<>();
+            Set<Replica> moveAffectedReplicas = new HashSet<>();
             InetAddressAndPort endpoint = moving.right; // address of the moving node
             //Add ranges before the move
-            for (Range<Token> range : strategy.getAddressRanges(allLeftMetadata).get(endpoint))
+            for (Replica replica : strategy.getAddressReplicas(allLeftMetadata).get(endpoint))
             {
-                moveAffectedRanges.add(range);
+                moveAffectedReplicas.add(replica);
             }
 
             allLeftMetadata.updateNormalToken(moving.left, endpoint);
             //Add ranges after the move
-            for (Range<Token> range : strategy.getAddressRanges(allLeftMetadata).get(endpoint))
+            for (Replica replica : strategy.getAddressReplicas(allLeftMetadata).get(endpoint))
             {
-                moveAffectedRanges.add(range);
+                moveAffectedReplicas.add(replica);
             }
 
-            for(Range<Token> range : moveAffectedRanges)
+            for(Replica replica : moveAffectedReplicas)
             {
-                Set<InetAddressAndPort> currentEndpoints = ImmutableSet.copyOf(strategy.calculateNaturalEndpoints(range.right, metadata));
-                Set<InetAddressAndPort> newEndpoints = ImmutableSet.copyOf(strategy.calculateNaturalEndpoints(range.right, allLeftMetadata));
+                Set<InetAddressAndPort> currentEndpoints = strategy.calculateNaturalReplicas(replica.getRange().right, metadata).asEndpointSet();
+                Set<InetAddressAndPort> newEndpoints = strategy.calculateNaturalReplicas(replica.getRange().right, allLeftMetadata).asEndpointSet();
                 Set<InetAddressAndPort> difference = Sets.difference(newEndpoints, currentEndpoints);
                 for(final InetAddressAndPort address : difference)
                 {
-                    Collection<Range<Token>> newRanges = strategy.getAddressRanges(allLeftMetadata).get(address);
-                    Collection<Range<Token>> oldRanges = strategy.getAddressRanges(metadata).get(address);
+                    ReplicaSet newReplicas = strategy.getAddressReplicas(allLeftMetadata).get(address);
+                    ReplicaSet oldReplicas = strategy.getAddressReplicas(metadata).get(address);
                     //We want to get rid of any ranges which the node is currently getting.
-                    newRanges.removeAll(oldRanges);
+                    newReplicas.removeReplicas(oldReplicas);
 
-                    for(Range<Token> newRange : newRanges)
+                    for(Replica newReplica : newReplicas)
                     {
-                        for(Range<Token> pendingRange : newRange.subtractAll(oldRanges))
+                        for (Replica pendingReplica: newReplica.subtractByRange(oldReplicas))
                         {
-                            newPendingRanges.addPendingRange(pendingRange, address);
+                            newPendingRanges.addPendingRange(pendingReplica.getRange(), pendingReplica);
                         }
                     }
                 }
@@ -1204,11 +1205,11 @@ public class TokenMetadata
         return sb.toString();
     }
 
-    public Collection<InetAddressAndPort> pendingEndpointsFor(Token token, String keyspaceName)
+    public ReplicaCollection pendingEndpointsFor(Token token, String keyspaceName)
     {
         PendingRangeMaps pendingRangeMaps = this.pendingRanges.get(keyspaceName);
         if (pendingRangeMaps == null)
-            return Collections.emptyList();
+            return Replicas.empty();
 
         return pendingRangeMaps.pendingEndpointsFor(token);
     }
@@ -1216,9 +1217,9 @@ public class TokenMetadata
     /**
      * @deprecated retained for benefit of old tests
      */
-    public Collection<InetAddressAndPort> getWriteEndpoints(Token token, String keyspaceName, Collection<InetAddressAndPort> naturalEndpoints)
+    public ReplicaList getWriteEndpoints(Token token, String keyspaceName, ReplicaCollection naturalEndpoints)
     {
-        return ImmutableList.copyOf(Iterables.concat(naturalEndpoints, pendingEndpointsFor(token, keyspaceName)));
+        return ReplicaList.immutableCopyOf(Replicas.concatNaturalAndPending(naturalEndpoints, pendingEndpointsFor(token, keyspaceName)));
     }
 
     /** @return an endpoint to token multimap representation of tokenToEndpointMap (a copy) */

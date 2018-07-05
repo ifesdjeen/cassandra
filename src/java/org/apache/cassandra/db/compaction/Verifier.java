@@ -59,7 +59,6 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.*;
 import java.util.function.LongPredicate;
-import java.util.function.Predicate;
 
 public class Verifier implements Closeable
 {
@@ -173,7 +172,7 @@ public class Verifier implements Closeable
             outputHandler.debug("Checking that all tokens are owned by the current node");
             try (KeyIterator iter = new KeyIterator(sstable.descriptor, sstable.metadata()))
             {
-                List<Range<Token>> ownedRanges = Range.normalize(StorageService.instance.getLocalAndPendingRanges(cfs.metadata.keyspace));
+                List<Range<Token>> ownedRanges = Range.normalize(StorageService.instance.getLocalAndPendingReplicas(cfs.metadata.keyspace).asUnmodifiableRangeCollection());
                 if (ownedRanges.isEmpty())
                     return;
                 RangeOwnHelper rangeOwnHelper = new RangeOwnHelper(ownedRanges);
@@ -234,7 +233,7 @@ public class Verifier implements Closeable
                     markAndThrow();
             }
 
-            List<Range<Token>> ownedRanges = isOffline ? Collections.emptyList() : Range.normalize(StorageService.instance.getLocalAndPendingRanges(cfs.metadata().keyspace));
+            List<Range<Token>> ownedRanges = isOffline ? Collections.emptyList() : Range.normalize(StorageService.instance.getLocalAndPendingReplicas(cfs.metadata().keyspace).asUnmodifiableRangeCollection());
             RangeOwnHelper rangeOwnHelper = new RangeOwnHelper(ownedRanges);
             DecoratedKey prevKey = null;
 

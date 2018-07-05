@@ -17,14 +17,11 @@
  */
 package org.apache.cassandra.service;
 
-import java.util.Collection;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
-
-import com.google.common.collect.Iterables;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -35,6 +32,8 @@ import org.apache.cassandra.db.Keyspace;
 import org.apache.cassandra.db.WriteType;
 import org.apache.cassandra.exceptions.*;
 import org.apache.cassandra.locator.InetAddressAndPort;
+import org.apache.cassandra.locator.ReplicaCollection;
+import org.apache.cassandra.locator.Replicas;
 import org.apache.cassandra.net.IAsyncCallbackWithFailure;
 import org.apache.cassandra.net.MessageIn;
 import org.apache.cassandra.utils.concurrent.SimpleCondition;
@@ -47,10 +46,10 @@ public abstract class AbstractWriteResponseHandler<T> implements IAsyncCallbackW
     private AtomicInteger responsesAndExpirations;
     private final SimpleCondition condition = new SimpleCondition();
     protected final Keyspace keyspace;
-    protected final Collection<InetAddressAndPort> naturalEndpoints;
+    protected final ReplicaCollection naturalReplicas;
     public final ConsistencyLevel consistencyLevel;
     protected final Runnable callback;
-    protected final Collection<InetAddressAndPort> pendingEndpoints;
+    protected final ReplicaCollection pendingReplicas;
     protected final WriteType writeType;
     private static final AtomicIntegerFieldUpdater<AbstractWriteResponseHandler> failuresUpdater
     = AtomicIntegerFieldUpdater.newUpdater(AbstractWriteResponseHandler.class, "failures");
@@ -72,17 +71,17 @@ public abstract class AbstractWriteResponseHandler<T> implements IAsyncCallbackW
      * @param queryStartNanoTime
      */
     protected AbstractWriteResponseHandler(Keyspace keyspace,
-                                           Collection<InetAddressAndPort> naturalEndpoints,
-                                           Collection<InetAddressAndPort> pendingEndpoints,
+                                           ReplicaCollection naturalReplicas,
+                                           ReplicaCollection pendingReplicas,
                                            ConsistencyLevel consistencyLevel,
                                            Runnable callback,
                                            WriteType writeType,
                                            long queryStartNanoTime)
     {
         this.keyspace = keyspace;
-        this.pendingEndpoints = pendingEndpoints;
+        this.pendingReplicas = pendingReplicas;
         this.consistencyLevel = consistencyLevel;
-        this.naturalEndpoints = naturalEndpoints;
+        this.naturalReplicas = naturalReplicas;
         this.callback = callback;
         this.writeType = writeType;
         this.failureReasonByEndpoint = new ConcurrentHashMap<>();
@@ -136,7 +135,7 @@ public abstract class AbstractWriteResponseHandler<T> implements IAsyncCallbackW
     public void setIdealCLResponseHandler(AbstractWriteResponseHandler handler)
     {
         this.idealCLDelegate = handler;
-        idealCLDelegate.responsesAndExpirations = new AtomicInteger(naturalEndpoints.size() + pendingEndpoints.size());
+        idealCLDelegate.responsesAndExpirations = new AtomicInteger(naturalReplicas.size() + pendingReplicas.size());
     }
 
     /**
@@ -194,7 +193,7 @@ public abstract class AbstractWriteResponseHandler<T> implements IAsyncCallbackW
     {
         // During bootstrap, we have to include the pending endpoints or we may fail the consistency level
         // guarantees (see #833)
-        return consistencyLevel.blockFor(keyspace) + pendingEndpoints.size();
+        return consistencyLevel.blockFor(keyspace) + pendingReplicas.size();
     }
 
     /**
@@ -202,7 +201,7 @@ public abstract class AbstractWriteResponseHandler<T> implements IAsyncCallbackW
      */
     protected int totalEndpoints()
     {
-        return naturalEndpoints.size() + pendingEndpoints.size();
+        return naturalReplicas.size() + pendingReplicas.size();
     }
 
     /**
@@ -225,7 +224,7 @@ public abstract class AbstractWriteResponseHandler<T> implements IAsyncCallbackW
 
     public void assureSufficientLiveNodes() throws UnavailableException
     {
-        consistencyLevel.assureSufficientLiveNodes(keyspace, Iterables.filter(Iterables.concat(naturalEndpoints, pendingEndpoints), isAlive));
+        consistencyLevel.assureSufficientLiveNodes(keyspace, Replicas.filter(Replicas.concatNaturalAndPending(naturalReplicas, pendingReplicas), isReplicaAlive));
     }
 
     protected void signal()

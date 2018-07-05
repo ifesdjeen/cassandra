@@ -18,16 +18,15 @@
 
 package org.apache.cassandra.db.view;
 
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Optional;
 
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.Keyspace;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.locator.AbstractReplicationStrategy;
-import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.locator.NetworkTopologyStrategy;
+import org.apache.cassandra.locator.Replica;
+import org.apache.cassandra.locator.ReplicaList;
 import org.apache.cassandra.utils.FBUtilities;
 
 public final class ViewUtils
@@ -58,46 +57,55 @@ public final class ViewUtils
      *
      * @return Optional.empty() if this method is called using a base token which does not belong to this replica
      */
-    public static Optional<InetAddressAndPort> getViewNaturalEndpoint(String keyspaceName, Token baseToken, Token viewToken)
+    public static Optional<Replica> getViewNaturalEndpoint(String keyspaceName, Token baseToken, Token viewToken)
     {
         AbstractReplicationStrategy replicationStrategy = Keyspace.open(keyspaceName).getReplicationStrategy();
 
         String localDataCenter = DatabaseDescriptor.getEndpointSnitch().getDatacenter(FBUtilities.getBroadcastAddressAndPort());
-        List<InetAddressAndPort> baseEndpoints = new ArrayList<>();
-        List<InetAddressAndPort> viewEndpoints = new ArrayList<>();
-        for (InetAddressAndPort baseEndpoint : replicationStrategy.getNaturalEndpoints(baseToken))
+        ReplicaList baseReplicas = new ReplicaList();
+        ReplicaList viewReplicas = new ReplicaList();
+        for (Replica baseEndpoint : replicationStrategy.getNaturalReplicas(baseToken))
         {
             // An endpoint is local if we're not using Net
             if (!(replicationStrategy instanceof NetworkTopologyStrategy) ||
                 DatabaseDescriptor.getEndpointSnitch().getDatacenter(baseEndpoint).equals(localDataCenter))
-                baseEndpoints.add(baseEndpoint);
+                baseReplicas.add(baseEndpoint);
         }
 
-        for (InetAddressAndPort viewEndpoint : replicationStrategy.getNaturalEndpoints(viewToken))
+        for (Replica viewEndpoint : replicationStrategy.getNaturalReplicas(viewToken))
         {
             // If we are a base endpoint which is also a view replica, we use ourselves as our view replica
-            if (viewEndpoint.equals(FBUtilities.getBroadcastAddressAndPort()))
+            if (viewEndpoint.isLocal())
                 return Optional.of(viewEndpoint);
 
             // We have to remove any endpoint which is shared between the base and the view, as it will select itself
             // and throw off the counts otherwise.
-            if (baseEndpoints.contains(viewEndpoint))
-                baseEndpoints.remove(viewEndpoint);
+            if (baseReplicas.containsEndpoint(viewEndpoint.getEndpoint()))
+                baseReplicas.removeEndpoint(viewEndpoint.getEndpoint());
             else if (!(replicationStrategy instanceof NetworkTopologyStrategy) ||
                      DatabaseDescriptor.getEndpointSnitch().getDatacenter(viewEndpoint).equals(localDataCenter))
-                viewEndpoints.add(viewEndpoint);
+                viewReplicas.add(viewEndpoint);
         }
 
         // The replication strategy will be the same for the base and the view, as they must belong to the same keyspace.
         // Since the same replication strategy is used, the same placement should be used and we should get the same
         // number of replicas for all of the tokens in the ring.
-        assert baseEndpoints.size() == viewEndpoints.size() : "Replication strategy should have the same number of endpoints for the base and the view";
-        int baseIdx = baseEndpoints.indexOf(FBUtilities.getBroadcastAddressAndPort());
+        assert baseReplicas.size() == viewReplicas.size() : "Replication strategy should have the same number of endpoints for the base and the view";
+
+        int baseIdx = -1;
+        for (int i=0; i<baseReplicas.size(); i++)
+        {
+            if (baseReplicas.get(i).isLocal())
+            {
+                baseIdx = i;
+                break;
+            }
+        }
 
         if (baseIdx < 0)
             //This node is not a base replica of this key, so we return empty
             return Optional.empty();
 
-        return Optional.of(viewEndpoints.get(baseIdx));
+        return Optional.of(viewReplicas.get(baseIdx));
     }
 }

@@ -41,6 +41,8 @@ import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.apache.cassandra.io.sstable.format.SSTableReadsListener;
 import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputPlus;
+import org.apache.cassandra.locator.InetAddressAndPort;
+import org.apache.cassandra.locator.Replica;
 import org.apache.cassandra.metrics.TableMetrics;
 import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
@@ -50,6 +52,7 @@ import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.service.CacheService;
 import org.apache.cassandra.service.ClientState;
 import org.apache.cassandra.service.StorageProxy;
+import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.tracing.Tracing;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.SearchIterator;
@@ -1004,6 +1007,17 @@ public class SinglePartitionReadCommand extends ReadCommand implements SinglePar
     {
         return metadata().partitionKeyType.writtenLength(partitionKey().getKey())
              + ClusteringIndexFilter.serializer.serializedSize(clusteringIndexFilter(), version);
+    }
+
+    @Override
+    public Replica decorateEndpoint(InetAddressAndPort endpoint)
+    {
+        for (Replica replica: StorageService.instance.getNaturalAndPendingReplicas(metadata().keyspace, partitionKey.getToken()))
+        {
+            if (replica.getEndpoint().equals(endpoint))
+                return replica;
+        }
+        return null;
     }
 
     public boolean isLimitedToOnePartition()

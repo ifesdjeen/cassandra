@@ -22,16 +22,14 @@ import java.nio.ByteBuffer;
 import java.util.*;
 
 import com.google.common.collect.Iterators;
-import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
 import org.junit.*;
 
 import org.apache.cassandra.SchemaLoader;
 import org.apache.cassandra.Util;
 import org.apache.cassandra.locator.InetAddressAndPort;
-import org.apache.cassandra.service.reads.DataResolver;
-import org.apache.cassandra.service.reads.repair.BlockingReadRepair;
-import org.apache.cassandra.service.reads.repair.NoopReadRepair;
+import org.apache.cassandra.locator.ReplicaList;
+import org.apache.cassandra.locator.ReplicaUtils;
 import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.schema.ColumnMetadata;
 import org.apache.cassandra.config.DatabaseDescriptor;
@@ -47,8 +45,6 @@ import org.apache.cassandra.db.partitions.*;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.net.*;
 import org.apache.cassandra.schema.KeyspaceParams;
-import org.apache.cassandra.service.reads.repair.ReadRepair;
-import org.apache.cassandra.service.reads.repair.RepairListener;
 import org.apache.cassandra.service.reads.repair.TestableReadRepair;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FBUtilities;
@@ -121,15 +117,34 @@ public class DataResolverTest
         readRepair = new TestableReadRepair(command);
     }
 
-    @Test
-    public void testResolveNewerSingleRow() throws UnknownHostException
+    private static ReplicaList makeReplicas(int num)
     {
-        DataResolver resolver = new DataResolver(ks, command, ConsistencyLevel.ALL, 2, System.nanoTime(), readRepair);
-        InetAddressAndPort peer1 = peer();
+        ReplicaList replicas = new ReplicaList(num);
+        for (int i=0; i<num; i++)
+        {
+            try
+            {
+                replicas.add(ReplicaUtils.full(InetAddressAndPort.getByAddress(new byte[]{ 127, 0, 0, (byte) (i + 1) })));
+            }
+            catch (UnknownHostException e)
+            {
+                throw new AssertionError(e);
+            }
+        }
+        return replicas;
+    }
+
+    @Test
+    public void testResolveNewerSingleRow()
+    {
+        ReplicaList replicas = makeReplicas(2);
+
+        DataResolver resolver = new DataResolver(ks, command, ConsistencyLevel.ALL, replicas, replicas.size(), System.nanoTime(), readRepair);
+        InetAddressAndPort peer1 = replicas.get(0).getEndpoint();
         resolver.preprocess(readResponseMessage(peer1, iter(new RowUpdateBuilder(cfm, nowInSec, 0L, dk).clustering("1")
                                                                                                        .add("c1", "v1")
                                                                                                        .buildUpdate())));
-        InetAddressAndPort peer2 = peer();
+        InetAddressAndPort peer2 = replicas.get(1).getEndpoint();
         resolver.preprocess(readResponseMessage(peer2, iter(new RowUpdateBuilder(cfm, nowInSec, 1L, dk).clustering("1")
                                                                                                        .add("c1", "v2")
                                                                                                        .buildUpdate())));
@@ -155,13 +170,14 @@ public class DataResolverTest
     @Test
     public void testResolveDisjointSingleRow()
     {
-        DataResolver resolver = new DataResolver(ks, command, ConsistencyLevel.ALL, 2, System.nanoTime(), readRepair);
-        InetAddressAndPort peer1 = peer();
+        ReplicaList replicas = makeReplicas(2);
+        DataResolver resolver = new DataResolver(ks, command, ConsistencyLevel.ALL, replicas, replicas.size(), System.nanoTime(), readRepair);
+        InetAddressAndPort peer1 = replicas.get(0).getEndpoint();
         resolver.preprocess(readResponseMessage(peer1, iter(new RowUpdateBuilder(cfm, nowInSec, 0L, dk).clustering("1")
                                                                                                        .add("c1", "v1")
                                                                                                        .buildUpdate())));
 
-        InetAddressAndPort peer2 = peer();
+        InetAddressAndPort peer2 = replicas.get(1).getEndpoint();
         resolver.preprocess(readResponseMessage(peer2, iter(new RowUpdateBuilder(cfm, nowInSec, 1L, dk).clustering("1")
                                                                                                        .add("c2", "v2")
                                                                                                        .buildUpdate())));
@@ -191,12 +207,13 @@ public class DataResolverTest
     @Test
     public void testResolveDisjointMultipleRows() throws UnknownHostException
     {
-        DataResolver resolver = new DataResolver(ks, command, ConsistencyLevel.ALL, 2, System.nanoTime(), readRepair);
-        InetAddressAndPort peer1 = peer();
+        ReplicaList replicas = makeReplicas(2);
+        DataResolver resolver = new DataResolver(ks, command, ConsistencyLevel.ALL, replicas, replicas.size(), System.nanoTime(), readRepair);
+        InetAddressAndPort peer1 = replicas.get(0).getEndpoint();
         resolver.preprocess(readResponseMessage(peer1, iter(new RowUpdateBuilder(cfm, nowInSec, 0L, dk).clustering("1")
                                                                                                        .add("c1", "v1")
                                                                                                        .buildUpdate())));
-        InetAddressAndPort peer2 = peer();
+        InetAddressAndPort peer2 = replicas.get(1).getEndpoint();
         resolver.preprocess(readResponseMessage(peer2, iter(new RowUpdateBuilder(cfm, nowInSec, 1L, dk).clustering("2")
                                                                                                        .add("c2", "v2")
                                                                                                        .buildUpdate())));
@@ -237,7 +254,8 @@ public class DataResolverTest
     @Test
     public void testResolveDisjointMultipleRowsWithRangeTombstones()
     {
-        DataResolver resolver = new DataResolver(ks, command, ConsistencyLevel.ALL, 4, System.nanoTime(), readRepair);
+        ReplicaList replicas = makeReplicas(4);
+        DataResolver resolver = new DataResolver(ks, command, ConsistencyLevel.ALL, replicas, replicas.size(), System.nanoTime(), readRepair);
 
         RangeTombstone tombstone1 = tombstone("1", "11", 1, nowInSec);
         RangeTombstone tombstone2 = tombstone("3", "31", 1, nowInSec);
@@ -245,25 +263,25 @@ public class DataResolverTest
                                                                                   .addRangeTombstone(tombstone2)
                                                                                   .buildUpdate();
 
-        InetAddressAndPort peer1 = peer();
+        InetAddressAndPort peer1 = replicas.get(0).getEndpoint();
         UnfilteredPartitionIterator iter1 = iter(new RowUpdateBuilder(cfm, nowInSec, 1L, dk).addRangeTombstone(tombstone1)
                                                                                   .addRangeTombstone(tombstone2)
                                                                                   .buildUpdate());
         resolver.preprocess(readResponseMessage(peer1, iter1));
         // not covered by any range tombstone
-        InetAddressAndPort peer2 = peer();
+        InetAddressAndPort peer2 = replicas.get(1).getEndpoint();
         UnfilteredPartitionIterator iter2 = iter(new RowUpdateBuilder(cfm, nowInSec, 0L, dk).clustering("0")
                                                                                   .add("c1", "v0")
                                                                                   .buildUpdate());
         resolver.preprocess(readResponseMessage(peer2, iter2));
         // covered by a range tombstone
-        InetAddressAndPort peer3 = peer();
+        InetAddressAndPort peer3 = replicas.get(2).getEndpoint();
         UnfilteredPartitionIterator iter3 = iter(new RowUpdateBuilder(cfm, nowInSec, 0L, dk).clustering("10")
                                                                                   .add("c2", "v1")
                                                                                   .buildUpdate());
         resolver.preprocess(readResponseMessage(peer3, iter3));
         // range covered by rt, but newer
-        InetAddressAndPort peer4 = peer();
+        InetAddressAndPort peer4 = replicas.get(3).getEndpoint();
         UnfilteredPartitionIterator iter4 = iter(new RowUpdateBuilder(cfm, nowInSec, 2L, dk).clustering("3")
                                                                                   .add("one", "A")
                                                                                   .buildUpdate());
@@ -317,12 +335,13 @@ public class DataResolverTest
     @Test
     public void testResolveWithOneEmpty()
     {
-        DataResolver resolver = new DataResolver(ks, command, ConsistencyLevel.ALL, 2, System.nanoTime(), readRepair);
-        InetAddressAndPort peer1 = peer();
+        ReplicaList replicas = makeReplicas(2);
+        DataResolver resolver = new DataResolver(ks, command, ConsistencyLevel.ALL, replicas, replicas.size(), System.nanoTime(), readRepair);
+        InetAddressAndPort peer1 = replicas.get(0).getEndpoint();
         resolver.preprocess(readResponseMessage(peer1, iter(new RowUpdateBuilder(cfm, nowInSec, 1L, dk).clustering("1")
                                                                                                        .add("c2", "v2")
                                                                                                        .buildUpdate())));
-        InetAddressAndPort peer2 = peer();
+        InetAddressAndPort peer2 = replicas.get(1).getEndpoint();
         resolver.preprocess(readResponseMessage(peer2, EmptyIterators.unfilteredPartition(cfm)));
 
         try(PartitionIterator data = resolver.resolve())
@@ -346,10 +365,11 @@ public class DataResolverTest
     @Test
     public void testResolveWithBothEmpty()
     {
+        ReplicaList replicas = makeReplicas(2);
         TestableReadRepair readRepair = new TestableReadRepair(command);
-        DataResolver resolver = new DataResolver(ks, command, ConsistencyLevel.ALL, 2, System.nanoTime(), readRepair);
-        resolver.preprocess(readResponseMessage(peer(), EmptyIterators.unfilteredPartition(cfm)));
-        resolver.preprocess(readResponseMessage(peer(), EmptyIterators.unfilteredPartition(cfm)));
+        DataResolver resolver = new DataResolver(ks, command, ConsistencyLevel.ALL, replicas, replicas.size(), System.nanoTime(), readRepair);
+        resolver.preprocess(readResponseMessage(replicas.get(0).getEndpoint(), EmptyIterators.unfilteredPartition(cfm)));
+        resolver.preprocess(readResponseMessage(replicas.get(1).getEndpoint(), EmptyIterators.unfilteredPartition(cfm)));
 
         try(PartitionIterator data = resolver.resolve())
         {
@@ -362,13 +382,14 @@ public class DataResolverTest
     @Test
     public void testResolveDeleted()
     {
-        DataResolver resolver = new DataResolver(ks, command, ConsistencyLevel.ALL, 2, System.nanoTime(), readRepair);
+        ReplicaList replicas = makeReplicas(2);
+        DataResolver resolver = new DataResolver(ks, command, ConsistencyLevel.ALL, replicas, replicas.size(), System.nanoTime(), readRepair);
         // one response with columns timestamped before a delete in another response
-        InetAddressAndPort peer1 = peer();
+        InetAddressAndPort peer1 = replicas.get(0).getEndpoint();
         resolver.preprocess(readResponseMessage(peer1, iter(new RowUpdateBuilder(cfm, nowInSec, 0L, dk).clustering("1")
                                                                                                        .add("one", "A")
                                                                                                        .buildUpdate())));
-        InetAddressAndPort peer2 = peer();
+        InetAddressAndPort peer2 = replicas.get(1).getEndpoint();
         resolver.preprocess(readResponseMessage(peer2, fullPartitionDelete(cfm, dk, 1, nowInSec)));
 
         try (PartitionIterator data = resolver.resolve())
@@ -387,22 +408,23 @@ public class DataResolverTest
     @Test
     public void testResolveMultipleDeleted()
     {
-        DataResolver resolver = new DataResolver(ks, command, ConsistencyLevel.ALL, 4, System.nanoTime(), readRepair);
+        ReplicaList replicas = makeReplicas(4);
+        DataResolver resolver = new DataResolver(ks, command, ConsistencyLevel.ALL, replicas, replicas.size(), System.nanoTime(), readRepair);
         // deletes and columns with interleaved timestamp, with out of order return sequence
-        InetAddressAndPort peer1 = peer();
+        InetAddressAndPort peer1 = replicas.get(0).getEndpoint();
         resolver.preprocess(readResponseMessage(peer1, fullPartitionDelete(cfm, dk, 0, nowInSec)));
         // these columns created after the previous deletion
-        InetAddressAndPort peer2 = peer();
+        InetAddressAndPort peer2 = replicas.get(1).getEndpoint();
         resolver.preprocess(readResponseMessage(peer2, iter(new RowUpdateBuilder(cfm, nowInSec, 1L, dk).clustering("1")
                                                                                                        .add("one", "A")
                                                                                                        .add("two", "A")
                                                                                                        .buildUpdate())));
         //this column created after the next delete
-        InetAddressAndPort peer3 = peer();
+        InetAddressAndPort peer3 = replicas.get(2).getEndpoint();
         resolver.preprocess(readResponseMessage(peer3, iter(new RowUpdateBuilder(cfm, nowInSec, 3L, dk).clustering("1")
                                                                                                        .add("two", "B")
                                                                                                        .buildUpdate())));
-        InetAddressAndPort peer4 = peer();
+        InetAddressAndPort peer4 = replicas.get(3).getEndpoint();
         resolver.preprocess(readResponseMessage(peer4, fullPartitionDelete(cfm, dk, 2, nowInSec)));
 
         try(PartitionIterator data = resolver.resolve())
@@ -471,9 +493,10 @@ public class DataResolverTest
      */
     private void resolveRangeTombstonesOnBoundary(long timestamp1, long timestamp2)
     {
-        DataResolver resolver = new DataResolver(ks, command, ConsistencyLevel.ALL, 2, System.nanoTime(), readRepair);
-        InetAddressAndPort peer1 = peer();
-        InetAddressAndPort peer2 = peer();
+        ReplicaList replicas = makeReplicas(2);
+        DataResolver resolver = new DataResolver(ks, command, ConsistencyLevel.ALL, replicas, replicas.size(), System.nanoTime(), readRepair);
+        InetAddressAndPort peer1 = replicas.get(0).getEndpoint();
+        InetAddressAndPort peer2 = replicas.get(1).getEndpoint();
 
         // 1st "stream"
         RangeTombstone one_two    = tombstone("1", true , "2", false, timestamp1, nowInSec);
@@ -544,9 +567,10 @@ public class DataResolverTest
      */
     private void testRepairRangeTombstoneBoundary(int timestamp1, int timestamp2, int timestamp3) throws UnknownHostException
     {
-        DataResolver resolver = new DataResolver(ks, command, ConsistencyLevel.ALL, 2, System.nanoTime(), readRepair);
-        InetAddressAndPort peer1 = peer();
-        InetAddressAndPort peer2 = peer();
+        ReplicaList replicas = makeReplicas(2);
+        DataResolver resolver = new DataResolver(ks, command, ConsistencyLevel.ALL, replicas, replicas.size(), System.nanoTime(), readRepair);
+        InetAddressAndPort peer1 = replicas.get(0).getEndpoint();
+        InetAddressAndPort peer2 = replicas.get(1).getEndpoint();
 
         // 1st "stream"
         RangeTombstone one_nine = tombstone("0", true , "9", true, timestamp1, nowInSec);
@@ -595,9 +619,10 @@ public class DataResolverTest
     @Test
     public void testRepairRangeTombstoneWithPartitionDeletion()
     {
-        DataResolver resolver = new DataResolver(ks, command, ConsistencyLevel.ALL, 2, System.nanoTime(), readRepair);
-        InetAddressAndPort peer1 = peer();
-        InetAddressAndPort peer2 = peer();
+        ReplicaList replicas = makeReplicas(2);
+        DataResolver resolver = new DataResolver(ks, command, ConsistencyLevel.ALL, replicas, replicas.size(), System.nanoTime(), readRepair);
+        InetAddressAndPort peer1 = replicas.get(0).getEndpoint();
+        InetAddressAndPort peer2 = replicas.get(1).getEndpoint();
 
         // 1st "stream": just a partition deletion
         UnfilteredPartitionIterator iter1 = iter(PartitionUpdate.fullPartitionDelete(cfm, dk, 10, nowInSec));
@@ -633,9 +658,10 @@ public class DataResolverTest
     @Test
     public void testRepairRangeTombstoneWithPartitionDeletion2()
     {
-        DataResolver resolver = new DataResolver(ks, command, ConsistencyLevel.ALL, 2, System.nanoTime(), readRepair);
-        InetAddressAndPort peer1 = peer();
-        InetAddressAndPort peer2 = peer();
+        ReplicaList replicas = makeReplicas(2);
+        DataResolver resolver = new DataResolver(ks, command, ConsistencyLevel.ALL, replicas, replicas.size(), System.nanoTime(), readRepair);
+        InetAddressAndPort peer1 = replicas.get(0).getEndpoint();
+        InetAddressAndPort peer2 = replicas.get(1).getEndpoint();
 
         // 1st "stream": a partition deletion and a range tombstone
         RangeTombstone rt1 = tombstone("0", true , "9", true, 11, nowInSec);
@@ -714,9 +740,10 @@ public class DataResolverTest
     @Test
     public void testResolveComplexDelete()
     {
+        ReplicaList replicas = makeReplicas(2);
         ReadCommand cmd = Util.cmd(cfs2, dk).withNowInSeconds(nowInSec).build();
         TestableReadRepair readRepair = new TestableReadRepair(cmd);
-        DataResolver resolver = new DataResolver(ks, cmd, ConsistencyLevel.ALL, 2, System.nanoTime(), readRepair);
+        DataResolver resolver = new DataResolver(ks, cmd, ConsistencyLevel.ALL, replicas, replicas.size(), System.nanoTime(), readRepair);
 
         long[] ts = {100, 200};
 
@@ -725,7 +752,7 @@ public class DataResolverTest
         builder.addComplexDeletion(m, new DeletionTime(ts[0] - 1, nowInSec));
         builder.addCell(mapCell(0, 0, ts[0]));
 
-        InetAddressAndPort peer1 = peer();
+        InetAddressAndPort peer1 = replicas.get(0).getEndpoint();
         resolver.preprocess(readResponseMessage(peer1, iter(PartitionUpdate.singleRowUpdate(cfm2, dk, builder.build())), cmd));
 
         builder.newRow(Clustering.EMPTY);
@@ -734,7 +761,7 @@ public class DataResolverTest
         Cell expectedCell = mapCell(1, 1, ts[1]);
         builder.addCell(expectedCell);
 
-        InetAddressAndPort peer2 = peer();
+        InetAddressAndPort peer2 = replicas.get(1).getEndpoint();
         resolver.preprocess(readResponseMessage(peer2, iter(PartitionUpdate.singleRowUpdate(cfm2, dk, builder.build())), cmd));
 
         try(PartitionIterator data = resolver.resolve())
@@ -766,9 +793,10 @@ public class DataResolverTest
     @Test
     public void testResolveDeletedCollection()
     {
+        ReplicaList replicas = makeReplicas(2);
         ReadCommand cmd = Util.cmd(cfs2, dk).withNowInSeconds(nowInSec).build();
         TestableReadRepair readRepair = new TestableReadRepair(cmd);
-        DataResolver resolver = new DataResolver(ks, cmd, ConsistencyLevel.ALL, 2, System.nanoTime(), readRepair);
+        DataResolver resolver = new DataResolver(ks, cmd, ConsistencyLevel.ALL, replicas, replicas.size(), System.nanoTime(), readRepair);
 
         long[] ts = {100, 200};
 
@@ -777,14 +805,14 @@ public class DataResolverTest
         builder.addComplexDeletion(m, new DeletionTime(ts[0] - 1, nowInSec));
         builder.addCell(mapCell(0, 0, ts[0]));
 
-        InetAddressAndPort peer1 = peer();
+        InetAddressAndPort peer1 = replicas.get(0).getEndpoint();
         resolver.preprocess(readResponseMessage(peer1, iter(PartitionUpdate.singleRowUpdate(cfm2, dk, builder.build())), cmd));
 
         builder.newRow(Clustering.EMPTY);
         DeletionTime expectedCmplxDelete = new DeletionTime(ts[1] - 1, nowInSec);
         builder.addComplexDeletion(m, expectedCmplxDelete);
 
-        InetAddressAndPort peer2 = peer();
+        InetAddressAndPort peer2 = replicas.get(1).getEndpoint();
         resolver.preprocess(readResponseMessage(peer2, iter(PartitionUpdate.singleRowUpdate(cfm2, dk, builder.build())), cmd));
 
         try(PartitionIterator data = resolver.resolve())
@@ -809,9 +837,10 @@ public class DataResolverTest
     @Test
     public void testResolveNewCollection()
     {
+        ReplicaList replicas = makeReplicas(2);
         ReadCommand cmd = Util.cmd(cfs2, dk).withNowInSeconds(nowInSec).build();
         TestableReadRepair readRepair = new TestableReadRepair(cmd);
-        DataResolver resolver = new DataResolver(ks, cmd, ConsistencyLevel.ALL, 2, System.nanoTime(), readRepair);
+        DataResolver resolver = new DataResolver(ks, cmd, ConsistencyLevel.ALL, replicas, replicas.size(), System.nanoTime(), readRepair);
 
         long[] ts = {100, 200};
 
@@ -824,10 +853,10 @@ public class DataResolverTest
         builder.addCell(expectedCell);
 
         // empty map column
-        InetAddressAndPort peer1 = peer();
+        InetAddressAndPort peer1 = replicas.get(0).getEndpoint();
         resolver.preprocess(readResponseMessage(peer1, iter(PartitionUpdate.singleRowUpdate(cfm2, dk, builder.build())), cmd));
 
-        InetAddressAndPort peer2 = peer();
+        InetAddressAndPort peer2 = replicas.get(1).getEndpoint();
         resolver.preprocess(readResponseMessage(peer2, iter(PartitionUpdate.emptyUpdate(cfm2, dk))));
 
         try(PartitionIterator data = resolver.resolve())
@@ -858,9 +887,10 @@ public class DataResolverTest
     @Test
     public void testResolveNewCollectionOverwritingDeleted()
     {
+        ReplicaList replicas = makeReplicas(2);
         ReadCommand cmd = Util.cmd(cfs2, dk).withNowInSeconds(nowInSec).build();
         TestableReadRepair readRepair = new TestableReadRepair(cmd);
-        DataResolver resolver = new DataResolver(ks, cmd, ConsistencyLevel.ALL, 2, System.nanoTime(), readRepair);
+        DataResolver resolver = new DataResolver(ks, cmd, ConsistencyLevel.ALL, replicas, replicas.size(), System.nanoTime(), readRepair);
 
         long[] ts = {100, 200};
 
@@ -869,7 +899,7 @@ public class DataResolverTest
         builder.newRow(Clustering.EMPTY);
         builder.addComplexDeletion(m, new DeletionTime(ts[0] - 1, nowInSec));
 
-        InetAddressAndPort peer1 = peer();
+        InetAddressAndPort peer1 = replicas.get(0).getEndpoint();
         resolver.preprocess(readResponseMessage(peer1, iter(PartitionUpdate.singleRowUpdate(cfm2, dk, builder.build())), cmd));
 
         // newer, overwritten map column
@@ -879,7 +909,7 @@ public class DataResolverTest
         Cell expectedCell = mapCell(1, 1, ts[1]);
         builder.addCell(expectedCell);
 
-        InetAddressAndPort peer2 = peer();
+        InetAddressAndPort peer2 = replicas.get(1).getEndpoint();
         resolver.preprocess(readResponseMessage(peer2, iter(PartitionUpdate.singleRowUpdate(cfm2, dk, builder.build())), cmd));
 
         try(PartitionIterator data = resolver.resolve())
@@ -901,18 +931,6 @@ public class DataResolverTest
         assertEquals(expectedCmplxDelete, cd.complexDeletion());
 
         Assert.assertNull(readRepair.sent.get(peer2));
-    }
-
-    private InetAddressAndPort peer()
-    {
-        try
-        {
-            return InetAddressAndPort.getByAddress(new byte[]{ 127, 0, 0, (byte) addressSuffix++ });
-        }
-        catch (UnknownHostException e)
-        {
-            throw new RuntimeException(e);
-        }
     }
 
     private void assertRepairContainsDeletions(Mutation mutation,

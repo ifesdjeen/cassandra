@@ -34,6 +34,7 @@ import org.apache.cassandra.cql3.*;
 import org.apache.cassandra.cql3.restrictions.StatementRestrictions;
 import org.apache.cassandra.cql3.selection.RawSelector;
 import org.apache.cassandra.cql3.selection.Selectable;
+import org.apache.cassandra.db.Keyspace;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.db.marshal.DurationType;
 import org.apache.cassandra.db.marshal.ReversedType;
@@ -157,6 +158,9 @@ public class CreateViewStatement extends SchemaAlteringStatement
             throw new InvalidRequestException("Materialized views are not supported on counter tables");
         if (metadata.isView())
             throw new InvalidRequestException("Materialized views cannot be created against other materialized views");
+
+        if (Keyspace.open(metadata.keyspace).getReplicationStrategy().getReplicationFactor().trans > 0)
+            throw new InvalidRequestException("Materialized views are not supported on transiently replicated keyspaces");
 
         if (metadata.params.gcGraceSeconds == 0)
         {

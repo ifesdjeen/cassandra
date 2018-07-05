@@ -20,6 +20,8 @@ package org.apache.cassandra.cql3.statements;
 import org.apache.cassandra.audit.AuditLogEntryType;
 import org.apache.cassandra.auth.Permission;
 import org.apache.cassandra.config.DatabaseDescriptor;
+import org.apache.cassandra.db.ColumnFamilyStore;
+import org.apache.cassandra.db.Keyspace;
 import org.apache.cassandra.exceptions.*;
 import org.apache.cassandra.locator.AbstractReplicationStrategy;
 import org.apache.cassandra.locator.LocalStrategy;
@@ -83,11 +85,11 @@ public class AlterKeyspaceStatement extends SchemaAlteringStatement
             params.validate(name);
             if (params.replication.klass.equals(LocalStrategy.class))
                 throw new ConfigurationException("Unable to use given strategy class: LocalStrategy is reserved for internal use.");
-            warnIfIncreasingRF(ksm, params);
+            validateRFChanges(ksm, params);
         }
     }
 
-    private void warnIfIncreasingRF(KeyspaceMetadata ksm, KeyspaceParams params)
+    private void validateRFChanges(KeyspaceMetadata ksm, KeyspaceParams params)
     {
         AbstractReplicationStrategy oldStrategy = AbstractReplicationStrategy.createReplicationStrategy(ksm.name,
                                                                                                         ksm.params.replication.klass,
@@ -99,7 +101,35 @@ public class AlterKeyspaceStatement extends SchemaAlteringStatement
                                                                                                         StorageService.instance.getTokenMetadata(),
                                                                                                         DatabaseDescriptor.getEndpointSnitch(),
                                                                                                         params.replication.options);
-        if (newStrategy.getReplicationFactor() > oldStrategy.getReplicationFactor())
+
+        validateTransientReplication(oldStrategy, newStrategy);
+        warnIfIncreasingRF(oldStrategy, newStrategy);
+    }
+
+    private void validateTransientReplication(AbstractReplicationStrategy oldStrategy, AbstractReplicationStrategy newStrategy)
+    {
+        if (oldStrategy.getReplicationFactor().trans == 0 && newStrategy.getReplicationFactor().trans > 0)
+        {
+            Keyspace ks = Keyspace.open(keyspace());
+            for (ColumnFamilyStore cfs: ks.getColumnFamilyStores())
+            {
+                if (cfs.viewManager.hasViews())
+                {
+                    throw new ConfigurationException("Cannot use transient replication on keyspaces using materialized views");
+                }
+
+                if (cfs.indexManager.hasIndexes())
+                {
+                    throw new ConfigurationException("Cannot use transient replication on keyspaces using secondary indexes");
+                }
+            }
+
+        }
+    }
+
+    private void warnIfIncreasingRF(AbstractReplicationStrategy oldStrategy, AbstractReplicationStrategy newStrategy)
+    {
+        if (newStrategy.getReplicationFactor().full > oldStrategy.getReplicationFactor().full)
             ClientWarn.instance.warn("When increasing replication factor you need to run a full (-full) repair to distribute the data.");
     }
 
