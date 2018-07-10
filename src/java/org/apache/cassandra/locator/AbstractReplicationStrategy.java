@@ -251,7 +251,6 @@ public abstract class AbstractReplicationStrategy
         return replicaSet;
     }
 
-
     public ReplicaMultimap<Range<Token>, ReplicaSet> getRangeAddresses(TokenMetadata metadata)
     {
         ReplicaMultimap<Range<Token>, ReplicaSet> map = ReplicaMultimap.set();

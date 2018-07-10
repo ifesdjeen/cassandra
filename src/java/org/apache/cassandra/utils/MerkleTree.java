@@ -230,12 +230,12 @@ public class MerkleTree implements Serializable
      * @param rtree Second tree.
      * @return A list of the largest contiguous ranges where the given trees disagree.
      */
-    public static List<TreeRange> difference(MerkleTree ltree, MerkleTree rtree)
+    public static List<Range<Token>> difference(MerkleTree ltree, MerkleTree rtree)
     {
         if (!ltree.fullRange.equals(rtree.fullRange))
             throw new IllegalArgumentException("Difference only make sense on tree covering the same range (but " + ltree.fullRange + " != " + rtree.fullRange + ")");
 
-        List<TreeRange> diff = new ArrayList<>();
+        List<Range<Token>> diff = new ArrayList<>();
         TreeDifference active = new TreeDifference(ltree.fullRange.left, ltree.fullRange.right, (byte)0);
 
         Hashable lnode = ltree.find(active);
@@ -274,7 +274,7 @@ public class MerkleTree implements Serializable
      * @return FULLY_INCONSISTENT if active is inconsistent, PARTIALLY_INCONSISTENT if only a subrange is inconsistent.
      */
     @VisibleForTesting
-    static int differenceHelper(MerkleTree ltree, MerkleTree rtree, List<TreeRange> diff, TreeRange active)
+    static int differenceHelper(MerkleTree ltree, MerkleTree rtree, List<Range<Token>> diff, TreeRange active)
     {
         if (active.depth == Byte.MAX_VALUE)
             return CONSISTENT;

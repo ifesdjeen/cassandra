@@ -21,6 +21,7 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.Iterables;
 import com.google.common.util.concurrent.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -28,6 +29,10 @@ import org.slf4j.LoggerFactory;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.Keyspace;
+import org.apache.cassandra.locator.AbstractReplicationStrategy;
+import org.apache.cassandra.locator.Replica;
+import org.apache.cassandra.locator.ReplicaMultimap;
+import org.apache.cassandra.locator.ReplicaSet;
 import org.apache.cassandra.repair.asymmetric.DifferenceHolder;
 import org.apache.cassandra.repair.asymmetric.HostDifferences;
 import org.apache.cassandra.repair.asymmetric.PreferedNodeFilter;
@@ -38,6 +43,8 @@ import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.tracing.Tracing;
 import org.apache.cassandra.utils.FBUtilities;
+import org.apache.cassandra.utils.MerkleTree;
+import org.apache.cassandra.utils.MerkleTrees;
 import org.apache.cassandra.utils.Pair;
 
 /**
@@ -83,6 +90,7 @@ public class RepairJob extends AbstractFuture<RepairResult> implements Runnable
         Keyspace ks = Keyspace.open(desc.keyspace);
         ColumnFamilyStore cfs = ks.getColumnFamilyStore(desc.columnFamily);
         cfs.metric.repairsStarted.inc();
+
         List<InetAddressAndPort> allEndpoints = new ArrayList<>(session.endpoints);
         allEndpoints.add(FBUtilities.getBroadcastAddressAndPort());
 
@@ -110,16 +118,9 @@ public class RepairJob extends AbstractFuture<RepairResult> implements Runnable
             }
 
             // When all snapshot complete, send validation requests
-            validations = Futures.transformAsync(allSnapshotTasks, new AsyncFunction<List<InetAddressAndPort>, List<TreeResponse>>()
-            {
-                public ListenableFuture<List<TreeResponse>> apply(List<InetAddressAndPort> endpoints)
-                {
-                    if (parallelismDegree == RepairParallelism.SEQUENTIAL)
-                        return sendSequentialValidationRequest(endpoints);
-                    else
-                        return sendDCAwareValidationRequest(endpoints);
-                }
-            }, taskExecutor);
+            validations = Futures.transformAsync(allSnapshotTasks,
+                                                 parallelismDegree == RepairParallelism.SEQUENTIAL ? this::sendSequentialValidationRequest : this::sendDCAwareValidationRequest,
+                                                 taskExecutor);
         }
         else
         {
@@ -128,7 +129,8 @@ public class RepairJob extends AbstractFuture<RepairResult> implements Runnable
         }
 
         // When all validations complete, submit sync tasks
-        ListenableFuture<List<SyncStat>> syncResults = Futures.transformAsync(validations, optimiseStreams && !session.pullRepair ? optimisedSyncing() : standardSyncing(), taskExecutor);
+        // TODO: optimiseStreams && !session.pullRepair ? optimisedSyncing()
+        ListenableFuture<List<SyncStat>> syncResults = Futures.transformAsync(validations, this::standardSyncing, taskExecutor);
 
         // When all sync complete, set the final result
         Futures.addCallback(syncResults, new FutureCallback<List<SyncStat>>()
@@ -160,40 +162,116 @@ public class RepairJob extends AbstractFuture<RepairResult> implements Runnable
         }, taskExecutor);
     }
 
-    private AsyncFunction<List<TreeResponse>, List<SyncStat>> standardSyncing()
+    private ListenableFuture<List<SyncStat>> standardSyncing(List<TreeResponse> trees)
     {
-        return trees ->
-        {
-            InetAddressAndPort local = FBUtilities.getLocalAddressAndPort();
+        AbstractReplicationStrategy replicationStrategy = Keyspace.open(desc.keyspace).getReplicationStrategy();
+        ReplicaMultimap<InetAddressAndPort, ReplicaSet> endpointReplicas = replicationStrategy.getAddressReplicas();
 
-            List<SyncTask> syncTasks = new ArrayList<>();
-            // We need to difference all trees one against another
-            for (int i = 0; i < trees.size() - 1; ++i)
+        List<AbstractSyncTask> syncTasks = new ArrayList<>();
+        // We need to difference all trees one against another
+        for (int i = 0; i < trees.size() - 1; ++i)
+        {
+            TreeResponse treeResponse1 = trees.get(i);
+            Map<Range<Token>, Replica> rangeMap1 = new HashMap<>();
+            for (Replica replica : endpointReplicas.get(treeResponse1.endpoint))
+                assert rangeMap1.put(replica.getRange(), replica) == null : "Duplicate range mapping";
+
+            for (int j = i + 1; j < trees.size(); ++j)
             {
-                TreeResponse r1 = trees.get(i);
-                for (int j = i + 1; j < trees.size(); ++j)
+                TreeResponse treeResponse2 = trees.get(j);
+                Map<Range<Token>, Replica> rangeMap2 = new HashMap<>();
+                for (Replica replica : endpointReplicas.get(treeResponse2.endpoint))
+                    assert rangeMap2.put(replica.getRange(), replica) == null : "Duplicate range mapping";
+
+                if (!Iterables.all(rangeMap1.values(), Replica::isTransient) || !Iterables.all(rangeMap1.values(), Replica::isTransient))
                 {
-                    TreeResponse r2 = trees.get(j);
-                    SyncTask task;
-                    if (r1.endpoint.equals(local) || r2.endpoint.equals(local))
+                    // For transient nodes, we go one granularity deeper and send tasks range-wise
+                    // TODO: potentially, we could do some coalescing here. Question is only if we would like to do that at this point
+                    for (Map.Entry<Range<Token>, MerkleTree> entry : treeResponse1.trees)
                     {
-                        task = new LocalSyncTask(desc, r1, r2, isIncremental ? desc.parentSessionId : null, session.pullRepair, session.previewKind);
+                        Range<Token> range = entry.getKey();
+                        Replica replica1 = rangeMap1.get(range);
+                        Replica replica2 = rangeMap2.get(range);
+                        MerkleTree mk1 = entry.getValue();
+                        MerkleTree mk2 = treeResponse2.trees.getMerkleTree(range);
+
+                        AbstractSyncTask task = createSyncTask(replica1.getEndpoint(), replica2.getEndpoint(),
+                                                               replica1.isTransient(), replica2.isTransient(),
+                                                               MerkleTree.difference(mk1, mk2));
+                        syncTasks.add(task);
+                        taskExecutor.submit(task);
                     }
-                    else
-                    {
-                        task = new RemoteSyncTask(desc, r1, r2, session.previewKind);
-                        // RemoteSyncTask expects SyncComplete message sent back.
-                        // Register task to RepairSession to receive response.
-                        session.waitForSync(Pair.create(desc, new NodePair(r1.endpoint, r2.endpoint)), (RemoteSyncTask) task);
-                    }
+                }
+                else
+                {
+                    AbstractSyncTask task = createSyncTask(treeResponse1.endpoint, treeResponse2.endpoint,
+                                                           false, false,
+                                                           MerkleTrees.difference(treeResponse1.trees, treeResponse2.trees));
                     syncTasks.add(task);
                     taskExecutor.submit(task);
                 }
             }
-            return Futures.allAsList(syncTasks);
-        };
+        }
+        return Futures.allAsList(syncTasks);
     }
 
+    // TODO: document!
+    public AbstractSyncTask createSyncTask(InetAddressAndPort endpoint1, InetAddressAndPort endpoint2,
+                                           boolean isTrans1, boolean isTrans2, List<Range<Token>> difference)
+    {
+        UUID pendingRepair = isIncremental ? desc.parentSessionId : null;
+        AbstractSyncTask task = createSyncTask(endpoint1, endpoint2, isTrans1, isTrans2,
+                                               difference,
+                                               pendingRepair, desc, session.pullRepair, previewKind);
+
+        if (task instanceof CompletableRemoteSyncTask)
+        {
+            CompletableRemoteSyncTask remoteSyncTask = (CompletableRemoteSyncTask) task;
+            // RemoteSyncTask expects SyncComplete message sent back.
+            // Register task to RepairSession to receive response.
+            session.waitForSync(Pair.create(desc, remoteSyncTask.nodes()), (CompletableRemoteSyncTask) task);
+        }
+
+        return task;
+    }
+
+    // TODO: test!
+    // TODO: check if MerkleTree.difference is associative
+    public static AbstractSyncTask createSyncTask(InetAddressAndPort endpoint1, InetAddressAndPort endpoint2,
+                                                  boolean isTrans1, boolean isTrans2,
+                                                  List<Range<Token>> diff, UUID pendingRepair, RepairJobDesc desc,
+                                                  boolean pullRepair, PreviewKind previewKind)
+    {
+        if (FBUtilities.isLocal(endpoint1) || FBUtilities.isLocal(endpoint2))
+        {
+            if (isTrans1 && isTrans2)
+                return null;
+
+            if (isTrans1)
+                return new AsymmetricLocalSyncTask(desc, endpoint1, diff, pendingRepair, previewKind);
+
+            if (isTrans2)
+                return new AsymmetricLocalSyncTask(desc, endpoint1, diff, pendingRepair, previewKind);
+
+            return new LocalSyncTask(desc, endpoint1, endpoint2, diff, pendingRepair, pullRepair, previewKind);
+        }
+        else
+        {
+            // Two transient nodes should not sync
+            if (isTrans1 && isTrans2)
+                return null;
+
+            if (isTrans1)
+                return new AsymmetricRemoteSyncTask(desc, endpoint2, endpoint1, diff, previewKind);
+
+            if (isTrans2)
+                return new AsymmetricRemoteSyncTask(desc, endpoint1, endpoint2, diff, previewKind);
+
+            return new RemoteSyncTask(desc, endpoint1, endpoint2, diff, previewKind);
+        }
+    }
+
+    // TODO:
     private AsyncFunction<List<TreeResponse>, List<SyncStat>> optimisedSyncing()
     {
         return trees ->
@@ -373,4 +451,18 @@ public class RepairJob extends AbstractFuture<RepairResult> implements Runnable
         }
         return Futures.allAsList(tasks);
     }
+
+    public static class SyncRange {
+        public final Replica replica;
+        public final InetAddressAndPort endpoint;
+        public final MerkleTree tree;
+
+        public SyncRange(Replica replica, MerkleTree merkleTree) {
+            this.replica = replica;
+            this.tree = merkleTree;
+            this.endpoint = replica.getEndpoint();
+        }
+
+    }
+
 }

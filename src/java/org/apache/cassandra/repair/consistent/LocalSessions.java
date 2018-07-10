@@ -52,6 +52,9 @@ import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.ColumnFamilyStore;
+import org.apache.cassandra.locator.Replica;
+import org.apache.cassandra.locator.ReplicaSet;
+import org.apache.cassandra.locator.TokenMetadata;
 import org.apache.cassandra.repair.KeyspaceRepairManager;
 import org.apache.cassandra.schema.Schema;
 import org.apache.cassandra.db.marshal.UTF8Type;
@@ -354,7 +357,7 @@ public class LocalSessions
                                        session.coordinator.address,
                                        session.coordinator.port,
                                        session.participants.stream().map(participant -> participant.address).collect(Collectors.toSet()),
-                                       session.participants.stream().map(participant -> participant.toString()).collect(Collectors.toSet()),
+                                       session.participants.stream().map(InetAddressAndPort::toString).collect(Collectors.toSet()),
                                        serializeRanges(session.ranges),
                                        tableIdToUuid(session.tableIds));
     }

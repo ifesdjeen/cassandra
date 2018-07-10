@@ -17,7 +17,15 @@
  */
 package org.apache.cassandra.repair;
 
+import java.util.HashMap;
+import java.util.Map;
+
+import org.apache.cassandra.dht.Range;
+import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.locator.InetAddressAndPort;
+import org.apache.cassandra.locator.Replica;
+import org.apache.cassandra.locator.ReplicaSet;
+import org.apache.cassandra.utils.MerkleTree;
 import org.apache.cassandra.utils.MerkleTrees;
 
 /**
@@ -25,12 +33,15 @@ import org.apache.cassandra.utils.MerkleTrees;
  */
 public class TreeResponse
 {
+    // source endpoint
     public final InetAddressAndPort endpoint;
     public final MerkleTrees trees;
 
     public TreeResponse(InetAddressAndPort endpoint, MerkleTrees trees)
     {
-        this.endpoint = endpoint;
         this.trees = trees;
+        this.endpoint = endpoint;
     }
+
+
 }

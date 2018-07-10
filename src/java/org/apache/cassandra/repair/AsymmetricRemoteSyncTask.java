@@ -33,9 +33,12 @@ import org.apache.cassandra.utils.FBUtilities;
 
 public class AsymmetricRemoteSyncTask extends AsymmetricSyncTask implements CompletableRemoteSyncTask
 {
+    private NodePair nodes;
+
     public AsymmetricRemoteSyncTask(RepairJobDesc desc, InetAddressAndPort fetchNode, InetAddressAndPort fetchFrom, List<Range<Token>> rangesToFetch, PreviewKind previewKind)
     {
         super(desc, fetchNode, fetchFrom, rangesToFetch, previewKind);
+        this.nodes = new NodePair(fetchNode, fetchFrom);
     }
 
     public void startSync(List<Range<Token>> rangesToFetch)
@@ -56,5 +59,11 @@ public class AsymmetricRemoteSyncTask extends AsymmetricSyncTask implements Comp
         {
             setException(new RepairException(desc, previewKind, String.format("Sync failed between %s and %s", fetchingNode, fetchFrom)));
         }
+    }
+
+    @Override
+    public NodePair nodes()
+    {
+        return nodes;
     }
 }

@@ -28,6 +28,7 @@ import org.apache.cassandra.db.SystemKeyspace;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.locator.InetAddressAndPort;
+import org.apache.cassandra.locator.Replica;
 import org.apache.cassandra.streaming.PreviewKind;
 import org.apache.cassandra.streaming.ProgressInfo;
 import org.apache.cassandra.streaming.StreamEvent;
@@ -38,6 +39,7 @@ import org.apache.cassandra.streaming.StreamOperation;
 import org.apache.cassandra.tracing.TraceState;
 import org.apache.cassandra.tracing.Tracing;
 import org.apache.cassandra.utils.FBUtilities;
+import org.apache.cassandra.utils.MerkleTree;
 
 /**
  * LocalSyncTask performs streaming between local(coordinator) node and remote replica.
@@ -51,9 +53,9 @@ public class LocalSyncTask extends SyncTask implements StreamEventHandler
     private final UUID pendingRepair;
     private final boolean pullRepair;
 
-    public LocalSyncTask(RepairJobDesc desc, TreeResponse r1, TreeResponse r2, UUID pendingRepair, boolean pullRepair, PreviewKind previewKind)
+    public LocalSyncTask(RepairJobDesc desc, InetAddressAndPort endpoint1, InetAddressAndPort endpoint2, List<Range<Token>> differences, UUID pendingRepair, boolean pullRepair, PreviewKind previewKind)
     {
-        super(desc, r1, r2, previewKind);
+        super(desc, endpoint1, endpoint2, differences, previewKind);
         this.pendingRepair = pendingRepair;
         this.pullRepair = pullRepair;
     }
@@ -83,7 +85,7 @@ public class LocalSyncTask extends SyncTask implements StreamEventHandler
     {
         InetAddressAndPort local = FBUtilities.getBroadcastAddressAndPort();
         // We can take anyone of the node as source or destination, however if one is localhost, we put at source to avoid a forwarding
-        InetAddressAndPort dst = r2.endpoint.equals(local) ? r1.endpoint : r2.endpoint;
+        InetAddressAndPort dst = endpoint2.equals(local) ? endpoint1 : endpoint2;
 
         String message = String.format("Performing streaming repair of %d ranges with %s", differences.size(), dst);
         logger.info("{} {}", previewKind.logPrefix(desc.sessionId), message);
@@ -120,7 +122,7 @@ public class LocalSyncTask extends SyncTask implements StreamEventHandler
 
     public void onSuccess(StreamState result)
     {
-        String message = String.format("Sync complete using session %s between %s and %s on %s", desc.sessionId, r1.endpoint, r2.endpoint, desc.columnFamily);
+        String message = String.format("Sync complete using session %s between %s and %s on %s", desc.sessionId, endpoint1, endpoint2, desc.columnFamily);
         logger.info("{} {}", previewKind.logPrefix(desc.sessionId), message);
         Tracing.traceRepair(message);
         set(stat.withSummaries(result.createSummaries()));

@@ -159,6 +159,11 @@ public class FBUtilities
         return broadcastInetAddressAndPort;
     }
 
+    public static boolean isLocal(InetAddressAndPort addr)
+    {
+        return addr.equals(getBroadcastAddressAndPort());
+    }
+
     /**
      * <b>THIS IS FOR TESTING ONLY!!</b>
      */

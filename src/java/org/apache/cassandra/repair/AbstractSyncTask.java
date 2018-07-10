@@ -18,12 +18,8 @@
 
 package org.apache.cassandra.repair;
 
-import java.util.List;
+import com.google.common.util.concurrent.AbstractFuture;
 
-import org.apache.cassandra.streaming.SessionSummary;
-
-public interface CompletableRemoteSyncTask
+public abstract class AbstractSyncTask extends AbstractFuture<SyncStat> implements Runnable
 {
-    void syncComplete(boolean success, List<SessionSummary> summaries);
-    public NodePair nodes();
 }

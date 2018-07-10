@@ -437,7 +437,7 @@ public class MerkleTreeTest
         mt.get(partitioner.midpoint(leftmost.left, leftmost.right)).hash("even more arbitrary!".getBytes());
 
         // trees should disagree for (leftmost.left, middle.right]
-        List<TreeRange> diffs = MerkleTree.difference(mt, mt2);
+        List<Range<Token>> diffs = MerkleTree.difference(mt, mt2);
         assertEquals(diffs + " contains wrong number of differences:", 1, diffs.size());
         assertTrue(diffs.contains(new Range<>(leftmost.left, middle.right)));
     }
@@ -470,7 +470,7 @@ public class MerkleTreeTest
             tree.addHash(new RowHash(range.right, h2, h2.length));
         }
 
-        List<TreeRange> diffs = MerkleTree.difference(ltree, rtree);
+        List<Range<Token>> diffs = MerkleTree.difference(ltree, rtree);
         assertEquals(Lists.newArrayList(range), diffs);
         assertEquals(MerkleTree.FULLY_INCONSISTENT, MerkleTree.differenceHelper(ltree, rtree, new ArrayList<>(), new MerkleTree.TreeDifference(ltree.fullRange.left, ltree.fullRange.right, (byte)0)));
     }
