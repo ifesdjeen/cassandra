@@ -171,14 +171,14 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         return getReplicasForEndpoint(keyspaceName, FBUtilities.getBroadcastAddressAndPort());
     }
 
-    public ReplicaList getLocalAndPendingReplicas(String ks)
+    public List<Range<Token>> getLocalAndPendingRanges(String ks)
     {
         InetAddressAndPort broadcastAddress = FBUtilities.getBroadcastAddressAndPort();
         Keyspace keyspace = Keyspace.open(ks);
-        ReplicaList replicas = new ReplicaList();
-        replicas.addAll(keyspace.getReplicationStrategy().getAddressReplicas().get(broadcastAddress));
-        replicas.addAll(getTokenMetadata().getPendingRanges(ks, broadcastAddress));
-        return replicas.normalizeByRange();
+        List<Range<Token>> ranges = new ArrayList<>();
+        Iterables.addAll(ranges, keyspace.getReplicationStrategy().getAddressReplicas().get(broadcastAddress).asRanges());
+        Iterables.addAll(ranges, getTokenMetadata().getPendingRanges(ks, broadcastAddress).asRanges());
+        return ranges;
     }
 
     public Collection<Range<Token>> getPrimaryRanges(String keyspace)

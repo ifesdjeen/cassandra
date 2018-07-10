@@ -25,7 +25,15 @@ import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.BiConsumer;
+import java.util.function.BinaryOperator;
+import java.util.function.Function;
+import java.util.function.Supplier;
+import java.util.stream.Collector;
+import java.util.stream.Stream;
 
+import com.google.common.base.Preconditions;
+import com.google.common.base.Predicate;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Sets;
@@ -33,6 +41,53 @@ import com.google.common.collect.Sets;
 public class ReplicaSet extends ReplicaCollection
 {
     static final ReplicaSet EMPTY = new ReplicaSet(ImmutableSet.of());
+
+    public static ReplicaSet empty()
+    {
+        return EMPTY;
+    }
+
+    private static final Set<Collector.Characteristics> SET_COLLECTOR_CHARACTERISTICS = ImmutableSet.of(Collector.Characteristics.UNORDERED, Collector.Characteristics.IDENTITY_FINISH);
+    public static final Collector<Replica, ReplicaSet, ReplicaSet> COLLECTOR = new Collector<Replica, ReplicaSet, ReplicaSet>()
+    {
+        private final Supplier<ReplicaSet> supplier = ReplicaSet::new;
+        private final BiConsumer<ReplicaSet, Replica> accumulator = (set, replica) -> set.add(replica);
+        private final BinaryOperator<ReplicaSet> combiner = (a, b) -> {
+            if (a.size() > b.size())
+            {
+                a.addAll(b);
+                return a;
+            }
+            b.addAll(a);
+            return b;
+        };
+        private final Function<ReplicaSet, ReplicaSet> finisher = set -> set;
+
+        public Supplier<ReplicaSet> supplier()
+        {
+            return supplier;
+        }
+
+        public BiConsumer<ReplicaSet, Replica> accumulator()
+        {
+            return accumulator;
+        }
+
+        public BinaryOperator<ReplicaSet> combiner()
+        {
+            return combiner;
+        }
+
+        public Function<ReplicaSet, ReplicaSet> finisher()
+        {
+            return finisher;
+        }
+
+        public Set<Characteristics> characteristics()
+        {
+            return SET_COLLECTOR_CHARACTERISTICS;
+        }
+    };
 
     private final Set<Replica> replicaSet;
 
@@ -71,14 +126,9 @@ public class ReplicaSet extends ReplicaCollection
     }
 
     @Override
-    public String toString()
-    {
-        return replicaSet.toString();
-    }
-
-    @Override
     public boolean add(Replica replica)
     {
+        Preconditions.checkNotNull(replica);
         return replicaSet.add(replica);
     }
 
@@ -91,6 +141,7 @@ public class ReplicaSet extends ReplicaCollection
     @Override
     public void removeEndpoint(InetAddressAndPort endpoint)
     {
+        Preconditions.checkNotNull(endpoint);
         Iterator<Replica> iterator = replicaSet.iterator();
         while (iterator.hasNext())
         {
@@ -105,6 +156,7 @@ public class ReplicaSet extends ReplicaCollection
     @Override
     public void removeReplica(Replica replica)
     {
+        Preconditions.checkNotNull(replica);
         replicaSet.remove(replica);
     }
 
@@ -141,6 +193,17 @@ public class ReplicaSet extends ReplicaCollection
 
     }
 
+    public ReplicaSet filter(Predicate<Replica>... predicates)
+    {
+        return filter(predicates, ReplicaSet::new);
+    }
+
+    @Override
+    public Stream<Replica> stream()
+    {
+        return replicaSet.stream();
+    }
+
     public static ReplicaSet immutableCopyOf(ReplicaSet from)
     {
         return new ReplicaSet(ImmutableSet.copyOf(from.replicaSet));
@@ -149,6 +212,23 @@ public class ReplicaSet extends ReplicaCollection
     public static ReplicaSet immutableCopyOf(ReplicaCollection from)
     {
         return new ReplicaSet(ImmutableSet.<Replica>builder().addAll(from).build());
+    }
+
+    public static ReplicaSet of(Replica replica)
+    {
+        HashSet<Replica> set = Sets.newHashSetWithExpectedSize(1);
+        set.add(replica);
+        return new ReplicaSet(set);
+    }
+
+    public static ReplicaSet of(Replica... replicas)
+    {
+        ReplicaSet set = new ReplicaSet(Sets.newHashSetWithExpectedSize(replicas.length));
+        for (Replica replica : replicas)
+        {
+            set.add(replica);
+        }
+        return set;
     }
 
     public static ReplicaSet ordered()

@@ -20,9 +20,15 @@ package org.apache.cassandra.locator;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
+import java.util.function.Supplier;
+import java.util.stream.Stream;
 
+import com.google.common.base.Preconditions;
+import com.google.common.base.Predicate;
 import com.google.common.collect.Collections2;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Sets;
@@ -43,6 +49,7 @@ public abstract class ReplicaCollection implements Iterable<Replica>
     public abstract void removeEndpoint(InetAddressAndPort endpoint);
     public abstract void removeReplica(Replica replica);
     public abstract int size();
+    public abstract Stream<Replica> stream();
     protected abstract Collection<Replica> getUnmodifiableCollection();
 
     public Iterable<InetAddressAndPort> asEndpoints()
@@ -100,8 +107,14 @@ public abstract class ReplicaCollection implements Iterable<Replica>
         return Iterables.transform(Iterables.filter(this, Replica::isFull), Replica::getRange);
     }
 
+    public Iterable<Range<Token>>  transientRanges()
+    {
+        return Iterables.transform(Iterables.filter(this, Replica::isTransient), Replica::getRange);
+    }
+
     public boolean containsEndpoint(InetAddressAndPort endpoint)
     {
+        Preconditions.checkNotNull(endpoint);
         for (Replica replica: this)
         {
             if (replica.getEndpoint().equals(endpoint))
@@ -110,27 +123,9 @@ public abstract class ReplicaCollection implements Iterable<Replica>
         return false;
     }
 
-    /**
-     * Remove by endpoint. Ranges are ignored when determining what to remove
-     */
-    public void removeEndpoints(ReplicaCollection toRemove)
-    {
-        if (Iterables.all(this, Replica::isFull) && Iterables.all(toRemove, Replica::isFull))
-        {
-            for (Replica remove: toRemove)
-            {
-                removeEndpoint(remove.getEndpoint());
-            }
-        }
-        else
-        {
-            // FIXME: add support for transient replicas
-            throw new UnsupportedOperationException("transient replicas are currently unsupported");
-        }
-    }
-
     public void removeReplicas(ReplicaCollection toRemove)
     {
+        Preconditions.checkNotNull(toRemove);
         if (Iterables.all(this, Replica::isFull) && Iterables.all(toRemove, Replica::isFull))
         {
             for (Replica remove: toRemove)
@@ -145,8 +140,127 @@ public abstract class ReplicaCollection implements Iterable<Replica>
         }
     }
 
+    public void removeEndpoints(ReplicaCollection toRemove)
+    {
+        Preconditions.checkNotNull(toRemove);
+        if (Iterables.all(this, Replica::isFull) && Iterables.all(toRemove, Replica::isFull))
+        {
+            for (Replica remove: toRemove)
+            {
+                removeEndpoint(remove.getEndpoint());
+            }
+        }
+        else
+        {
+            // FIXME: add support for transient replicas
+            throw new UnsupportedOperationException("transient replicas are currently unsupported");
+        }
+    }
+
     public boolean isEmpty()
     {
         return size() == 0;
     }
+
+    @Override
+    public String toString()
+    {
+        Iterator<Replica> i = iterator();
+        if (!i.hasNext())
+            return "[]";
+
+        StringBuilder sb = new StringBuilder();
+        sb.append('[');
+        while (true)
+        {
+            Replica replica = i.next();
+            sb.append(replica);
+            if (!i.hasNext())
+                return sb.append(']').toString();
+            sb.append(", ");
+        }
+    }
+
+    public boolean noneMatch(Predicate<Replica> predicate)
+    {
+        return !anyMatch(predicate);
+    }
+
+    public boolean anyMatch(Predicate<Replica> predicate)
+    {
+        Preconditions.checkNotNull(predicate);
+        for (Replica replica : this)
+        {
+            if (predicate.apply(replica))
+                return true;
+        }
+        return false;
+    }
+
+    public boolean allMatch(Predicate<Replica> predicate)
+    {
+        Preconditions.checkNotNull(predicate);
+        for (Replica replica : this)
+        {
+            if (!predicate.apply(replica))
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    public <T extends ReplicaCollection> T filter(java.util.function.Predicate<Replica> predicates[], Supplier<T> collectorSupplier)
+    {
+        Preconditions.checkNotNull(predicates);
+        Preconditions.checkNotNull(collectorSupplier);
+        T newReplicas = collectorSupplier.get();
+        for (Replica replica : this)
+        {
+            boolean success = true;
+            for (java.util.function.Predicate<Replica> predicate : predicates)
+            {
+                if (!predicate.test(replica))
+                {
+                    success = false;
+                    break;
+                }
+            }
+
+            if (success)
+            {
+                newReplicas.add(replica);
+            }
+        }
+        return newReplicas;
+    }
+
+    public long count(Predicate<Replica> predicate)
+    {
+        Preconditions.checkNotNull(predicate);
+        long count = 0;
+        for (Replica replica : this)
+        {
+            if (predicate.apply(replica))
+            {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    public Optional<Replica> findFirst(Predicate<Replica> predicate)
+    {
+        Preconditions.checkNotNull(predicate);
+        for (Replica replica : this)
+        {
+            if (predicate.apply(replica))
+            {
+                return Optional.of(replica);
+            }
+        }
+
+        return Optional.empty();
+    }
+
 }

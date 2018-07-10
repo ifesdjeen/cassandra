@@ -19,29 +19,37 @@
 package org.apache.cassandra.locator;
 
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Iterables;
+import com.google.common.collect.Lists;
 
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.utils.FBUtilities;
 
 /**
- * Decorated Endpoint
+ * A Replica is an endpoint, a token range that endpoint replicates (or used to replicate) and whether it replicates
+ * that range fully or transiently. Generally it's a bad idea to pass around ranges when code depends on the transientness
+ * of the replication. That means you should avoid unwrapping and rewrapping these things and think hard about subtraction
+ * and such and what the result is WRT to transientness.
+ *
+ * Definitely avoid creating fake Replicas with misinformation about endpoints, ranges, or transientness.
  */
-public class Replica
+public class Replica implements Comparable<Replica>
 {
-    private final InetAddressAndPort endpoint;
     private final Range<Token> range;
+    private final InetAddressAndPort endpoint;
     private final boolean full;
 
     public Replica(InetAddressAndPort endpoint, Range<Token> range, boolean full)
     {
         Preconditions.checkNotNull(endpoint);
+        Preconditions.checkNotNull(range);
         this.endpoint = endpoint;
         this.range = range;
         this.full = full;
@@ -137,13 +145,15 @@ public class Replica
         }
     }
 
-    public void addNormalizeByRange(ReplicaList dst)
+    public ReplicaSet subtractIgnoreTransientStatus(Replica that)
     {
-        List<Range<Token>> normalized = Range.normalize(Collections.singleton(getRange()));
-        for (Range<Token> normalizedRange : normalized)
+        Set<Range<Token>> ranges = range.subtract(that.range);
+        ReplicaSet replicatedRanges = new ReplicaSet(ranges.size());
+        for (Range<Token> subrange : ranges)
         {
-            dst.add(new Replica(getEndpoint(), normalizedRange, isFull()));
+            replicatedRanges.add(decorateSubrange(subrange));
         }
+        return replicatedRanges;
     }
 
     public boolean contains(Range<Token> that)
@@ -160,6 +170,37 @@ public class Replica
     {
         Preconditions.checkArgument(range.contains(subrange));
         return new Replica(getEndpoint(), subrange, isFull());
+    }
+
+    public static Replica full(InetAddressAndPort endpoint, Range<Token> range)
+    {
+        return new Replica(endpoint, range, true);
+    }
+
+    public static Replica full(InetAddressAndPort endpoint, Token start, Token end)
+    {
+        return full(endpoint, new Range<>(start, end));
+    }
+
+    public static Replica trans(InetAddressAndPort endpoint, Range<Token> range)
+    {
+        return new Replica(endpoint, range, false);
+    }
+
+    public static Replica trans(InetAddressAndPort endpoint, Token start, Token end)
+    {
+        return trans(endpoint, new Range<>(start, end));
+    }
+
+    @Override
+    public int compareTo(Replica o)
+    {
+        int c = range.compareTo(o.range);
+        if (c == 0)
+            c = endpoint.compareTo(o.endpoint);
+        if (c == 0)
+            c =  Boolean.compare(full, o.full);
+        return c;
     }
 }
 

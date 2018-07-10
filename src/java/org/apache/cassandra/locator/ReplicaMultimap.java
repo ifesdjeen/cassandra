@@ -20,11 +20,15 @@ package org.apache.cassandra.locator;
 
 import java.util.AbstractMap;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.stream.Stream;
+
+import com.google.common.base.Preconditions;
 
 public abstract class ReplicaMultimap<K, V extends ReplicaCollection>
 {
@@ -48,19 +52,41 @@ public abstract class ReplicaMultimap<K, V extends ReplicaCollection>
 
     public V get(K key)
     {
+        Preconditions.checkNotNull(key);
         return map.getOrDefault(key, getDefault());
     }
 
     public boolean put(K key, Replica replica)
     {
+        Preconditions.checkNotNull(key);
+        Preconditions.checkNotNull(replica);
         return map.computeIfAbsent(key, this::createEmpty).add(replica);
     }
 
     public boolean putAll(K key, ReplicaCollection replicas)
     {
+        Preconditions.checkNotNull(key);
+        Preconditions.checkNotNull(replicas);
         boolean result = false;
         for (Replica replica: replicas)
             result |= put(key, replica);
+        return result;
+    }
+
+    public boolean putAll(ReplicaMultimap<K, ? extends ReplicaCollection> map)
+    {
+        boolean result = false;
+        for (K key : map.keySet())
+        {
+            if (key == null)
+                throw new IllegalStateException("Shouldn't be possible to have a null key");
+            for (Replica replica : map.get(key))
+            {
+                if (replica == null)
+                    throw  new IllegalStateException("Shouldn't be possible to have a null replica");
+                result |= put(key, replica);
+            }
+        }
         return result;
     }
 
@@ -86,16 +112,14 @@ public abstract class ReplicaMultimap<K, V extends ReplicaCollection>
 
     public Iterable<Map.Entry<K, Replica>> entries()
     {
-        List<Map.Entry<K, Replica>> list = new LinkedList<>();
-        for (Map.Entry<K, V> entry : map.entrySet())
-        {
-            K key = entry.getKey();
-            for (Replica replica : entry.getValue())
-            {
-                list.add(new AbstractMap.SimpleImmutableEntry<>(key, replica));
-            }
-        }
-        return list;
+        return () -> {
+            Stream<Map.Entry<K, Replica>> s = map.entrySet()
+                                                 .stream()
+                                                 .flatMap(entry -> entry.getValue()
+                                                                        .stream()
+                                                                        .map(replica -> (Map.Entry<K, Replica>)new AbstractMap.SimpleImmutableEntry<>(entry.getKey(), replica)));
+            return s.iterator();
+        };
     }
 
     public static <K> ReplicaMultimap<K, ReplicaList> list()
@@ -128,5 +152,11 @@ public abstract class ReplicaMultimap<K, V extends ReplicaCollection>
                 return new ReplicaSet();
             }
         };
+    }
+
+    @Override
+    public String toString()
+    {
+        return map.toString();
     }
 }

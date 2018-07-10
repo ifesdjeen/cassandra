@@ -18,6 +18,7 @@
 
 package org.apache.cassandra.locator;
 
+import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -25,17 +26,66 @@ import java.util.Comparator;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
-import java.util.function.Predicate;
+import java.util.Set;
+import java.util.function.BiConsumer;
+import java.util.function.BinaryOperator;
+import java.util.function.Function;
+import java.util.function.Supplier;
+import java.util.stream.Collector;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import com.google.common.base.Preconditions;
+import com.google.common.base.Predicate;
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Iterables;
+
+import org.apache.cassandra.dht.Range;
+import org.apache.cassandra.dht.Token;
 
 public class ReplicaList extends ReplicaCollection
 {
     static final ReplicaList EMPTY = new ReplicaList(ImmutableList.of());
 
     private final List<Replica> replicaList;
+
+    private static final Set<Collector.Characteristics> LIST_COLLECTOR_CHARACTERISTICS = ImmutableSet.of(Collector.Characteristics.IDENTITY_FINISH);
+    public static final Collector<Replica, ReplicaList, ReplicaList> COLLECTOR = new Collector<Replica, ReplicaList, ReplicaList>()
+    {
+        private final Supplier<ReplicaList> supplier = ReplicaList::new;
+        private final BiConsumer<ReplicaList, Replica> accumulator = (set, replica) -> set.add(replica);
+        private final BinaryOperator<ReplicaList> combiner = (a, b) -> {
+            a.addAll(b);
+            return a;
+        };
+        private final Function<ReplicaList, ReplicaList> finisher = list -> list;
+
+        public Supplier<ReplicaList> supplier()
+        {
+            return supplier;
+        }
+
+        public BiConsumer<ReplicaList, Replica> accumulator()
+        {
+            return accumulator;
+        }
+
+        public BinaryOperator<ReplicaList> combiner()
+        {
+            return combiner;
+        }
+
+        public Function<ReplicaList, ReplicaList> finisher()
+        {
+            return finisher;
+        }
+
+        public Set<Characteristics> characteristics()
+        {
+            return LIST_COLLECTOR_CHARACTERISTICS;
+        }
+    };
 
     public ReplicaList()
     {
@@ -126,6 +176,7 @@ public class ReplicaList extends ReplicaCollection
     @Override
     public void removeEndpoint(InetAddressAndPort endpoint)
     {
+        Preconditions.checkNotNull(endpoint);
         for (int i=replicaList.size()-1; i>=0; i--)
         {
             if (replicaList.get(i).getEndpoint().equals(endpoint))
@@ -138,12 +189,14 @@ public class ReplicaList extends ReplicaCollection
     @Override
     public void removeReplica(Replica replica)
     {
+        Preconditions.checkNotNull(replica);
         replicaList.remove(replica);
     }
 
     @Override
     public boolean containsEndpoint(InetAddressAndPort endpoint)
     {
+        Preconditions.checkNotNull(endpoint);
         for (int i=0; i<size(); i++)
         {
             if (replicaList.get(i).getEndpoint().equals(endpoint))
@@ -152,18 +205,10 @@ public class ReplicaList extends ReplicaCollection
         return false;
     }
 
-    public ReplicaList filter(Predicate<Replica> predicate)
+    public ReplicaList filter(Predicate<Replica>... predicates)
     {
-        ArrayList<Replica> newReplicaList = size() < 10 ? new ArrayList<>(size()) : new ArrayList<>();
-        for (int i=0; i<size(); i++)
-        {
-            Replica replica = replicaList.get(i);
-            if (predicate.test(replica))
-            {
-                newReplicaList.add(replica);
-            }
-        }
-        return new ReplicaList(newReplicaList);
+        Preconditions.checkNotNull(predicates);
+        return filter(predicates, ReplicaList::new);
     }
 
     public void sort(Comparator<Replica> comparator)
@@ -173,6 +218,8 @@ public class ReplicaList extends ReplicaCollection
 
     public static ReplicaList intersectEndpoints(ReplicaList l1, ReplicaList l2)
     {
+        Preconditions.checkNotNull(l1);
+        Preconditions.checkNotNull(l2);
         Replicas.checkFull(l1);
         Replicas.checkFull(l2);
         // Note: we don't use Guava Sets.intersection() for 3 reasons:
@@ -211,28 +258,20 @@ public class ReplicaList extends ReplicaCollection
         return new ReplicaList(replicaList.subList(fromIndex, toIndex));
     }
 
-    public ReplicaList normalizeByRange()
+    @Override
+    public Stream<Replica> stream()
     {
-        if (Iterables.all(this, Replica::isFull))
-        {
-            ReplicaList normalized = new ReplicaList(size());
-            for (Replica replica: this)
-            {
-                replica.addNormalizeByRange(normalized);
-            }
-
-            return normalized;
-        }
-        else
-        {
-            // FIXME: add support for transient replicas
-            throw new UnsupportedOperationException("transient replicas are currently unsupported");
-        }
+        return replicaList.stream();
     }
 
     public static ReplicaList immutableCopyOf(ReplicaCollection replicas)
     {
         return new ReplicaList(ImmutableList.<Replica>builder().addAll(replicas).build());
+    }
+
+    public static ReplicaList immutableCopyOf(List<Replica> replicas)
+    {
+        return new ReplicaList(ImmutableList.copyOf(replicas));
     }
 
     public static ReplicaList immutableCopyOf(ReplicaList replicas)
@@ -259,5 +298,39 @@ public class ReplicaList extends ReplicaCollection
     public static ReplicaList withMaxSize(int size)
     {
         return size < 10 ? new ReplicaList(size) : new ReplicaList();
+    }
+
+    /**
+     * Use of this method to synthesize Replicas is almost always wrong. In repair it turns out the concerns of transient
+     * vs non-transient are handled at a higher level, but eventually repair needs to ask streaming to actually move
+     * the data and at that point it doesn't have a great handle on what the replicas are and it doesn't really matter.
+     *
+     * Streaming expects to be given Replicas with each replica indicating what type of data (transient or not transient)
+     * should be sent.
+     *
+     * So in this one instance we can lie to streaming and pretend all the replicas are full and use a dummy address
+     * and it doesn't matter because streaming doesn't rely on the address for anything other than debugging and full
+     * is a valid value for transientness because streaming is selecting candidate tables from the repair/unrepaired
+     * set already.
+     * @param ranges
+     * @return
+     */
+    public static ReplicaList toDummyList(Collection<Range<Token>> ranges)
+    {
+        InetAddressAndPort dummy;
+        try
+        {
+            dummy = InetAddressAndPort.getByNameOverrideDefaults("0.0.0.0", 0);
+        }
+        catch (UnknownHostException e)
+        {
+            throw new RuntimeException(e);
+        }
+        //For repair we are less concerned with full vs transient since repair is already dealing with those concerns.
+        //Always say full and then if the repair is incremental or not will determine what is streamed.
+        return new ReplicaList(ranges.stream()
+                               .map(range -> new Replica(dummy, range, true))
+                               .collect(Collectors.toList()));
+
     }
 }

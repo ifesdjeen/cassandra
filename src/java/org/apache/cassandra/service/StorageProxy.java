@@ -1593,7 +1593,7 @@ public class StorageProxy implements StorageProxyMBean
                 Mutation result = ((CounterMutation) mutation).applyCounterMutation();
                 responseHandler.response(null);
 
-                Iterable<Replica> remotes = Replicas.filterLocalEndpoint(targets);
+                Iterable<Replica> remotes = Replicas.filterOutLocalEndpoint(targets);
                 if (!Iterables.isEmpty(remotes))
                     sendToHintedReplicas(result, remotes, responseHandler, localDataCenter, Stage.COUNTER_MUTATION);
             }
@@ -2590,7 +2590,7 @@ public class StorageProxy implements StorageProxyMBean
             {
                 if (MessagingService.DROPPABLE_VERBS.contains(verb))
                     MessagingService.instance().incrementDroppedMutations(mutationOpt, timeTaken);
-                HintRunnable runnable = new HintRunnable(Replicas.singleton(localReplica))
+                HintRunnable runnable = new HintRunnable(Replicas.of(localReplica))
                 {
                     protected void runMayThrow() throws Exception
                     {
@@ -2689,7 +2689,7 @@ public class StorageProxy implements StorageProxyMBean
 
     public static Future<Void> submitHint(Mutation mutation, Replica target, AbstractWriteResponseHandler<IMutation> responseHandler)
     {
-        return submitHint(mutation, Replicas.singleton(target), responseHandler);
+        return submitHint(mutation, Replicas.of(target), responseHandler);
     }
 
     public static Future<Void> submitHint(Mutation mutation,
