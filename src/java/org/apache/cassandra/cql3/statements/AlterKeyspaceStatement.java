@@ -23,6 +23,7 @@ import java.util.stream.Stream;
 
 import org.apache.cassandra.audit.AuditLogEntryType;
 import org.apache.cassandra.auth.Permission;
+import org.apache.cassandra.config.Config;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.Keyspace;
@@ -47,6 +48,7 @@ import org.apache.commons.lang3.builder.ToStringStyle;
 
 public class AlterKeyspaceStatement extends SchemaAlteringStatement
 {
+    private static final boolean allow_alter_rf_during_range_movement = Boolean.getBoolean(Config.PROPERTY_PREFIX + "allow_alter_rf_during_range_movement");
     private final String name;
     private final KeyspaceAttributes attrs;
 
@@ -116,7 +118,7 @@ public class AlterKeyspaceStatement extends SchemaAlteringStatement
 
     private void validateNoRangeMovements()
     {
-        if (Gossiper.instance == null)
+        if (allow_alter_rf_during_range_movement || Gossiper.instance == null)
             return;
 
         Stream<InetAddressAndPort> endpoints = Stream.concat(Gossiper.instance.getLiveMembers().stream(), Gossiper.instance.getUnreachableMembers().stream());
