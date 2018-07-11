@@ -227,8 +227,7 @@ public class ReplicaList extends ReplicaCollection
         //   so will be very small (< RF). In that case, retainAll is in fact more efficient.
         //   2) we do ultimately need a list so converting everything to sets don't make sense
         //   3) l1 and l2 are sorted by proximity. The use of retainAll  maintain that sorting in the result, while using sets wouldn't.
-        Collection<InetAddressAndPort> endpoints = l2.asEndpointList();
-        return l1.filter(r -> endpoints.contains(r.getEndpoint()));
+        return l1.filter(r -> l2.containsEndpoint(r.getEndpoint()));
     }
 
     public static ReplicaList of()
