@@ -116,8 +116,11 @@ public class AlterKeyspaceStatement extends SchemaAlteringStatement
 
     private void validateNoRangeMovements()
     {
+        if (Gossiper.instance == null)
+            return;
+
         Stream<InetAddressAndPort> endpoints = Stream.concat(Gossiper.instance.getLiveMembers().stream(), Gossiper.instance.getUnreachableMembers().stream());
-        List<InetAddressAndPort> notNormalEndpoints = endpoints.filter(endpoint -> Gossiper.instance != null && !Gossiper.instance.getEndpointStateForEndpoint(endpoint).isNormalState())
+        List<InetAddressAndPort> notNormalEndpoints = endpoints.filter(endpoint -> !Gossiper.instance.getEndpointStateForEndpoint(endpoint).isNormalState())
                                                                .collect(Collectors.toList());
         if (!notNormalEndpoints.isEmpty())
         {
