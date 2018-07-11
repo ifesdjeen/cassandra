@@ -164,7 +164,7 @@ public class NetworkTopologyStrategy extends AbstractReplicationStrategy
     public ReplicaList calculateNaturalReplicas(Token searchToken, TokenMetadata tokenMetadata)
     {
         // we want to preserve insertion order so that the first added endpoint becomes primary
-        ReplicaSet replicas = ReplicaSet.ordered();
+        ReplicaSet replicas = ReplicaSet.orderPreserving();
         Set<Pair<String, String>> seenRacks = new HashSet<>();
 
         Topology topology = tokenMetadata.getTopology();

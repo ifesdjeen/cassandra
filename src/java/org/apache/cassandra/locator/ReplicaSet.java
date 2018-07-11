@@ -231,7 +231,11 @@ public class ReplicaSet extends ReplicaCollection
         return set;
     }
 
-    public static ReplicaSet ordered()
+    /**
+     * Returns a ReplicaSet wrapping a LinkedHashSet that preserves order the same way LinkedHashSet does.
+     * @return
+     */
+    public static ReplicaSet orderPreserving()
     {
         return new ReplicaSet(new LinkedHashSet<>());
     }
