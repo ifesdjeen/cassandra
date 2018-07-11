@@ -82,10 +82,10 @@ public class DataResolver extends ResponseResolver
             iters.add(msg.payload.makeIterator(command));
 
             Replica replica = replicaMap.get(msg.from);
-            if (replica == null)
-                replica = command.decorateEndpoint(msg.from);
 
-            assert replica != null;
+            if (replica == null)
+                throw new AssertionError("Should never be missing a replica: " + msg.from);
+
             sources[i] = replica;
         }
 

@@ -121,7 +121,6 @@ public abstract class ReadCommand extends AbstractReadQuery
 
     protected abstract void serializeSelection(DataOutputPlus out, int version) throws IOException;
     protected abstract long selectionSerializedSize(int version);
-    public abstract Replica decorateEndpoint(InetAddressAndPort endpoint);
 
     public abstract boolean isLimitedToOnePartition();
 

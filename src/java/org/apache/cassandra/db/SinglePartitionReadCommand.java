@@ -1009,17 +1009,6 @@ public class SinglePartitionReadCommand extends ReadCommand implements SinglePar
              + ClusteringIndexFilter.serializer.serializedSize(clusteringIndexFilter(), version);
     }
 
-    @Override
-    public Replica decorateEndpoint(InetAddressAndPort endpoint)
-    {
-        for (Replica replica: StorageService.instance.getNaturalAndPendingReplicas(metadata().keyspace, partitionKey.getToken()))
-        {
-            if (replica.getEndpoint().equals(endpoint))
-                return replica;
-        }
-        return null;
-    }
-
     public boolean isLimitedToOnePartition()
     {
         return true;

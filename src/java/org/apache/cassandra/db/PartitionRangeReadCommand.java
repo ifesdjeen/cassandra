@@ -389,15 +389,6 @@ public class PartitionRangeReadCommand extends ReadCommand implements PartitionR
         return DataRange.serializer.serializedSize(dataRange(), version, metadata());
     }
 
-    @Override
-    public Replica decorateEndpoint(InetAddressAndPort endpoint)
-    {
-        for (Replica replica: StorageService.instance.getNaturalAndPendingReplicas(metadata().keyspace, dataRange.stopKey().getToken()))
-            if (replica.getEndpoint().equals(endpoint))
-                return replica;
-        return null;
-    }
-
     /*
      * We are currently using PartitionRangeReadCommand for most index queries, even if they are explicitly restricted
      * to a single partition key. Return true if that is the case.
