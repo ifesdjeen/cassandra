@@ -419,9 +419,9 @@ public class DynamicEndpointSnitch extends AbstractEndpointSnitch implements ILa
             return true;
 
         // Make sure we return the subsnitch decision (i.e true if we're here) if we lack too much scores
-        double maxMerged = maxScore(merged.asEndpoints());
-        double maxL1 = maxScore(l1.asEndpoints());
-        double maxL2 = maxScore(l2.asEndpoints());
+        double maxMerged = maxScore(merged);
+        double maxL1 = maxScore(l1);
+        double maxL2 = maxScore(l2);
         if (maxMerged < 0 || maxL1 < 0 || maxL2 < 0)
             return true;
 
@@ -429,12 +429,12 @@ public class DynamicEndpointSnitch extends AbstractEndpointSnitch implements ILa
     }
 
     // Return the max score for the endpoint in the provided list, or -1.0 if no node have a score.
-    private double maxScore(Iterable<InetAddressAndPort> endpoints)
+    private double maxScore(Iterable<Replica> endpoints)
     {
         double maxScore = -1.0;
-        for (InetAddressAndPort endpoint : endpoints)
+        for (Replica replica : endpoints)
         {
-            Double score = scores.get(endpoint);
+            Double score = scores.get(replica.getEndpoint());
             if (score == null)
                 continue;
 
