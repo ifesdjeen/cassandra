@@ -161,6 +161,7 @@ public class StorageProxy implements StorageProxyMBean
                               String localDataCenter,
                               ConsistencyLevel consistencyLevel)
             {
+                Replicas.checkFull(targets);
                 counterWriteTask(mutation, targets, responseHandler, localDataCenter).run();
             }
         };
@@ -173,6 +174,7 @@ public class StorageProxy implements StorageProxyMBean
                               String localDataCenter,
                               ConsistencyLevel consistencyLevel)
             {
+                Replicas.checkFull(targets);
                 StageManager.getStage(Stage.COUNTER_MUTATION)
                             .execute(counterWriteTask(mutation, targets, responseHandler, localDataCenter));
             }
@@ -354,6 +356,8 @@ public class StorageProxy implements StorageProxyMBean
         Token tk = key.getToken();
         ReplicaList naturalReplicas = StorageService.instance.getNaturalReplicas(metadata.keyspace, tk);
         ReplicaList pendingReplicas = new ReplicaList(StorageService.instance.getTokenMetadata().pendingEndpointsFor(tk, metadata.keyspace));
+        Replicas.checkFull(naturalReplicas);
+        Replicas.checkFull(pendingReplicas);
         if (consistencyForPaxos == ConsistencyLevel.LOCAL_SERIAL)
         {
             // Restrict naturalReplicas and pendingReplicas to node in the local DC only
@@ -959,6 +963,9 @@ public class StorageProxy implements StorageProxyMBean
 
         List<WriteResponseHandlerWrapper> wrappers = new ArrayList<WriteResponseHandlerWrapper>(mutations.size());
         String localDataCenter = DatabaseDescriptor.getEndpointSnitch().getDatacenter(FBUtilities.getBroadcastAddressAndPort());
+
+        if (mutations.stream().anyMatch(mutation -> Keyspace.open(mutation.getKeyspaceName()).getReplicationStrategy().getReplicationFactor().trans > 0))
+            throw new AssertionError("Logged batches are unsupported with transient replication");
 
         try
         {

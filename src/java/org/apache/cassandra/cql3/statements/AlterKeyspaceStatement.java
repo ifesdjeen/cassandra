@@ -17,14 +17,21 @@
  */
 package org.apache.cassandra.cql3.statements;
 
+import java.util.List;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+
 import org.apache.cassandra.audit.AuditLogEntryType;
 import org.apache.cassandra.auth.Permission;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.Keyspace;
 import org.apache.cassandra.exceptions.*;
+import org.apache.cassandra.gms.Gossiper;
 import org.apache.cassandra.locator.AbstractReplicationStrategy;
+import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.locator.LocalStrategy;
+import org.apache.cassandra.locator.ReplicationFactor;
 import org.apache.cassandra.schema.KeyspaceMetadata;
 import org.apache.cassandra.schema.KeyspaceParams;
 import org.apache.cassandra.schema.MigrationManager;
@@ -104,11 +111,30 @@ public class AlterKeyspaceStatement extends SchemaAlteringStatement
 
         validateTransientReplication(oldStrategy, newStrategy);
         warnIfIncreasingRF(oldStrategy, newStrategy);
+        validateNoRangeMovements();
+    }
+
+    private void validateNoRangeMovements()
+    {
+        Stream<InetAddressAndPort> endpoints = Stream.concat(Gossiper.instance.getLiveMembers().stream(), Gossiper.instance.getUnreachableMembers().stream());
+        List<InetAddressAndPort> notNormalEndpoints = endpoints.filter(endpoint -> !Gossiper.instance.getEndpointStateForEndpoint(endpoint).isNormalState())
+                                                               .collect(Collectors.toList());
+        if (!notNormalEndpoints.isEmpty())
+        {
+            throw new ConfigurationException("Cannot alter RF while some endpoints are not in normal state (no range movements): " + notNormalEndpoints);
+        }
     }
 
     private void validateTransientReplication(AbstractReplicationStrategy oldStrategy, AbstractReplicationStrategy newStrategy)
     {
-        if (oldStrategy.getReplicationFactor().trans == 0 && newStrategy.getReplicationFactor().trans > 0)
+        ReplicationFactor oldRF = oldStrategy.getReplicationFactor();
+        ReplicationFactor newRF = newStrategy.getReplicationFactor();
+        int oldTrans = oldRF.trans;
+        int oldFull = oldRF.full;
+        int newTrans = newRF.trans;
+        int newFull = newRF.full;
+
+        if (oldTrans == 0 && newTrans > 0)
         {
             Keyspace ks = Keyspace.open(keyspace());
             for (ColumnFamilyStore cfs: ks.getColumnFamilyStores())
@@ -123,7 +149,17 @@ public class AlterKeyspaceStatement extends SchemaAlteringStatement
                     throw new ConfigurationException("Cannot use transient replication on keyspaces using secondary indexes");
                 }
             }
+        }
 
+        //Can't decrease full and trans at the same time
+        if (oldTrans > newTrans && oldFull > newFull)
+        {
+            throw new ConfigurationException("Can't reduce full and transient at the same time.");
+        }
+
+        if (oldTrans < newTrans && newTrans > oldTrans + 1)
+        {
+            throw new ConfigurationException("Can only safely increase number of transients one at a time with repair run in between each time");
         }
     }
 
