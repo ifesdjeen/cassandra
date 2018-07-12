@@ -49,6 +49,8 @@ import org.apache.commons.lang3.builder.ToStringStyle;
 public class AlterKeyspaceStatement extends SchemaAlteringStatement
 {
     private static final boolean allow_alter_rf_during_range_movement = Boolean.getBoolean(Config.PROPERTY_PREFIX + "allow_alter_rf_during_range_movement");
+    private static final boolean allow_unsafe_transient_changes = Boolean.getBoolean(Config.PROPERTY_PREFIX + "allow_unsafe_transient_changes");
+
     private final String name;
     private final KeyspaceAttributes attrs;
 
@@ -132,6 +134,11 @@ public class AlterKeyspaceStatement extends SchemaAlteringStatement
 
     private void validateTransientReplication(AbstractReplicationStrategy oldStrategy, AbstractReplicationStrategy newStrategy)
     {
+        //If there is no read traffic there are some extra alterations you can safely make, but this is so atypical
+        //that a good default is to not allow unsafe changes
+        if (allow_unsafe_transient_changes)
+            return;
+
         ReplicationFactor oldRF = oldStrategy.getReplicationFactor();
         ReplicationFactor newRF = newStrategy.getReplicationFactor();
         int oldTrans = oldRF.trans;
@@ -139,7 +146,7 @@ public class AlterKeyspaceStatement extends SchemaAlteringStatement
         int newTrans = newRF.trans;
         int newFull = newRF.full;
 
-        if (oldTrans == 0 && newTrans > 0)
+        if (newTrans > 0)
         {
             Keyspace ks = Keyspace.open(keyspace());
             for (ColumnFamilyStore cfs: ks.getColumnFamilyStores())
@@ -156,16 +163,20 @@ public class AlterKeyspaceStatement extends SchemaAlteringStatement
             }
         }
 
-        //Can't decrease full and trans at the same time
-        if (oldTrans > newTrans && oldFull > newFull)
-        {
-            throw new ConfigurationException("Can't reduce full and transient at the same time.");
-        }
+        //This is true right now because the transition from transient -> full lacks the pending state
+        //necessary for correctness. What would happen if we allowed this is that we would attempt
+        //to read from a transient replica as if it were a full replica.
+        if (oldFull > newFull && oldTrans > 0)
+            throw new ConfigurationException("Can't add full replicas if there are any transient replicas. You must first remove all transient replicas, then change the # of full replicas, then add back the transient replicas");
 
-        if (oldTrans < newTrans && newTrans > oldTrans + 1)
-        {
-            throw new ConfigurationException("Can only safely increase number of transients one at a time with repair run in between each time");
-        }
+        //Don't increase transient replication factor by more than one at a time if changing number of replicas
+        //Just like with changing full replicas it's not safe to do this as you could read from too many replicas
+        //that don't have the necessary data. W/O transient replication this alteration was allowed and it's not clear
+        //if it should be.
+        //This is structured so you can convert as mnay full replicas to transient replicas as you want.
+        boolean numReplicasChanged = oldTrans + oldFull != newTrans + newFull;
+        if (numReplicasChanged && (newTrans > oldTrans && newTrans != oldTrans + 1))
+            throw new ConfigurationException("Can only safely increase number of transients one at a time with incremental repair run in between each time");
     }
 
     private void warnIfIncreasingRF(AbstractReplicationStrategy oldStrategy, AbstractReplicationStrategy newStrategy)
