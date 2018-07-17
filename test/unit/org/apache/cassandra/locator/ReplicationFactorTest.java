@@ -23,6 +23,7 @@ import org.junit.BeforeClass;
 import org.junit.Test;
 
 import org.apache.cassandra.config.DatabaseDescriptor;
+import org.apache.cassandra.gms.Gossiper;
 
 public class ReplicationFactorTest
 {
@@ -32,6 +33,7 @@ public class ReplicationFactorTest
     {
         DatabaseDescriptor.daemonInitialization();
         DatabaseDescriptor.setTransientReplicationEnabledUnsafe(true);
+        Gossiper.instance.start(1);
     }
 
     private static void assertRfParseFailure(String s)

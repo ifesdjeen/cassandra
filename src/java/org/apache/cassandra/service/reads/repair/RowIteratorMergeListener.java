@@ -41,6 +41,7 @@ import org.apache.cassandra.db.rows.Rows;
 import org.apache.cassandra.db.rows.UnfilteredRowIterators;
 import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.locator.Replica;
+import org.apache.cassandra.locator.ReplicaList;
 import org.apache.cassandra.schema.ColumnMetadata;
 
 public class RowIteratorMergeListener implements UnfilteredRowIterators.MergeListener
@@ -48,7 +49,7 @@ public class RowIteratorMergeListener implements UnfilteredRowIterators.MergeLis
     private final DecoratedKey partitionKey;
     private final RegularAndStaticColumns columns;
     private final boolean isReversed;
-    private final Replica[] sources;
+    private final ReplicaList sources;
     private final ReadCommand command;
 
     private final PartitionUpdate.Builder[] repairs;
@@ -67,16 +68,16 @@ public class RowIteratorMergeListener implements UnfilteredRowIterators.MergeLis
 
     private final RepairListener repairListener;
 
-    public RowIteratorMergeListener(DecoratedKey partitionKey, RegularAndStaticColumns columns, boolean isReversed, Replica[] sources, ReadCommand command, RepairListener repairListener)
+    public RowIteratorMergeListener(DecoratedKey partitionKey, RegularAndStaticColumns columns, boolean isReversed, ReplicaList sources, ReadCommand command, RepairListener repairListener)
     {
         this.partitionKey = partitionKey;
         this.columns = columns;
         this.isReversed = isReversed;
         this.sources = sources;
-        repairs = new PartitionUpdate.Builder[sources.length];
-        currentRows = new Row.Builder[sources.length];
-        sourceDeletionTime = new DeletionTime[sources.length];
-        markerToRepair = new ClusteringBound[sources.length];
+        repairs = new PartitionUpdate.Builder[sources.size()];
+        currentRows = new Row.Builder[sources.size()];
+        sourceDeletionTime = new DeletionTime[sources.size()];
+        markerToRepair = new ClusteringBound[sources.size()];
         this.command = command;
         this.repairListener = repairListener;
 
@@ -311,7 +312,7 @@ public class RowIteratorMergeListener implements UnfilteredRowIterators.MergeLis
             {
                 repair = repairListener.startPartitionRepair();
             }
-            repair.reportMutation(sources[i], new Mutation(repairs[i].build()));
+            repair.reportMutation(sources.get(i), new Mutation(repairs[i].build()));
         }
 
         if (repair != null)

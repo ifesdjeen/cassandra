@@ -27,6 +27,7 @@ import com.google.common.collect.Maps;
 import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.locator.Replica;
 import org.apache.cassandra.locator.ReplicaCollection;
+import org.apache.cassandra.locator.ReplicaList;
 import org.apache.cassandra.service.reads.repair.ReadRepair;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.filter.*;
@@ -75,7 +76,7 @@ public class DataResolver extends ResponseResolver
         // at the beginning of this method), so grab the response count once and use that through the method.
         int count = responses.size();
         List<UnfilteredPartitionIterator> iters = new ArrayList<>(count);
-        Replica[] sources = new Replica[count];
+        ReplicaList sources = new ReplicaList(count);
         for (int i = 0; i < count; i++)
         {
             MessageIn<ReadResponse> msg = responses.get(i);
@@ -86,7 +87,7 @@ public class DataResolver extends ResponseResolver
             if (replica == null)
                 throw new AssertionError("Should never be missing a replica: " + msg.from);
 
-            sources[i] = replica;
+            sources.add(replica);
         }
 
         /*
@@ -113,7 +114,7 @@ public class DataResolver extends ResponseResolver
     }
 
     private UnfilteredPartitionIterator mergeWithShortReadProtection(List<UnfilteredPartitionIterator> results,
-                                                                     Replica[] sources,
+                                                                     ReplicaList sources,
                                                                      DataLimits.Counter mergedResultCounter)
     {
         // If we have only one results, there is no read repair to do and we can't get short reads
@@ -126,7 +127,7 @@ public class DataResolver extends ResponseResolver
          */
         if (!command.limits().isUnlimited())
             for (int i = 0; i < results.size(); i++)
-                results.set(i, ShortReadProtection.extend(sources[i], results.get(i), command, mergedResultCounter, queryStartNanoTime, enforceStrictLiveness));
+                results.set(i, ShortReadProtection.extend(sources.get(i), results.get(i), command, mergedResultCounter, queryStartNanoTime, enforceStrictLiveness));
 
         return UnfilteredPartitionIterators.merge(results, command.nowInSec(), wrapMergeListener(readRepair.getMergeListener(sources), sources));
     }
@@ -136,7 +137,7 @@ public class DataResolver extends ResponseResolver
         return Joiner.on(",\n").join(Iterables.transform(getMessages(), m -> m.from + " => " + m.payload.toDebugString(command, partitionKey)));
     }
 
-    private UnfilteredPartitionIterators.MergeListener wrapMergeListener(UnfilteredPartitionIterators.MergeListener partitionListener, Replica[] sources)
+    private UnfilteredPartitionIterators.MergeListener wrapMergeListener(UnfilteredPartitionIterators.MergeListener partitionListener, ReplicaList sources)
     {
         return new UnfilteredPartitionIterators.MergeListener()
         {
@@ -161,7 +162,7 @@ public class DataResolver extends ResponseResolver
                                                            table,
                                                            mergedDeletion == null ? "null" : mergedDeletion.toString(),
                                                            '[' + Joiner.on(", ").join(Iterables.transform(Arrays.asList(versions), rt -> rt == null ? "null" : rt.toString())) + ']',
-                                                           Arrays.toString(sources),
+                                                           sources,
                                                            makeResponsesDebugString(partitionKey));
                             throw new AssertionError(details, e);
                         }
@@ -182,7 +183,7 @@ public class DataResolver extends ResponseResolver
                                                            table,
                                                            merged == null ? "null" : merged.toString(table),
                                                            '[' + Joiner.on(", ").join(Iterables.transform(Arrays.asList(versions), rt -> rt == null ? "null" : rt.toString(table))) + ']',
-                                                           Arrays.toString(sources),
+                                                           sources,
                                                            makeResponsesDebugString(partitionKey));
                             throw new AssertionError(details, e);
                         }
@@ -208,7 +209,7 @@ public class DataResolver extends ResponseResolver
                                                            table,
                                                            merged == null ? "null" : merged.toString(table),
                                                            '[' + Joiner.on(", ").join(Iterables.transform(Arrays.asList(versions), rt -> rt == null ? "null" : rt.toString(table))) + ']',
-                                                           Arrays.toString(sources),
+                                                           sources,
                                                            makeResponsesDebugString(partitionKey));
                             throw new AssertionError(details, e);
                         }

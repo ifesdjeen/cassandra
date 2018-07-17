@@ -43,6 +43,8 @@ import org.apache.cassandra.service.ClientWarn;
 import org.apache.cassandra.service.QueryState;
 import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.transport.Event;
+import org.apache.cassandra.utils.FBUtilities;
+
 import org.apache.commons.lang3.builder.ToStringBuilder;
 import org.apache.commons.lang3.builder.ToStringStyle;
 
@@ -120,11 +122,12 @@ public class AlterKeyspaceStatement extends SchemaAlteringStatement
 
     private void validateNoRangeMovements()
     {
-        if (allow_alter_rf_during_range_movement || Gossiper.instance == null)
+        if (allow_alter_rf_during_range_movement)
             return;
 
         Stream<InetAddressAndPort> endpoints = Stream.concat(Gossiper.instance.getLiveMembers().stream(), Gossiper.instance.getUnreachableMembers().stream());
-        List<InetAddressAndPort> notNormalEndpoints = endpoints.filter(endpoint -> !Gossiper.instance.getEndpointStateForEndpoint(endpoint).isNormalState())
+        List<InetAddressAndPort> notNormalEndpoints = endpoints.filter(endpoint -> !FBUtilities.getBroadcastAddressAndPort().equals(endpoint) &&
+                                                                                   !Gossiper.instance.getEndpointStateForEndpoint(endpoint).isNormalState())
                                                                .collect(Collectors.toList());
         if (!notNormalEndpoints.isEmpty())
         {

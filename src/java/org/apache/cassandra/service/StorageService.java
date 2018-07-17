@@ -176,8 +176,10 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         InetAddressAndPort broadcastAddress = FBUtilities.getBroadcastAddressAndPort();
         Keyspace keyspace = Keyspace.open(ks);
         List<Range<Token>> ranges = new ArrayList<>();
-        Iterables.addAll(ranges, keyspace.getReplicationStrategy().getAddressReplicas().get(broadcastAddress).asRanges());
-        Iterables.addAll(ranges, getTokenMetadata().getPendingRanges(ks, broadcastAddress).asRanges());
+        for (Replica r : keyspace.getReplicationStrategy().getAddressReplicas(broadcastAddress))
+            ranges.add(r.getRange());
+        for (Replica r : getTokenMetadata().getPendingRanges(ks, broadcastAddress))
+            ranges.add(r.getRange());
         return ranges;
     }
 
@@ -3756,7 +3758,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
      */
     ReplicaSet getReplicasForEndpoint(String keyspaceName, InetAddressAndPort ep)
     {
-        return Keyspace.open(keyspaceName).getReplicationStrategy().getAddressReplicas().get(ep);
+        return Keyspace.open(keyspaceName).getReplicationStrategy().getAddressReplicas(ep);
     }
 
     /**
@@ -4244,13 +4246,12 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
             {
                 // replication strategy of the current keyspace
                 AbstractReplicationStrategy strategy = Keyspace.open(keyspace).getReplicationStrategy();
-                ReplicaMultimap<InetAddressAndPort, ReplicaSet> endpointToRanges = strategy.getAddressReplicas();
+                // getting collection of the currently used ranges by this keyspace
+                ReplicaSet currentReplicas = strategy.getAddressReplicas(localAddress);
 
                 logger.debug("Calculating ranges to stream and request for keyspace {}", keyspace);
                 for (Token newToken : newTokens)
                 {
-                    // getting collection of the currently used ranges by this keyspace
-                    ReplicaSet currentReplicas = endpointToRanges.get(localAddress);
                     // collection of ranges which this node will serve after move to the new token
                     ReplicaSet updatedReplicas = strategy.getPendingAddressRanges(tokenMetaClone, newToken, localAddress);
 
@@ -4889,8 +4890,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
 
         Collection<Collection<InetAddressAndPort>> endpointsGroupedByDc = new ArrayList<>();
         // mapping of dc's to nodes, use sorted map so that we get dcs sorted
-        SortedMap<String, Collection<InetAddressAndPort>> sortedDcsToEndpoints = new TreeMap<>();
-        sortedDcsToEndpoints.putAll(metadata.getTopology().getDatacenterEndpoints().asMap());
+        SortedMap<String, Collection<InetAddressAndPort>> sortedDcsToEndpoints = new TreeMap<>(metadata.getTopology().getDatacenterEndpoints().asMap());
         for (Collection<InetAddressAndPort> endpoints : sortedDcsToEndpoints.values())
             endpointsGroupedByDc.add(endpoints);
 
@@ -4960,9 +4960,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
             UUID hostId = entry.getValue();
             InetAddressAndPort endpoint = entry.getKey();
             result.put(endpoint.toString(withPort),
-                       coreViewStatus.containsKey(hostId)
-                       ? coreViewStatus.get(hostId)
-                       : "UNKNOWN");
+                       coreViewStatus.getOrDefault(hostId, "UNKNOWN"));
         }
 
         return Collections.unmodifiableMap(result);

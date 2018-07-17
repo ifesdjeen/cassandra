@@ -26,6 +26,7 @@ import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.locator.Replica;
+import org.apache.cassandra.locator.ReplicaCollection;
 import org.apache.cassandra.locator.ReplicaList;
 import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.config.DatabaseDescriptor;
@@ -153,7 +154,7 @@ public enum ConsistencyLevel
         return isLocal(replica.getEndpoint());
     }
 
-    public int countLocalEndpoints(Iterable<Replica> liveReplicas)
+    public int countLocalEndpoints(ReplicaCollection liveReplicas)
     {
         int count = 0;
         for (Replica replica : liveReplicas)
@@ -200,31 +201,30 @@ public enum ConsistencyLevel
         return liveReplicas.subList(0, Math.min(liveReplicas.size(), blockFor(keyspace)));
     }
 
+
     private ReplicaList filterForEachQuorum(Keyspace keyspace, ReplicaList liveReplicas)
     {
         NetworkTopologyStrategy strategy = (NetworkTopologyStrategy) keyspace.getReplicationStrategy();
-
-        Map<String, ReplicaList> dcsReplicas = new HashMap<>();
-        for (String dc: strategy.getDatacenters())
-            dcsReplicas.put(dc, ReplicaList.withMaxSize(liveReplicas.size()));
-
-        for (Replica replica : liveReplicas)
+        Map<String, Integer> dcsReplicas = new HashMap<>();
+        for (String dc : strategy.getDatacenters())
         {
+            // we put _up to_ dc replicas only
+            dcsReplicas.put(dc, localQuorumFor(keyspace, dc));
+        }
+
+        return liveReplicas.filter((replica) -> {
             String dc = DatabaseDescriptor.getEndpointSnitch().getDatacenter(replica);
-            dcsReplicas.get(dc).add(replica);
-        }
-
-        ReplicaList waitSet = new ReplicaList(ReplicaList.withMaxSize(liveReplicas.size()));
-        for (Map.Entry<String, ReplicaList> dcEndpoints : dcsReplicas.entrySet())
-        {
-            ReplicaList dcEndpoint = dcEndpoints.getValue();
-            waitSet.addAll(dcEndpoint.subList(0, Math.min(localQuorumFor(keyspace, dcEndpoints.getKey()), dcEndpoint.size())));
-        }
-
-        return waitSet;
+            int replicas = dcsReplicas.get(dc);
+            if (replicas > 0)
+            {
+                dcsReplicas.put(dc, --replicas);
+                return true;
+            }
+            return false;
+        });
     }
 
-    public boolean isSufficientLiveNodes(Keyspace keyspace, Iterable<Replica> liveReplicas)
+    public boolean isSufficientLiveNodes(Keyspace keyspace, ReplicaCollection liveReplicas)
     {
         switch (this)
         {
@@ -251,7 +251,7 @@ public enum ConsistencyLevel
         }
     }
 
-    public void assureSufficientLiveNodes(Keyspace keyspace, Iterable<Replica> liveReplicas) throws UnavailableException
+    public void assureSufficientLiveNodes(Keyspace keyspace, ReplicaCollection liveReplicas) throws UnavailableException
     {
         int blockFor = blockFor(keyspace);
         switch (this)

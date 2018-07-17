@@ -742,11 +742,7 @@ public class TokenMetadata
         {
             for (Map.Entry<Range<Token>, ReplicaList> entry : pendingRangeMaps)
             {
-                Range<Token> range = entry.getKey();
-                for (Replica replica : entry.getValue())
-                {
-                    map.put(range, replica);
-                }
+                map.putAll(entry.getKey(), entry.getValue());
             }
         }
 
@@ -890,7 +886,7 @@ public class TokenMetadata
             Collection<Token> tokens = bootstrapAddresses.get(endpoint);
 
             allLeftMetadata.updateNormalTokens(tokens, endpoint);
-            for (Replica replica : strategy.getAddressReplicas(allLeftMetadata).get(endpoint))
+            for (Replica replica : strategy.getAddressReplicas(allLeftMetadata, endpoint))
             {
                 newPendingRanges.addPendingRange(replica.getRange(), replica);
             }
@@ -908,14 +904,14 @@ public class TokenMetadata
             Set<Replica> moveAffectedReplicas = new HashSet<>();
             InetAddressAndPort endpoint = moving.right; // address of the moving node
             //Add ranges before the move
-            for (Replica replica : strategy.getAddressReplicas(allLeftMetadata).get(endpoint))
+            for (Replica replica : strategy.getAddressReplicas(allLeftMetadata, endpoint))
             {
                 moveAffectedReplicas.add(replica);
             }
 
             allLeftMetadata.updateNormalToken(moving.left, endpoint);
             //Add ranges after the move
-            for (Replica replica : strategy.getAddressReplicas(allLeftMetadata).get(endpoint))
+            for (Replica replica : strategy.getAddressReplicas(allLeftMetadata, endpoint))
             {
                 moveAffectedReplicas.add(replica);
             }
@@ -927,8 +923,8 @@ public class TokenMetadata
                 Set<InetAddressAndPort> difference = Sets.difference(newEndpoints, currentEndpoints);
                 for(final InetAddressAndPort address : difference)
                 {
-                    ReplicaSet newReplicas = strategy.getAddressReplicas(allLeftMetadata).get(address);
-                    ReplicaSet oldReplicas = strategy.getAddressReplicas(metadata).get(address);
+                    ReplicaSet newReplicas = strategy.getAddressReplicas(allLeftMetadata, address);
+                    ReplicaSet oldReplicas = strategy.getAddressReplicas(metadata, address);
                     //We want to get rid of any ranges which the node is currently getting.
                     newReplicas.removeReplicas(oldReplicas);
 

@@ -33,7 +33,7 @@ public interface ReadRepair
     /**
      * Used by DataResolver to generate corrections as the partition iterator is consumed
      */
-    UnfilteredPartitionIterators.MergeListener getMergeListener(Replica[] replicas);
+    UnfilteredPartitionIterators.MergeListener getMergeListener(ReplicaList replicas);
 
     /**
      * Called when the digests from the initial read don't match. Reads may block on the

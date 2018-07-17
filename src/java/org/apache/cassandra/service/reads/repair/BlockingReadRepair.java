@@ -105,7 +105,7 @@ public class BlockingReadRepair implements ReadRepair, RepairListener
         this.consistency = consistency;
     }
 
-    public UnfilteredPartitionIterators.MergeListener getMergeListener(Replica[] replicas)
+    public UnfilteredPartitionIterators.MergeListener getMergeListener(ReplicaList replicas)
     {
         return new PartitionIteratorMergeListener(replicas, command, this);
     }

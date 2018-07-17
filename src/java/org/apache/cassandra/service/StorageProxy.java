@@ -1331,14 +1331,12 @@ public class StorageProxy implements StorageProxyMBean
                     }
                     else
                     {
-                        ReplicaCollection messages = (dcGroups != null) ? dcGroups.get(dc) : null;
+                        if (dcGroups == null)
+                            dcGroups = new HashMap<>();
+
+                        ReplicaCollection messages = dcGroups.get(dc);
                         if (messages == null)
-                        {
-                            messages = new ReplicaList(3); // most DCs will have <= 3 replicas
-                            if (dcGroups == null)
-                                dcGroups = new HashMap<>();
-                            dcGroups.put(dc, messages);
-                        }
+                            messages = dcGroups.computeIfAbsent(dc, (v) -> new ReplicaList(3)); // most DCs will have <= 3 replicas
 
                         messages.add(destination);
                     }
