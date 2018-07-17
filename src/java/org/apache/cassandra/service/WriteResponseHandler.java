@@ -42,7 +42,7 @@ public class WriteResponseHandler<T> extends AbstractWriteResponseHandler<T>
     private static final AtomicIntegerFieldUpdater<WriteResponseHandler> responsesUpdater
             = AtomicIntegerFieldUpdater.newUpdater(WriteResponseHandler.class, "responses");
 
-    public WriteResponseHandler(ReplicaCollection writeReplicas,
+    public WriteResponseHandler(ReplicaList writeReplicas,
                                 ReplicaCollection pendingReplicas,
                                 ConsistencyLevel consistencyLevel,
                                 Keyspace keyspace,

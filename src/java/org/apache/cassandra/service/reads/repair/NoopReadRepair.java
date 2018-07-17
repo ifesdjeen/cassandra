@@ -18,8 +18,11 @@
 
 package org.apache.cassandra.service.reads.repair;
 
+import java.util.Map;
 import java.util.function.Consumer;
 
+import org.apache.cassandra.db.DecoratedKey;
+import org.apache.cassandra.db.Mutation;
 import org.apache.cassandra.db.partitions.PartitionIterator;
 import org.apache.cassandra.db.partitions.UnfilteredPartitionIterators;
 import org.apache.cassandra.exceptions.ReadTimeoutException;
@@ -45,5 +48,29 @@ public class NoopReadRepair implements ReadRepair
 
     public void awaitRepair() throws ReadTimeoutException
     {
+    }
+
+    @Override
+    public void maybeSendAdditionalDataRequests()
+    {
+
+    }
+
+    @Override
+    public void maybeSendAdditionalRepairs()
+    {
+
+    }
+
+    @Override
+    public void awaitRepairs()
+    {
+
+    }
+
+    @Override
+    public void repairPartition(DecoratedKey key, Map<Replica, Mutation> mutations, ReplicaList destinations)
+    {
+
     }
 }

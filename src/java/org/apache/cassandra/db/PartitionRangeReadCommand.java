@@ -24,6 +24,7 @@ import java.util.List;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Iterables;
 
+import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.locator.Replica;
 import org.apache.cassandra.schema.TableMetadata;
@@ -400,6 +401,12 @@ public class PartitionRangeReadCommand extends ReadCommand implements PartitionR
         return dataRange.keyRange instanceof Bounds
             && dataRange.startKey().kind() == PartitionPosition.Kind.ROW_KEY
             && dataRange.startKey().equals(dataRange.stopKey());
+    }
+
+    @Override
+    public Token getReplicaToken()
+    {
+        return dataRange.stopKey().getToken();
     }
 
     private static class Deserializer extends SelectionDeserializer

@@ -17,9 +17,12 @@
  */
 package org.apache.cassandra.service.reads.repair;
 
+import java.util.Map;
 import java.util.function.Consumer;
 
 import org.apache.cassandra.db.ConsistencyLevel;
+import org.apache.cassandra.db.DecoratedKey;
+import org.apache.cassandra.db.Mutation;
 import org.apache.cassandra.db.ReadCommand;
 import org.apache.cassandra.db.partitions.PartitionIterator;
 import org.apache.cassandra.db.partitions.UnfilteredPartitionIterators;
@@ -48,6 +51,29 @@ public interface ReadRepair
      * Wait for any operations started by {@link ReadRepair#startRepair} to complete
      */
     public void awaitRepair() throws ReadTimeoutException;
+
+    /**
+     * if it looks like we might not receive data requests from everyone in time, send additional requests
+     * to additional replicas not contacted in the initial full data read. If the collection of nodes that
+     * end up responding in time end up agreeing on the data, and we don't consider the response from the
+     * disagreeing replica that triggered the read repair, that's ok, since the disagreeing data would not
+     * have been successfully written and won't be included in the response the the client, preserving the
+     * expectation of monotonic quorum reads
+     */
+    public void maybeSendAdditionalDataRequests();
+
+    /**
+     * If it looks like we might not receive acks for all the repair mutations we sent out, combine all
+     * the unacked mutations and send them to the minority of nodes not involved in the read repair data
+     * read / write cycle. We will accept acks from them in lieu of acks from the initial mutations sent
+     * out, so long as we receive the same number of acks as repair mutations transmitted. This prevents
+     * misbehaving nodes from killing a quorum read, while continuing to guarantee monotonic quorum reads
+     */
+    public void maybeSendAdditionalRepairs();
+
+    public void awaitRepairs();
+
+    void repairPartition(DecoratedKey key, Map<Replica, Mutation> mutations, ReplicaList destinations);
 
     static ReadRepair create(ReadCommand command, ReplicaList endpoints, long queryStartNanoTime, ConsistencyLevel consistency)
     {

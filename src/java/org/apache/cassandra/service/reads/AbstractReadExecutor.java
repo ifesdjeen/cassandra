@@ -72,17 +72,23 @@ public abstract class AbstractReadExecutor
     protected final long queryStartNanoTime;
     protected volatile PartitionIterator result = null;
 
+    protected final Keyspace keyspace;
+    protected final int blockFor;
+
     AbstractReadExecutor(Keyspace keyspace, ColumnFamilyStore cfs, ReadCommand command, ConsistencyLevel consistency, ReplicaList targetReplicas, long queryStartNanoTime)
     {
         this.command = command;
         this.consistency = consistency;
         this.targetReplicas = targetReplicas;
         this.readRepair = ReadRepair.create(command, targetReplicas, queryStartNanoTime, consistency);
-        this.digestResolver = new DigestResolver(keyspace, command, consistency, readRepair, targetReplicas.size());
+        this.digestResolver = new DigestResolver(keyspace, command, consistency, targetReplicas, readRepair, targetReplicas.size(), queryStartNanoTime);
         this.handler = new ReadCallback(digestResolver, consistency, command, targetReplicas, queryStartNanoTime, readRepair);
         this.cfs = cfs;
         this.traceState = Tracing.instance.get();
         this.queryStartNanoTime = queryStartNanoTime;
+        this.keyspace = keyspace;
+        this.blockFor = consistency.blockFor(keyspace);
+
 
         // Set the digest version (if we request some digests). This is the smallest version amongst all our target replicas since new nodes
         // knows how to produce older digest but the reverse is not true.
@@ -94,16 +100,16 @@ public abstract class AbstractReadExecutor
         command.setDigestVersion(digestVersion);
     }
 
-    private DecoratedKey getKey()
+    public DecoratedKey getKey()
     {
-        if (command instanceof SinglePartitionReadCommand)
-        {
-            return ((SinglePartitionReadCommand) command).partitionKey();
-        }
-        else
-        {
-            return null;
-        }
+        Preconditions.checkState(command instanceof SinglePartitionReadCommand,
+                                 "Can only get keys for SinglePartitionReadCommand");
+        return ((SinglePartitionReadCommand) command).partitionKey();
+    }
+
+    public ReadRepair getReadRepair()
+    {
+        return readRepair;
     }
 
     protected void makeDataRequests(ReplicaCollection replicas)
@@ -114,7 +120,9 @@ public abstract class AbstractReadExecutor
 
     protected void makeDigestRequests(ReplicaCollection replicas)
     {
-        makeRequests(command.copyAsDigestQuery(), replicas);
+        // only send digest requests to full replicas, send data requests instead to the transient replicas
+        makeRequests(command.copyAsDigestQuery(), Replicas.filter(replicas, Replica::isFull));
+        makeRequests(command, Replicas.filter(replicas, Replica::isTransient));
     }
 
     private void makeRequests(ReadCommand readCommand, ReplicaCollection replicas)
@@ -123,6 +131,8 @@ public abstract class AbstractReadExecutor
 
         for (Replica replica: replicas)
         {
+            Preconditions.checkArgument(replica.isFull() || !readCommand.isDigestQuery(),
+                                        "cannot sent digest requests to transient replicas");
             InetAddressAndPort endpoint = replica.getEndpoint();
             if (StorageProxy.canDoLocalRequest(endpoint))
             {
@@ -170,6 +180,7 @@ public abstract class AbstractReadExecutor
     {
         Keyspace keyspace = Keyspace.open(command.metadata().keyspace);
         ReplicaList allReplicas = StorageProxy.getLiveSortedReplicas(keyspace, command.partitionKey());
+        allReplicas.prioritizeForRead();
         ReplicaList targetReplicas = consistencyLevel.filterForQuery(keyspace, allReplicas);
 
         // Throw UAE early if we don't have enough replicas.
@@ -211,10 +222,10 @@ public abstract class AbstractReadExecutor
     boolean shouldSpeculateAndMaybeWait()
     {
         // no latency information, or we're overloaded
-        if (cfs.sampleLatencyNanos > TimeUnit.MILLISECONDS.toNanos(command.getTimeout()))
+        if (cfs.sampleReadLatencyNanos > TimeUnit.MILLISECONDS.toNanos(command.getTimeout()))
             return false;
 
-        return !handler.await(cfs.sampleLatencyNanos, TimeUnit.NANOSECONDS);
+        return !handler.await(cfs.sampleReadLatencyNanos, TimeUnit.NANOSECONDS);
     }
 
     void onReadTimeout() {}
@@ -276,8 +287,6 @@ public abstract class AbstractReadExecutor
             // that the last replica in our list is "extra."
             ReplicaList initialReplicas = targetReplicas.subList(0, targetReplicas.size() - 1);
 
-            Replicas.checkFull(initialReplicas);
-
             if (handler.blockfor < initialReplicas.size())
             {
                 // We're hitting additional targets for read repair.  Since our "extra" replica is the least-
@@ -305,12 +314,11 @@ public abstract class AbstractReadExecutor
                 speculated = true;
                 cfs.metric.speculativeRetries.inc();
                 // Could be waiting on the data, or on enough digests.
-                ReadCommand retryCommand = command;
-                if (handler.resolver.isDataPresent())
-                    retryCommand = command.copyAsDigestQuery();
-
                 Replica extraReplica = Iterables.getLast(targetReplicas);
-                Replicas.checkFull(extraReplica);
+                ReadCommand retryCommand = command;
+
+                if (handler.resolver.isDataPresent() && extraReplica.isFull())
+                    retryCommand = command.copyAsDigestQuery();
 
                 if (traceState != null)
                     traceState.trace("speculating read retry on {}", extraReplica);
@@ -433,9 +441,17 @@ public abstract class AbstractReadExecutor
         }
     }
 
-    public void maybeRepairAdditionalReplicas()
+    boolean isDone()
     {
-        // TODO: this
+        return result != null;
+    }
+
+    public void maybeSendAdditionalDataRequests()
+    {
+        if (isDone())
+            return;
+
+        readRepair.maybeSendAdditionalDataRequests();
     }
 
     public PartitionIterator getResult() throws ReadFailureException, ReadTimeoutException

@@ -59,7 +59,7 @@ public class ReadExecutorTest
         targets = ReplicaList.immutableCopyOf(ReplicaUtils.full(InetAddressAndPort.getByName("127.0.0.255")),
                                               ReplicaUtils.full(InetAddressAndPort.getByName("127.0.0.254")),
                                               ReplicaUtils.full(InetAddressAndPort.getByName("127.0.0.253")));
-        cfs.sampleLatencyNanos = 0;
+        cfs.sampleReadLatencyNanos = 0;
     }
 
     @Before

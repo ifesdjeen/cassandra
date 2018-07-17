@@ -198,6 +198,11 @@ public class ReplicaSet extends ReplicaCollection
         return filter(predicates, ReplicaSet::new);
     }
 
+    public boolean containsReplica(Replica replica)
+    {
+        return replicaSet.contains(replica);
+    }
+
     @Override
     public Stream<Replica> stream()
     {

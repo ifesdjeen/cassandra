@@ -30,22 +30,32 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.Iterables;
 import com.google.common.collect.Maps;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.Directories;
+import org.apache.cassandra.db.Keyspace;
 import org.apache.cassandra.db.compaction.writers.CompactionAwareWriter;
 import org.apache.cassandra.db.lifecycle.LifecycleTransaction;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.io.sstable.ISSTableScanner;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
+import org.apache.cassandra.locator.AbstractReplicationStrategy;
+import org.apache.cassandra.locator.InetAddressAndPort;
+import org.apache.cassandra.locator.Replica;
+import org.apache.cassandra.locator.Replicas;
+import org.apache.cassandra.repair.consistent.LocalSession;
 import org.apache.cassandra.schema.CompactionParams;
+import org.apache.cassandra.schema.Schema;
+import org.apache.cassandra.schema.TableId;
 import org.apache.cassandra.service.ActiveRepairService;
+import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.Pair;
 
 /**
@@ -418,13 +428,49 @@ class PendingRepairManager
             return sessionID;
         }
 
+        private boolean isTransientReplica()
+        {
+            LocalSession session = ActiveRepairService.instance.consistent.local.getSession(sessionID);
+
+            Keyspace keyspace = null;
+            for (TableId tid: session.tableIds)
+            {
+                ColumnFamilyStore cfs = Schema.instance.getColumnFamilyStoreInstance(tid);
+                if (cfs == null)
+                {
+                    continue;
+                }
+                Keyspace ks = cfs.keyspace;
+                Preconditions.checkNotNull(ks);
+                if (keyspace == null)
+                {
+                    keyspace = ks;
+                }
+                Preconditions.checkArgument(keyspace == ks);
+            }
+
+            AbstractReplicationStrategy replicationStrategy = keyspace.getReplicationStrategy();
+            InetAddressAndPort thisEndpoint = FBUtilities.getBroadcastAddressAndPort();
+            Set<Range<Token>> transientRanges = Replicas.filter(replicationStrategy.getAddressReplicas().get(thisEndpoint), Replica::isTransient).asRangeSet();
+            return Iterables.all(session.ranges, r -> transientRanges.contains(r));
+        }
+
         protected void runMayThrow() throws Exception
         {
             boolean completed = false;
+            boolean obsoleteSSTables = isTransientReplica() && repairedAt > 0;
             try
             {
-                logger.debug("Setting repairedAt to {} on {} for {}", repairedAt, transaction.originals(), sessionID);
-                cfs.getCompactionStrategyManager().mutateRepaired(transaction.originals(), repairedAt, ActiveRepairService.NO_PENDING_REPAIR);
+                if (obsoleteSSTables)
+                {
+                    logger.info("Obsoleting transient repaired ssatbles");
+                    transaction.obsoleteOriginals();
+                }
+                else
+                {
+                    logger.debug("Setting repairedAt to {} on {} for {}", repairedAt, transaction.originals(), sessionID);
+                    cfs.getCompactionStrategyManager().mutateRepaired(transaction.originals(), repairedAt, ActiveRepairService.NO_PENDING_REPAIR);
+                }
                 completed = true;
             }
             finally
@@ -432,7 +478,14 @@ class PendingRepairManager
                 // we always abort because mutating metadata isn't guarded by LifecycleTransaction, so this won't roll
                 // anything back. Also, we don't want to obsolete the originals. We're only using it to prevent other
                 // compactions from marking these sstables compacting, and unmarking them when we're done
-                transaction.abort();
+                if (obsoleteSSTables)
+                {
+                    transaction.finish();
+                }
+                else
+                {
+                    transaction.abort();
+                }
                 if (completed)
                 {
                     removeSession(sessionID);

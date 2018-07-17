@@ -17,25 +17,39 @@
  */
 package org.apache.cassandra.service;
 
+import java.util.LinkedList;
 import java.util.Map;
+import java.util.Queue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
+import java.util.function.Predicate;
 
+import com.google.common.annotations.VisibleForTesting;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.config.DatabaseDescriptor;
+import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.ConsistencyLevel;
+import org.apache.cassandra.db.IMutation;
 import org.apache.cassandra.db.Keyspace;
 import org.apache.cassandra.db.WriteType;
-import org.apache.cassandra.exceptions.*;
+import org.apache.cassandra.exceptions.RequestFailureReason;
+import org.apache.cassandra.exceptions.UnavailableException;
+import org.apache.cassandra.exceptions.WriteFailureException;
+import org.apache.cassandra.exceptions.WriteTimeoutException;
+import org.apache.cassandra.gms.FailureDetector;
 import org.apache.cassandra.locator.InetAddressAndPort;
+import org.apache.cassandra.locator.Replica;
 import org.apache.cassandra.locator.ReplicaCollection;
+import org.apache.cassandra.locator.ReplicaList;
 import org.apache.cassandra.locator.Replicas;
 import org.apache.cassandra.net.IAsyncCallbackWithFailure;
 import org.apache.cassandra.net.MessageIn;
+import org.apache.cassandra.schema.Schema;
+import org.apache.cassandra.schema.TableId;
 import org.apache.cassandra.utils.concurrent.SimpleCondition;
 
 public abstract class AbstractWriteResponseHandler<T> implements IAsyncCallbackWithFailure<T>
@@ -46,7 +60,7 @@ public abstract class AbstractWriteResponseHandler<T> implements IAsyncCallbackW
     private AtomicInteger responsesAndExpirations;
     private final SimpleCondition condition = new SimpleCondition();
     protected final Keyspace keyspace;
-    protected final ReplicaCollection naturalReplicas;
+    protected final ReplicaList naturalReplicas;
     public final ConsistencyLevel consistencyLevel;
     protected final Runnable callback;
     protected final ReplicaCollection pendingReplicas;
@@ -58,8 +72,28 @@ public abstract class AbstractWriteResponseHandler<T> implements IAsyncCallbackW
     private final long queryStartNanoTime;
     private volatile boolean supportsBackPressure = true;
 
+    static class SpeculationContext
+    {
+        final ReplicaList initial;
+        final ReplicaList backups;
+        final IMutation mutation;
+        final StorageProxy.WritePerformer performer;
+        final String localDC;
+
+        public SpeculationContext(ReplicaList initial, ReplicaList backups, IMutation mutation, StorageProxy.WritePerformer performer, String localDC)
+        {
+            this.initial = initial;
+            this.backups = backups;
+            this.mutation = mutation;
+            this.performer = performer;
+            this.localDC = localDC;
+        }
+    }
+
+    private volatile SpeculationContext speculationContext = null;
+
     /**
-      * Delegate to another WriteReponseHandler or possibly this one to track if the ideal consistency level was reached.
+      * Delegate to another WriteResponseHandler or possibly this one to track if the ideal consistency level was reached.
       * Will be set to null if ideal CL was not configured
       * Will be set to an AWRH delegate if ideal CL was configured
       * Will be same as "this" if this AWRH is the ideal consistency level
@@ -71,7 +105,7 @@ public abstract class AbstractWriteResponseHandler<T> implements IAsyncCallbackW
      * @param queryStartNanoTime
      */
     protected AbstractWriteResponseHandler(Keyspace keyspace,
-                                           ReplicaCollection naturalReplicas,
+                                           ReplicaList naturalReplicas,
                                            ReplicaCollection pendingReplicas,
                                            ConsistencyLevel consistencyLevel,
                                            Runnable callback,
@@ -79,7 +113,7 @@ public abstract class AbstractWriteResponseHandler<T> implements IAsyncCallbackW
                                            long queryStartNanoTime)
     {
         this.keyspace = keyspace;
-        this.pendingReplicas = pendingReplicas;
+        this.pendingReplicas = Replicas.filter(pendingReplicas, Replica::isFull); // don't send mutations to pending transient replicas
         this.consistencyLevel = consistencyLevel;
         this.naturalReplicas = naturalReplicas;
         this.callback = callback;
@@ -279,6 +313,112 @@ public abstract class AbstractWriteResponseHandler<T> implements IAsyncCallbackW
             {
                 keyspace.metric.idealCLWriteLatency.addNano(System.nanoTime() - queryStartNanoTime);
             }
+        }
+    }
+
+    /**
+     * We want to send mutations to as many full replicas as we can, and just as many transient replicas
+     * as we need to meet blockFor.
+     */
+    @VisibleForTesting
+    static SpeculationContext createSpeculationContext(ReplicaList replicas,
+                                                       ConsistencyLevel consistency,
+                                                       IMutation mutation,
+                                                       StorageProxy.WritePerformer performer,
+                                                       String localDc,
+                                                       int blockFor,
+                                                       Predicate<InetAddressAndPort> livePredicate) throws UnavailableException
+    {
+        if (replicas.size() < blockFor)
+            throw new UnavailableException(consistency, blockFor, replicas.size());
+
+        ReplicaList initial = new ReplicaList(replicas.size());
+        Queue<Replica> transients = new LinkedList<>();
+        int liveRecipients = 0;
+        for (Replica replica : replicas)
+        {
+            if (replica.isFull())
+            {
+                initial.add(replica);
+                if (livePredicate.test(replica.getEndpoint()))
+                    liveRecipients++;
+            }
+            else
+            {
+                transients.offer(replica);
+            }
+        }
+
+        if (liveRecipients == 0)
+            throw new UnavailableException("At least one full replica required for writes", consistency, blockFor, 0);
+
+        // add transient replicas to the initial recipients until we've met blockFor
+        while (liveRecipients < blockFor)
+        {
+            if (transients.isEmpty())
+                throw new UnavailableException(consistency, blockFor, liveRecipients);
+
+            Replica replica = transients.remove();
+            if (livePredicate.test(replica.getEndpoint()))
+            {
+                initial.add(replica);
+                liveRecipients++;
+            }
+        }
+
+        return new SpeculationContext(initial, new ReplicaList(transients), mutation, performer, localDc);
+    }
+
+    public ReplicaCollection getInitialRecipients(IMutation mutation, StorageProxy.WritePerformer performer, String localDc) throws UnavailableException
+    {
+        if (!keyspace.getReplicationStrategy().hasTransientReplicas())
+            return Replicas.concatNaturalAndPending(naturalReplicas, pendingReplicas);
+
+        int blockFor = consistencyLevel.blockFor(keyspace);
+        SpeculationContext ctx = createSpeculationContext(naturalReplicas, consistencyLevel, mutation, performer, localDc, blockFor, FailureDetector.instance::isAlive);
+
+        if (!ctx.backups.isEmpty())
+            speculationContext = ctx;
+
+        return Replicas.concatNaturalAndPending(ctx.initial, pendingReplicas);
+    }
+
+    public void maybeTryAdditionalReplicas()
+    {
+        SpeculationContext ctx = speculationContext;
+        if (ctx == null)
+            return;
+
+        IMutation mutation = ctx.mutation;
+
+        long timeout = Long.MAX_VALUE;
+        for (TableId id : mutation.getTableIds())
+        {
+            ColumnFamilyStore cfs = Schema.instance.getColumnFamilyStoreInstance(id);
+            timeout = Math.min(timeout, cfs.sampleWriteLatencyNanos);
+        }
+
+        // no latency information, or we're overloaded
+        if (timeout > TimeUnit.MILLISECONDS.toNanos(mutation.getTimeout()))
+            return;
+
+        try
+        {
+            if(!condition.await(timeout, TimeUnit.NANOSECONDS))
+            {
+                for (TableId id : mutation.getTableIds())
+                {
+                    ColumnFamilyStore cfs = Schema.instance.getColumnFamilyStoreInstance(id);
+                    cfs.metric.transientWrites.inc();
+                }
+                ctx.performer.apply(ctx.mutation, ctx.backups,
+                                    (AbstractWriteResponseHandler<IMutation>) this,
+                                    ctx.localDC, consistencyLevel);
+            }
+        }
+        catch (InterruptedException ex)
+        {
+            throw new AssertionError(ex);
         }
     }
 }

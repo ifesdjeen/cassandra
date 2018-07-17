@@ -20,22 +20,30 @@ package org.apache.cassandra.service.reads;
 import java.nio.ByteBuffer;
 import java.util.concurrent.TimeUnit;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
 
-import org.apache.cassandra.db.*;
+import org.apache.cassandra.db.ConsistencyLevel;
+import org.apache.cassandra.db.Keyspace;
+import org.apache.cassandra.db.ReadCommand;
+import org.apache.cassandra.db.ReadResponse;
+import org.apache.cassandra.db.SinglePartitionReadCommand;
 import org.apache.cassandra.db.partitions.PartitionIterator;
 import org.apache.cassandra.db.partitions.UnfilteredPartitionIterators;
+import org.apache.cassandra.locator.Replica;
+import org.apache.cassandra.locator.ReplicaCollection;
 import org.apache.cassandra.net.MessageIn;
 import org.apache.cassandra.service.reads.repair.ReadRepair;
-import org.apache.cassandra.tracing.TraceState;
 
 public class DigestResolver extends ResponseResolver
 {
-    private volatile ReadResponse dataResponse;
+    private volatile MessageIn<ReadResponse> dataResponse;
+    private volatile boolean hasTransientResponse = false;
+    private volatile TransientResolver transientResolver = null;
 
-    public DigestResolver(Keyspace keyspace, ReadCommand command, ConsistencyLevel consistency, ReadRepair readRepair, int maxResponseCount)
+    public DigestResolver(Keyspace keyspace, ReadCommand command, ConsistencyLevel consistency, ReplicaCollection replicas, ReadRepair readRepair, int maxResponseCount, long queryStartNanoTime)
     {
-        super(keyspace, command, consistency, readRepair, maxResponseCount);
+        super(keyspace, command, consistency, replicas, readRepair, maxResponseCount, queryStartNanoTime);
         Preconditions.checkArgument(command instanceof SinglePartitionReadCommand,
                                     "DigestResolver can only be used with SinglePartitionReadCommand commands");
     }
@@ -44,25 +52,52 @@ public class DigestResolver extends ResponseResolver
     public void preprocess(MessageIn<ReadResponse> message)
     {
         super.preprocess(message);
-        if (dataResponse == null && !message.payload.isDigestResponse())
-            dataResponse = message.payload;
+        Replica replica = getReplicaFor(message.from);
+        if (dataResponse == null && !message.payload.isDigestResponse() && replica.isFull())
+        {
+            dataResponse = message;
+        }
+        else if (replica.isTransient())
+        {
+            Preconditions.checkArgument(!message.payload.isDigestResponse(), "digest response received from transient replica");
+            hasTransientResponse = true;
+        }
     }
 
     public PartitionIterator getData()
     {
         assert isDataPresent();
-        return UnfilteredPartitionIterators.filter(dataResponse.makeIterator(command), command.nowInSec());
+        int nowInSec = command.nowInSec();
+
+        if (transientResolver == null)
+        {
+            return UnfilteredPartitionIterators.filter(dataResponse.payload.makeIterator(command), nowInSec);
+        }
+        else
+        {
+            return transientResolver.resolve();
+        }
     }
 
     public boolean responsesMatch()
     {
         long start = System.nanoTime();
 
+        TransientResolver resolver = hasTransientResponse
+                                              ? new TransientResolver(getReplicaFor(dataResponse.from), this)
+                                              : null;
+
         // validate digests against each other; return false immediately on mismatch.
         ByteBuffer digest = null;
         for (MessageIn<ReadResponse> message : responses)
         {
+            if (resolver != null)
+                resolver.addResponse(message);
+
             ReadResponse response = message.payload;
+
+            if (getReplicaFor(message.from).isTransient())
+                continue;
 
             ByteBuffer newDigest = response.digest(command);
             if (digest == null)
@@ -75,11 +110,18 @@ public class DigestResolver extends ResponseResolver
         if (logger.isTraceEnabled())
             logger.trace("responsesMatch: {} ms.", TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start));
 
+        transientResolver = resolver;
         return true;
     }
 
     public boolean isDataPresent()
     {
         return dataResponse != null;
+    }
+
+    @VisibleForTesting
+    public boolean hasTransientResponse()
+    {
+        return hasTransientResponse;
     }
 }
