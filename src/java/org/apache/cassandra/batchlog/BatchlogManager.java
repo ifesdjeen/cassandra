@@ -454,7 +454,7 @@ public class BatchlogManager implements BatchlogManagerMBean
                                                                                      long writtenAt,
                                                                                      Set<InetAddressAndPort> hintedNodes)
         {
-            ReplicaSet liveReplicas = new ReplicaSet();
+            ReplicaList liveReplicas = new ReplicaList();
             String ks = mutation.getKeyspaceName();
             Token tk = mutation.key().getToken();
 
@@ -505,7 +505,7 @@ public class BatchlogManager implements BatchlogManagerMBean
         {
             private final Set<InetAddressAndPort> undelivered = Collections.newSetFromMap(new ConcurrentHashMap<>());
 
-            ReplayWriteResponseHandler(ReplicaCollection writeReplicas, long queryStartNanoTime)
+            ReplayWriteResponseHandler(ReplicaList writeReplicas, long queryStartNanoTime)
             {
                 super(writeReplicas, ReplicaList.of(), null, null, null, WriteType.UNLOGGED_BATCH, queryStartNanoTime);
                 Iterables.addAll(undelivered, writeReplicas.asEndpoints());

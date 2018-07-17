@@ -20,6 +20,7 @@ package org.apache.cassandra.service;
 import org.apache.cassandra.db.Keyspace;
 import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.locator.ReplicaCollection;
+import org.apache.cassandra.locator.ReplicaList;
 import org.apache.cassandra.net.MessageIn;
 import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.db.WriteType;
@@ -29,7 +30,7 @@ import org.apache.cassandra.db.WriteType;
  */
 public class DatacenterWriteResponseHandler<T> extends WriteResponseHandler<T>
 {
-    public DatacenterWriteResponseHandler(ReplicaCollection naturalReplicas,
+    public DatacenterWriteResponseHandler(ReplicaList naturalReplicas,
                                           ReplicaCollection pendingReplicas,
                                           ConsistencyLevel consistencyLevel,
                                           Keyspace keyspace,

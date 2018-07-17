@@ -128,7 +128,7 @@ public abstract class AbstractReplicationStrategy
      */
     public abstract ReplicaList calculateNaturalReplicas(Token searchToken, TokenMetadata tokenMetadata);
 
-    public <T> AbstractWriteResponseHandler<T> getWriteResponseHandler(ReplicaCollection naturalEndpoints,
+    public <T> AbstractWriteResponseHandler<T> getWriteResponseHandler(ReplicaList naturalEndpoints,
                                                                        ReplicaCollection pendingEndpoints,
                                                                        ConsistencyLevel consistency_level,
                                                                        Runnable callback,
@@ -138,7 +138,7 @@ public abstract class AbstractReplicationStrategy
         return getWriteResponseHandler(naturalEndpoints, pendingEndpoints, consistency_level, callback, writeType, queryStartNanoTime, DatabaseDescriptor.getIdealConsistencyLevel());
     }
 
-    public <T> AbstractWriteResponseHandler<T> getWriteResponseHandler(ReplicaCollection naturalEndpoints,
+    public <T> AbstractWriteResponseHandler<T> getWriteResponseHandler(ReplicaList naturalEndpoints,
                                                                        ReplicaCollection pendingEndpoints,
                                                                        ConsistencyLevel consistency_level,
                                                                        Runnable callback,
@@ -202,6 +202,11 @@ public abstract class AbstractReplicationStrategy
      * @return the replication factor
      */
     public abstract ReplicationFactor getReplicationFactor();
+
+    public boolean hasTransientReplicas()
+    {
+        return getReplicationFactor().trans > 0;
+    }
 
     /*
      * NOTE: this is pretty inefficient. also the inverse (getRangeAddresses) below.

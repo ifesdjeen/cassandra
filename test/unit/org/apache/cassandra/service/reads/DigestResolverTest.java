@@ -1,0 +1,171 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.cassandra.service.reads;
+
+import com.google.common.collect.Iterables;
+import com.google.common.collect.Lists;
+import org.junit.Assert;
+import org.junit.Test;
+
+import org.apache.cassandra.db.ConsistencyLevel;
+import org.apache.cassandra.db.SimpleBuilders;
+import org.apache.cassandra.db.SinglePartitionReadCommand;
+import org.apache.cassandra.db.partitions.PartitionUpdate;
+import org.apache.cassandra.db.rows.Row;
+import org.apache.cassandra.locator.ReplicaList;
+import org.apache.cassandra.schema.TableMetadata;
+import org.apache.cassandra.service.reads.repair.NoopReadRepair;
+import org.apache.cassandra.service.reads.repair.TestableReadRepair;
+
+import static org.apache.cassandra.locator.ReplicaUtils.full;
+import static org.apache.cassandra.locator.ReplicaUtils.trans;
+
+public class DigestResolverTest extends AbstractReadResponseTest
+{
+    private static PartitionUpdate.Builder update(TableMetadata metadata, String key, Row... rows)
+    {
+        PartitionUpdate.Builder builder = new PartitionUpdate.Builder(metadata, dk(key), metadata.regularAndStaticColumns(), rows.length, false);
+        for (Row row: rows)
+        {
+            builder.add(row);
+        }
+        return builder;
+    }
+
+    private static PartitionUpdate.Builder update(Row... rows)
+    {
+        return update(cfm, "key1", rows);
+    }
+
+    private static Row row(long timestamp, int clustering, int value)
+    {
+        SimpleBuilders.RowBuilder builder = new SimpleBuilders.RowBuilder(cfm, Integer.toString(clustering));
+        builder.timestamp(timestamp).add("c1", Integer.toString(value));
+        return builder.build();
+    }
+
+    @Test
+    public void noRepairNeeded()
+    {
+        SinglePartitionReadCommand command = SinglePartitionReadCommand.fullPartitionRead(cfm, nowInSec, dk(5));
+        ReplicaList targetReplicas = new ReplicaList(Lists.newArrayList(full(EP1), full(EP2)));
+        TestableReadRepair readRepair = new TestableReadRepair(command, ConsistencyLevel.QUORUM);
+        DigestResolver resolver = new DigestResolver(cfs.keyspace, command, ConsistencyLevel.QUORUM, targetReplicas, readRepair, 3, 0);
+
+        PartitionUpdate response = update(row(1000, 4, 4), row(1000, 5, 5)).build();
+
+        Assert.assertFalse(resolver.isDataPresent());
+        resolver.preprocess(response(command, EP2, iter(response), true));
+        resolver.preprocess(response(command, EP1, iter(response), false));
+        Assert.assertTrue(resolver.isDataPresent());
+        Assert.assertTrue(resolver.responsesMatch());
+
+        assertPartitionsEqual(filter(iter(response)), resolver.getData());
+    }
+
+    @Test
+    public void digestMismatch()
+    {
+        SinglePartitionReadCommand command = SinglePartitionReadCommand.fullPartitionRead(cfm, nowInSec, dk(5));
+        ReplicaList targetReplicas = new ReplicaList(Lists.newArrayList(full(EP1), full(EP2)));
+        DigestResolver resolver = new DigestResolver(cfs.keyspace, command, ConsistencyLevel.QUORUM, targetReplicas, NoopReadRepair.instance, 3, 0);
+
+        PartitionUpdate response1 = update(row(1000, 4, 4), row(1000, 5, 5)).build();
+        PartitionUpdate response2 = update(row(2000, 4, 5)).build();
+
+        Assert.assertFalse(resolver.isDataPresent());
+        resolver.preprocess(response(command, EP2, iter(response1), true));
+        resolver.preprocess(response(command, EP1, iter(response2), false));
+        Assert.assertTrue(resolver.isDataPresent());
+        Assert.assertFalse(resolver.responsesMatch());
+        Assert.assertFalse(resolver.hasTransientResponse());
+    }
+
+    /**
+     * A full response and a transient response, with the transient response being a subset of the full one
+     */
+    @Test
+    public void agreeingTransient()
+    {
+        SinglePartitionReadCommand command = SinglePartitionReadCommand.fullPartitionRead(cfm, nowInSec, dk(5));
+        ReplicaList targetReplicas = new ReplicaList(Lists.newArrayList(full(EP1), trans(EP2)));
+        TestableReadRepair readRepair = new TestableReadRepair(command, ConsistencyLevel.QUORUM);
+        DigestResolver resolver = new DigestResolver(cfs.keyspace, command, ConsistencyLevel.QUORUM, targetReplicas, readRepair, 3, 0);
+
+        PartitionUpdate response1 = update(row(1000, 4, 4), row(1000, 5, 5)).build();
+        PartitionUpdate response2 = update(row(1000, 5, 5)).build();
+
+        Assert.assertFalse(resolver.isDataPresent());
+        resolver.preprocess(response(command, EP1, iter(response1), false));
+        resolver.preprocess(response(command, EP2, iter(response2), false));
+        Assert.assertTrue(resolver.isDataPresent());
+        Assert.assertTrue(resolver.responsesMatch());
+        Assert.assertTrue(resolver.hasTransientResponse());
+        Assert.assertTrue(readRepair.sent.isEmpty());
+    }
+
+    /**
+     * Transient responses shouldn't be classified as the single dataResponse
+     */
+    @Test
+    public void transientResponse()
+    {
+        SinglePartitionReadCommand command = SinglePartitionReadCommand.fullPartitionRead(cfm, nowInSec, dk(5));
+        ReplicaList targetReplicas = new ReplicaList(Lists.newArrayList(full(EP1), trans(EP2)));
+        DigestResolver resolver = new DigestResolver(cfs.keyspace, command, ConsistencyLevel.QUORUM, targetReplicas, NoopReadRepair.instance, 3, 0);
+
+        PartitionUpdate response2 = update(row(1000, 5, 5)).build();
+        Assert.assertFalse(resolver.isDataPresent());
+        Assert.assertFalse(resolver.hasTransientResponse());
+        resolver.preprocess(response(command, EP2, iter(response2), false));
+        Assert.assertFalse(resolver.isDataPresent());
+        Assert.assertTrue(resolver.hasTransientResponse());
+    }
+
+    /**
+     * If data from a transient replica causes us to send repairs to the node we received
+     * the data response from, we should forward those repairs to the nodes that returned
+     * digest responses agreeing with the data response.
+     */
+    @Test
+    public void transientRepairsForwarding()
+    {
+        SinglePartitionReadCommand command = SinglePartitionReadCommand.fullPartitionRead(cfm, nowInSec, dk(5));
+        ReplicaList targetReplicas = new ReplicaList(Lists.newArrayList(full(EP1), full(EP2), trans(EP3)));
+        TestableReadRepair readRepair = new TestableReadRepair(command, ConsistencyLevel.QUORUM);
+        DigestResolver resolver = new DigestResolver(cfs.keyspace, command, ConsistencyLevel.QUORUM, targetReplicas, readRepair, 3, 0);
+
+        PartitionUpdate fullData = update(row(1000, 4, 4), row(1000, 5, 5)).build();
+        PartitionUpdate transData = update(row(1000, 6, 6)).build();
+
+        Assert.assertFalse(resolver.isDataPresent());
+        resolver.preprocess(response(command, EP1, iter(fullData), false));
+        resolver.preprocess(response(command, EP2, iter(fullData), true));
+        resolver.preprocess(response(command, EP3, iter(transData), false));
+        Assert.assertTrue(resolver.isDataPresent());
+        Assert.assertTrue(resolver.responsesMatch());
+        Assert.assertTrue(resolver.hasTransientResponse());
+
+        consume(resolver.getData());
+        assertPartitionsEqual(transData.unfilteredIterator(), Iterables.getOnlyElement(readRepair.sent.get(EP1).getPartitionUpdates()).unfilteredIterator());
+        assertPartitionsEqual(transData.unfilteredIterator(), Iterables.getOnlyElement(readRepair.sent.get(EP2).getPartitionUpdates()).unfilteredIterator());
+        Assert.assertFalse(readRepair.sent.containsKey(EP3));
+
+    }
+}

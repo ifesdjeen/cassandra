@@ -16,20 +16,9 @@
  * limitations under the License.
  */
 
-package org.apache.cassandra.service.reads.repair;
+package org.apache.cassandra.service.reads;
 
-import org.apache.cassandra.db.Mutation;
-import org.apache.cassandra.locator.InetAddressAndPort;
-import org.apache.cassandra.locator.Replica;
-
-public interface RepairListener
+public class ReadCallbackTest
 {
-    interface PartitionRepair
-    {
-        void reportMutation(Replica replica, Mutation mutation);
-        void finish();
-    }
 
-    PartitionRepair startPartitionRepair();
-    void awaitRepairs(long timeoutMillis);
 }

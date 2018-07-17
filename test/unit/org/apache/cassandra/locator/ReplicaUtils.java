@@ -40,4 +40,9 @@ public class ReplicaUtils
     {
         return new Replica(endpoint, range, false);
     }
+
+    public static Replica trans(InetAddressAndPort endpoint)
+    {
+        return trans(endpoint, FULL_RANGE);
+    }
 }
