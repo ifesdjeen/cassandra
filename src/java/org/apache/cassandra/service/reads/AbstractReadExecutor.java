@@ -38,6 +38,7 @@ import org.apache.cassandra.exceptions.ReadTimeoutException;
 import org.apache.cassandra.exceptions.UnavailableException;
 import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.locator.Replica;
+import org.apache.cassandra.locator.ReplicaCollection;
 import org.apache.cassandra.locator.ReplicaList;
 import org.apache.cassandra.locator.Replicas;
 import org.apache.cassandra.net.MessageOut;
@@ -105,18 +106,18 @@ public abstract class AbstractReadExecutor
         }
     }
 
-    protected void makeDataRequests(Iterable<Replica> replicas)
+    protected void makeDataRequests(ReplicaCollection replicas)
     {
         makeRequests(command, replicas);
 
     }
 
-    protected void makeDigestRequests(Iterable<Replica> replicas)
+    protected void makeDigestRequests(ReplicaCollection replicas)
     {
         makeRequests(command.copyAsDigestQuery(), replicas);
     }
 
-    private void makeRequests(ReadCommand readCommand, Iterable<Replica> replicas)
+    private void makeRequests(ReadCommand readCommand, ReplicaCollection replicas)
     {
         boolean hasLocalEndpoint = false;
 

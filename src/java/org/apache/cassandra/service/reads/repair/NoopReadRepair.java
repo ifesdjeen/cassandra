@@ -33,7 +33,7 @@ public class NoopReadRepair implements ReadRepair
 
     private NoopReadRepair() {}
 
-    public UnfilteredPartitionIterators.MergeListener getMergeListener(Replica[] replicas)
+    public UnfilteredPartitionIterators.MergeListener getMergeListener(ReplicaList replicas)
     {
         return UnfilteredPartitionIterators.MergeListener.NOOP;
     }

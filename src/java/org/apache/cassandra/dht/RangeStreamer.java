@@ -129,7 +129,7 @@ public class RangeStreamer
     {
         public boolean shouldInclude(Replica replica)
         {
-            return !FBUtilities.getBroadcastAddressAndPort().equals(replica.getEndpoint());
+            return !replica.isLocal();
         }
     }
 

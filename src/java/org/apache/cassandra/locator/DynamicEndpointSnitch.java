@@ -42,7 +42,6 @@ import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.utils.FBUtilities;
 
-
 /**
  * A dynamic snitch that sorts endpoints by latency with an adapted phi failure detector
  */
@@ -429,7 +428,7 @@ public class DynamicEndpointSnitch extends AbstractEndpointSnitch implements ILa
     }
 
     // Return the max score for the endpoint in the provided list, or -1.0 if no node have a score.
-    private double maxScore(Iterable<Replica> endpoints)
+    private double maxScore(ReplicaCollection endpoints)
     {
         double maxScore = -1.0;
         for (Replica replica : endpoints)

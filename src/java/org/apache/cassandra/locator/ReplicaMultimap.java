@@ -32,7 +32,7 @@ import com.google.common.base.Preconditions;
 
 public abstract class ReplicaMultimap<K, V extends ReplicaCollection>
 {
-    Map<K, V> map = new HashMap<>();
+    final Map<K, V> map = new HashMap<>();
 
     public boolean equals(Object o)
     {

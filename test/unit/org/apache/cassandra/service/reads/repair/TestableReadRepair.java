@@ -60,7 +60,7 @@ public class TestableReadRepair implements ReadRepair, RepairListener
     }
 
     @Override
-    public UnfilteredPartitionIterators.MergeListener getMergeListener(Replica[] replicas)
+    public UnfilteredPartitionIterators.MergeListener getMergeListener(ReplicaList replicas)
     {
         return new PartitionIteratorMergeListener(replicas, command, this);
     }
