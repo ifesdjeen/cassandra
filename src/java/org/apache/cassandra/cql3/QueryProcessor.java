@@ -204,7 +204,18 @@ public class QueryProcessor implements QueryHandler
         statement.checkAccess(clientState);
         statement.validate(clientState);
 
-        ResultMessage result = statement.execute(queryState, options, queryStartNanoTime);
+        ResultMessage result;
+        if (options.getConsistency() == ConsistencyLevel.NODELOCAL)
+        {
+            assert Boolean.getBoolean("cassandra.enable_nodelocal_queries") : "Node local consistency level is highly dangerous and should be used only for debugging purposes";
+            assert statement instanceof SelectStatement : "Only SELECT statements are permitted for node-local execution";
+            logger.info("Statement {} executed with NODELOCAL consistency level.", statement);
+            result = statement.executeInternal(queryState, options);
+        }
+        else
+        {
+            result = statement.execute(queryState, options, queryStartNanoTime);
+        }
         return result == null ? new ResultMessage.Void() : result;
     }
 
