@@ -2199,7 +2199,7 @@ public class StorageProxy implements StorageProxyMBean
         {
             PartitionRangeReadCommand rangeCommand = command.forSubRange(toQuery.range, isFirst);
 
-            ReadRepair readRepair = ReadRepair.create(command, toQuery.filteredReplicas, queryStartNanoTime, consistency);
+            ReadRepair readRepair = ReadRepair.create(command, queryStartNanoTime, consistency);
             DataResolver resolver = new DataResolver(keyspace, rangeCommand, consistency, toQuery.filteredReplicas, readRepair, toQuery.filteredReplicas.size(), queryStartNanoTime);
 
             int blockFor = consistency.blockFor(keyspace);
@@ -2209,7 +2209,7 @@ public class StorageProxy implements StorageProxyMBean
 
             handler.assureSufficientLiveNodes();
 
-            if (toQuery.filteredReplicas.size() == 1 && canDoLocalRequest(toQuery.filteredReplicas.get(0).getEndpoint()))
+            if (toQuery.filteredReplicas.size() == 1 && toQuery.filteredReplicas.get(0).isLocal())
             {
                 StageManager.getStage(Stage.READ).execute(new LocalReadRunnable(rangeCommand, handler));
             }

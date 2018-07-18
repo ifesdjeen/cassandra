@@ -64,7 +64,7 @@ public class ShortReadPartitionsProtection extends Transformation<UnfilteredRowI
                                          DataLimits.Counter mergedResultCounter,
                                          long queryStartNanoTime)
     {
-        Replicas.checkFull(source);
+//        Replicas.checkFull(source);
         this.command = command;
         this.source = source;
         this.singleResultCounter = singleResultCounter;
