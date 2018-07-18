@@ -80,7 +80,7 @@ public abstract class AbstractReadExecutor
         this.command = command;
         this.consistency = consistency;
         this.targetReplicas = targetReplicas;
-        this.readRepair = ReadRepair.create(command, targetReplicas, queryStartNanoTime, consistency);
+        this.readRepair = ReadRepair.create(command, queryStartNanoTime, consistency);
         this.digestResolver = new DigestResolver(keyspace, command, consistency, targetReplicas, readRepair, targetReplicas.size(), queryStartNanoTime);
         this.handler = new ReadCallback(digestResolver, consistency, command, targetReplicas, queryStartNanoTime, readRepair);
         this.cfs = cfs;

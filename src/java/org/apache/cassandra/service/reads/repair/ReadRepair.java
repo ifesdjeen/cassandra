@@ -75,8 +75,8 @@ public interface ReadRepair
 
     void repairPartition(DecoratedKey key, Map<Replica, Mutation> mutations, ReplicaList destinations);
 
-    static ReadRepair create(ReadCommand command, ReplicaList endpoints, long queryStartNanoTime, ConsistencyLevel consistency)
+    static ReadRepair create(ReadCommand command, long queryStartNanoTime, ConsistencyLevel consistency)
     {
-        return new BlockingReadRepair(command, endpoints, queryStartNanoTime, consistency);
+        return new BlockingReadRepair(command, queryStartNanoTime, consistency);
     }
 }

@@ -87,11 +87,9 @@ public class BlockingReadRepair implements ReadRepair
     }
 
     public BlockingReadRepair(ReadCommand command,
-                              ReplicaList replicas,
                               long queryStartNanoTime,
                               ConsistencyLevel consistency)
     {
-        Replicas.checkFull(replicas);
         this.command = command;
         this.queryStartNanoTime = queryStartNanoTime;
         this.consistency = consistency;
