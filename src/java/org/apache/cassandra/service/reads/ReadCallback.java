@@ -18,31 +18,29 @@
 package org.apache.cassandra.service.reads;
 
 import java.util.Collections;
-import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
 
-import com.google.common.collect.Maps;
-import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.config.DatabaseDescriptor;
-import org.apache.cassandra.db.*;
-import org.apache.cassandra.exceptions.RequestFailureReason;
+import org.apache.cassandra.db.ConsistencyLevel;
+import org.apache.cassandra.db.Keyspace;
+import org.apache.cassandra.db.PartitionRangeReadCommand;
+import org.apache.cassandra.db.ReadCommand;
+import org.apache.cassandra.db.ReadResponse;
 import org.apache.cassandra.exceptions.ReadFailureException;
 import org.apache.cassandra.exceptions.ReadTimeoutException;
+import org.apache.cassandra.exceptions.RequestFailureReason;
 import org.apache.cassandra.exceptions.UnavailableException;
 import org.apache.cassandra.locator.InetAddressAndPort;
-import org.apache.cassandra.locator.Replica;
 import org.apache.cassandra.locator.ReplicaList;
 import org.apache.cassandra.net.IAsyncCallbackWithFailure;
 import org.apache.cassandra.net.MessageIn;
 import org.apache.cassandra.net.MessagingService;
-import org.apache.cassandra.db.ConsistencyLevel;
-import org.apache.cassandra.service.reads.repair.ReadRepair;
 import org.apache.cassandra.tracing.Tracing;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.concurrent.SimpleCondition;
@@ -68,12 +66,10 @@ public class ReadCallback implements IAsyncCallbackWithFailure<ReadResponse>
 
     private final Keyspace keyspace; // TODO push this into ConsistencyLevel?
 
-    private final ReadRepair readRepair;
-
     /**
      * Constructor when response count has to be calculated and blocked for.
      */
-    public ReadCallback(ResponseResolver resolver, ConsistencyLevel consistencyLevel, ReadCommand command, ReplicaList filteredReplicas, long queryStartNanoTime, ReadRepair readRepair)
+    public ReadCallback(ResponseResolver resolver, ConsistencyLevel consistencyLevel, ReadCommand command, ReplicaList filteredReplicas, long queryStartNanoTime)
     {
         this(resolver,
              consistencyLevel,
@@ -81,10 +77,10 @@ public class ReadCallback implements IAsyncCallbackWithFailure<ReadResponse>
              command,
              Keyspace.open(command.metadata().keyspace),
              filteredReplicas,
-             queryStartNanoTime, readRepair);
+             queryStartNanoTime);
     }
 
-    public ReadCallback(ResponseResolver resolver, ConsistencyLevel consistencyLevel, int blockfor, ReadCommand command, Keyspace keyspace, ReplicaList replicas, long queryStartNanoTime, ReadRepair readRepair)
+    public ReadCallback(ResponseResolver resolver, ConsistencyLevel consistencyLevel, int blockfor, ReadCommand command, Keyspace keyspace, ReplicaList replicas, long queryStartNanoTime)
     {
         this.command = command;
         this.keyspace = keyspace;
@@ -93,13 +89,12 @@ public class ReadCallback implements IAsyncCallbackWithFailure<ReadResponse>
         this.resolver = resolver;
         this.queryStartNanoTime = queryStartNanoTime;
         this.replicas = replicas;
-        this.readRepair = readRepair;
         this.failureReasonByEndpoint = new ConcurrentHashMap<>();
         // we don't support read repair (or rapid read protection) for range scans yet (CASSANDRA-6897)
         assert !(command instanceof PartitionRangeReadCommand) || blockfor >= replicas.size();
 
         if (logger.isTraceEnabled())
-            logger.trace("Blockfor is {}; setting up requests to {}", blockfor, StringUtils.join(this.replicas, ","));
+            logger.trace("Blockfor is {}; setting up requests to {}", blockfor, this.replicas);
     }
 
     public boolean await(long timePastStart, TimeUnit unit)

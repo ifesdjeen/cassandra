@@ -82,7 +82,7 @@ public abstract class AbstractReadExecutor
         this.targetReplicas = targetReplicas;
         this.readRepair = ReadRepair.create(command, queryStartNanoTime, consistency);
         this.digestResolver = new DigestResolver(keyspace, command, consistency, targetReplicas, readRepair, targetReplicas.size(), queryStartNanoTime);
-        this.handler = new ReadCallback(digestResolver, consistency, command, targetReplicas, queryStartNanoTime, readRepair);
+        this.handler = new ReadCallback(digestResolver, consistency, command, targetReplicas, queryStartNanoTime);
         this.cfs = cfs;
         this.traceState = Tracing.instance.get();
         this.queryStartNanoTime = queryStartNanoTime;
@@ -132,7 +132,7 @@ public abstract class AbstractReadExecutor
         for (Replica replica: replicas)
         {
             Preconditions.checkArgument(replica.isFull() || !readCommand.isDigestQuery(),
-                                        "cannot sent digest requests to transient replicas");
+                                        "Can not send digest requests to transient replicas");
             InetAddressAndPort endpoint = replica.getEndpoint();
             if (StorageProxy.canDoLocalRequest(endpoint))
             {
@@ -142,7 +142,7 @@ public abstract class AbstractReadExecutor
 
             if (traceState != null)
                 traceState.trace("reading {} from {}", readCommand.isDigestQuery() ? "digest" : "data", endpoint);
-            logger.trace("reading {} from {}", readCommand.isDigestQuery() ? "digest" : "data", endpoint);
+            logger.info(">>>>>> reading {} from {}", readCommand.isDigestQuery() ? "digest" : "data", endpoint);
             MessageOut<ReadCommand> message = readCommand.createMessage();
             MessagingService.instance().sendRRWithFailure(message, endpoint, handler);
         }
@@ -247,7 +247,6 @@ public abstract class AbstractReadExecutor
 
         public void executeAsync()
         {
-            Replicas.checkFull(targetReplicas);
             makeDataRequests(targetReplicas.subList(0, 1));
             if (targetReplicas.size() > 1)
                 makeDigestRequests(targetReplicas.subList(1, targetReplicas.size()));
