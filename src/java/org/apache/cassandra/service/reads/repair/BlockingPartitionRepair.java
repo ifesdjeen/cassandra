@@ -28,6 +28,7 @@ import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
+import com.google.common.collect.Maps;
 import com.google.common.util.concurrent.AbstractFuture;
 
 import org.apache.cassandra.db.ColumnFamilyStore;
@@ -57,6 +58,7 @@ public class BlockingPartitionRepair extends AbstractFuture<Object> implements I
     private final ConsistencyLevel consistency;
     private final ReplicaList participants;
     private final Map<Replica, Mutation> pendingRepairs;
+    private final Map<InetAddressAndPort, Replica> replicaMap;
     private final CountDownLatch latch;
 
     private volatile long mutationsSentTime;
@@ -68,7 +70,7 @@ public class BlockingPartitionRepair extends AbstractFuture<Object> implements I
         this.consistency = consistency;
         this.pendingRepairs = new ConcurrentHashMap<>(repairs);
         this.participants = participants;
-
+        this.replicaMap = Maps.newHashMapWithExpectedSize(participants.size());
         // here we remove empty repair mutations from the block for total, since
         // we're not sending them mutations
         int blockFor = maxBlockFor;
@@ -78,6 +80,8 @@ public class BlockingPartitionRepair extends AbstractFuture<Object> implements I
             // them if they do, but they shouldn't interfere with blocking the client read.
             if (!repairs.containsKey(participant) && shouldBlockOn(participant.getEndpoint()))
                 blockFor--;
+
+            replicaMap.put(participant.getEndpoint(), participant);
         }
 
         // there are some cases where logically identical data can return different digests
@@ -110,7 +114,7 @@ public class BlockingPartitionRepair extends AbstractFuture<Object> implements I
     {
         if (shouldBlockOn(from))
         {
-            pendingRepairs.remove(from);
+            pendingRepairs.remove(replicaMap.get(from));
             latch.countDown();
         }
     }

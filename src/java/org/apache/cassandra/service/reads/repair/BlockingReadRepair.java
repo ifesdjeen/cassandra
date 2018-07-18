@@ -123,7 +123,7 @@ public class BlockingReadRepair implements ReadRepair
         Keyspace keyspace = Keyspace.open(command.metadata().keyspace);
         DataResolver resolver = new DataResolver(keyspace, command, ConsistencyLevel.ALL, allReplicas, this, allReplicas.size(), queryStartNanoTime);
         ReadCallback readCallback = new ReadCallback(resolver, ConsistencyLevel.ALL, consistency.blockFor(cfs.keyspace), command,
-                                                     keyspace, allReplicas, queryStartNanoTime, this);
+                                                     keyspace, allReplicas, queryStartNanoTime);
 
         digestRepair = new DigestRepair(resolver, readCallback, resultConsumer, contactedReplicas);
 
