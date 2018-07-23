@@ -3799,15 +3799,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
     @Deprecated
     public List<InetAddress> getNaturalEndpoints(String keyspaceName, String cf, String key)
     {
-        KeyspaceMetadata ksMetaData = Schema.instance.getKeyspaceMetadata(keyspaceName);
-        if (ksMetaData == null)
-            throw new IllegalArgumentException("Unknown keyspace '" + keyspaceName + "'");
-
-        TableMetadata metadata = ksMetaData.getTableOrViewNullable(cf);
-        if (metadata == null)
-            throw new IllegalArgumentException("Unknown table '" + cf + "' in keyspace '" + keyspaceName + "'");
-
-        ReplicaList replicas = getNaturalReplicas(keyspaceName, tokenMetadata.partitioner.getToken(metadata.partitionKeyType.fromString(key)));
+        ReplicaList replicas = getNaturalReplicas(keyspaceName, cf, key);
         List<InetAddress> inetList = new ArrayList<>(replicas.size());
         replicas.forEach(r -> inetList.add(r.getEndpoint().address));
         return inetList;
@@ -3815,15 +3807,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
 
     public List<String> getNaturalEndpointsWithPort(String keyspaceName, String cf, String key)
     {
-        KeyspaceMetadata ksMetaData = Schema.instance.getKeyspaceMetadata(keyspaceName);
-        if (ksMetaData == null)
-            throw new IllegalArgumentException("Unknown keyspace '" + keyspaceName + "'");
-
-        TableMetadata metadata = ksMetaData.getTableOrViewNullable(cf);
-        if (metadata == null)
-            throw new IllegalArgumentException("Unknown table '" + cf + "' in keyspace '" + keyspaceName + "'");
-
-        return Replicas.stringify(getNaturalReplicas(keyspaceName, tokenMetadata.partitioner.getToken(metadata.partitionKeyType.fromString(key))), true);
+        return Replicas.stringify(getNaturalReplicas(keyspaceName, cf, key), true);
     }
 
 
@@ -3839,6 +3823,19 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
     public List<String> getNaturalEndpointsWithPort(String keyspaceName, ByteBuffer key)
     {
         return Replicas.stringify(getNaturalReplicas(keyspaceName, tokenMetadata.partitioner.getToken(key)), true);
+    }
+
+    public ReplicaList getNaturalReplicas(String keyspaceName, String cf, String key)
+    {
+        KeyspaceMetadata ksMetaData = Schema.instance.getKeyspaceMetadata(keyspaceName);
+        if (ksMetaData == null)
+            throw new IllegalArgumentException("Unknown keyspace '" + keyspaceName + "'");
+
+        TableMetadata metadata = ksMetaData.getTableOrViewNullable(cf);
+        if (metadata == null)
+            throw new IllegalArgumentException("Unknown table '" + cf + "' in keyspace '" + keyspaceName + "'");
+
+        return getNaturalReplicas(keyspaceName, tokenMetadata.partitioner.getToken(metadata.partitionKeyType.fromString(key)));
     }
 
     /**

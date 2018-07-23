@@ -33,6 +33,8 @@ import javax.management.openmbean.TabularData;
 
 import org.apache.cassandra.db.ColumnFamilyStoreMBean;
 import org.apache.cassandra.exceptions.ConfigurationException;
+import org.apache.cassandra.locator.ReplicaCollection;
+import org.apache.cassandra.locator.ReplicaList;
 import org.apache.cassandra.metrics.TableMetrics.Sampler;
 
 public interface StorageServiceMBean extends NotificationEmitter
@@ -217,6 +219,8 @@ public interface StorageServiceMBean extends NotificationEmitter
     public List<String> getNaturalEndpointsWithPort(String keyspaceName, String cf, String key);
     @Deprecated public List<InetAddress> getNaturalEndpoints(String keyspaceName, ByteBuffer key);
     public List<String> getNaturalEndpointsWithPort(String keysapceName, ByteBuffer key);
+
+    public ReplicaList getNaturalReplicas(String keyspaceName, String cf, String key);
 
     /**
      * @deprecated use {@link #takeSnapshot(String tag, Map options, String... entities)} instead.

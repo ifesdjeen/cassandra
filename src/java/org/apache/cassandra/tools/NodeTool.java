@@ -160,7 +160,8 @@ public class NodeTool
                 HandoffWindow.class,
                 ReloadSslCertificates.class,
                 EnableAuditLog.class,
-                DisableAuditLog.class
+                DisableAuditLog.class,
+                GetReplicas.class
         );
 
         Cli.CliBuilder<Runnable> builder = Cli.builder("nodetool");
