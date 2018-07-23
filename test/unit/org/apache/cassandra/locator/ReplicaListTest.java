@@ -221,7 +221,7 @@ public class ReplicaListTest extends ReplicaCollectionTestBase
     @Test(expected = NullPointerException.class)
     public void testFilterNullPredicate()
     {
-        new ReplicaList().filter(null);
+        new ReplicaList().filter((com.google.common.base.Predicate[])null);
     }
 
     @Test

@@ -20,10 +20,12 @@ package org.apache.cassandra.locator;
 
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import com.google.common.base.Preconditions;
+import com.google.common.base.Predicates;
 
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.gms.Gossiper;
@@ -63,8 +65,8 @@ public class ReplicationFactor
             Preconditions.checkArgument(DatabaseDescriptor.getNumTokens() == 1,
                                         "Transient nodes are not allowed with multiple tokens");
             Stream<InetAddressAndPort> endpoints = Stream.concat(Gossiper.instance.getLiveMembers().stream(), Gossiper.instance.getUnreachableMembers().stream());
-            List<InetAddressAndPort> badVersionEndpoints = endpoints.filter(endpoint -> !FBUtilities.getBroadcastAddressAndPort().equals(endpoint) &&
-                                                                                        Gossiper.instance.getReleaseVersion(endpoint).major < 4)
+            List<InetAddressAndPort> badVersionEndpoints = endpoints.filter(Predicates.not(FBUtilities.getBroadcastAddressAndPort()::equals))
+                                                                    .filter(endpoint -> Gossiper.instance.getReleaseVersion(endpoint) != null && Gossiper.instance.getReleaseVersion(endpoint).major < 4)
                                                                     .collect(Collectors.toList());
             if (!badVersionEndpoints.isEmpty())
                 throw new AssertionError("Transient replication is not supported in mixed version clusters with nodes < 4.0. Bad nodes: " + badVersionEndpoints);
