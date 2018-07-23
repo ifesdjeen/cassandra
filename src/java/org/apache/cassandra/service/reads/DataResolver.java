@@ -22,9 +22,6 @@ import java.util.*;
 import com.google.common.base.Joiner;
 import com.google.common.collect.Iterables;
 
-import com.google.common.collect.Maps;
-
-import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.locator.Replica;
 import org.apache.cassandra.locator.ReplicaCollection;
 import org.apache.cassandra.locator.ReplicaList;

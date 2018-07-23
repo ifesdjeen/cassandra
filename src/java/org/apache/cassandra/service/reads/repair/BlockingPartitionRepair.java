@@ -80,9 +80,10 @@ public class BlockingPartitionRepair extends AbstractFuture<Object> implements I
             // them if they do, but they shouldn't interfere with blocking the client read.
             if (!repairs.containsKey(participant) && shouldBlockOn(participant.getEndpoint()))
                 blockFor--;
-
-            replicaMap.put(participant.getEndpoint(), participant);
         }
+
+        for (Replica replica : repairs.keySet())
+            replicaMap.put(replica.getEndpoint(), replica);
 
         // there are some cases where logically identical data can return different digests
         // For read repair, this would result in ReadRepairHandler being called with a map of

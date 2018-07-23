@@ -18,28 +18,36 @@
 package org.apache.cassandra.service.reads;
 
 import java.nio.ByteBuffer;
+import java.util.Iterator;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
 
 import org.apache.cassandra.db.ConsistencyLevel;
+import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.Keyspace;
+import org.apache.cassandra.db.Mutation;
 import org.apache.cassandra.db.ReadCommand;
 import org.apache.cassandra.db.ReadResponse;
 import org.apache.cassandra.db.SinglePartitionReadCommand;
 import org.apache.cassandra.db.partitions.PartitionIterator;
 import org.apache.cassandra.db.partitions.UnfilteredPartitionIterators;
+import org.apache.cassandra.exceptions.ReadTimeoutException;
 import org.apache.cassandra.locator.Replica;
 import org.apache.cassandra.locator.ReplicaCollection;
+import org.apache.cassandra.locator.ReplicaList;
+import org.apache.cassandra.locator.ReplicaSet;
 import org.apache.cassandra.net.MessageIn;
+import org.apache.cassandra.service.reads.repair.PartitionIteratorMergeListener;
 import org.apache.cassandra.service.reads.repair.ReadRepair;
 
 public class DigestResolver extends ResponseResolver
 {
     private volatile MessageIn<ReadResponse> dataResponse;
     private volatile boolean hasTransientResponse = false;
-    private volatile TransientResolver transientResolver = null;
 
     public DigestResolver(Keyspace keyspace, ReadCommand command, ConsistencyLevel consistency, ReplicaCollection replicas, ReadRepair readRepair, int maxResponseCount, long queryStartNanoTime)
     {
@@ -67,15 +75,47 @@ public class DigestResolver extends ResponseResolver
     public PartitionIterator getData()
     {
         assert isDataPresent();
-        int nowInSec = command.nowInSec();
 
-        if (transientResolver == null)
+        if (!hasTransientResponse)
         {
-            return UnfilteredPartitionIterators.filter(dataResponse.payload.makeIterator(command), nowInSec);
+            ReadResponse response = responses.iterator().next().payload;
+            return UnfilteredPartitionIterators.filter(response.makeIterator(command), command.nowInSec());
         }
         else
         {
-            return transientResolver.resolve();
+            // This path can be triggered only if we've got responses from full replicas and they match, but
+            // transient replica response still contains data, which needs to be reconciled.
+            Iterator<MessageIn<ReadResponse>> responseIter = responses.iterator();
+            MessageIn<ReadResponse> fullResponse = responseIter.next();
+
+            ReplicaSet forwardTo = new ReplicaSet();
+
+            // Create data resolver that will forward data to
+            DataResolver dataResolver = new DataResolver(keyspace,
+                                                         command,
+                                                         consistency,
+                                                         replicas,
+                                                         new ForwardingReadRepair(getReplicaFor(fullResponse.from), forwardTo),
+                                                         maxResponseCount,
+                                                         queryStartNanoTime);
+
+            dataResolver.preprocess(fullResponse);
+
+            // Forward differences to all full nodes
+            while (responseIter.hasNext())
+            {
+                MessageIn<ReadResponse> response = responseIter.next();
+                // We need only one full replica response
+                if (response.payload.isDigestResponse())
+                {
+                    forwardTo.add(getReplicaFor(response.from));
+                    continue;
+                }
+
+                dataResolver.preprocess(response);
+            }
+
+            return dataResolver.resolve();
         }
     }
 
@@ -83,23 +123,14 @@ public class DigestResolver extends ResponseResolver
     {
         long start = System.nanoTime();
 
-        TransientResolver resolver = hasTransientResponse
-                                              ? new TransientResolver(getReplicaFor(dataResponse.from), this)
-                                              : null;
-
         // validate digests against each other; return false immediately on mismatch.
         ByteBuffer digest = null;
         for (MessageIn<ReadResponse> message : responses)
         {
-            if (resolver != null)
-                resolver.addResponse(message);
-
-            ReadResponse response = message.payload;
-
             if (getReplicaFor(message.from).isTransient())
                 continue;
 
-            ByteBuffer newDigest = response.digest(command);
+            ByteBuffer newDigest = message.payload.digest(command);
             if (digest == null)
                 digest = newDigest;
             else if (!digest.equals(newDigest))
@@ -110,7 +141,6 @@ public class DigestResolver extends ResponseResolver
         if (logger.isTraceEnabled())
             logger.trace("responsesMatch: {} ms.", TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start));
 
-        transientResolver = resolver;
         return true;
     }
 
@@ -123,5 +153,79 @@ public class DigestResolver extends ResponseResolver
     public boolean hasTransientResponse()
     {
         return hasTransientResponse;
+    }
+
+    /**
+     * We need to do a few things with digest reads that include transient data
+     * 1. send repairs to full replicas if the transient replica has data they don't
+     * 2. forward repair mutations to full replicas that sent digest responses (and therefore
+     *    weren't involved in the data resolution process)
+     * 3. in cases where we receive multiple full data responses from a speculative retry, avoid
+     *    comparing data responses we already know are identical from the digest comparisons
+     * 4. don't add any overhead to non-transient reads
+     * 5. Use the same responses in the data resolution used in the digest comparisons
+     *
+     * This class assumes that all of the responses from full replicas agreed on their data (otherwise
+     * we'd be doing a normal foreground repair)
+     */
+    private class ForwardingReadRepair implements ReadRepair
+    {
+        private final Replica from;
+        private final ReplicaSet forwardTo;
+
+        public ForwardingReadRepair(Replica from, ReplicaSet forwardTo)
+        {
+            this.from = from;
+            this.forwardTo = forwardTo;
+        }
+        @Override
+        public UnfilteredPartitionIterators.MergeListener getMergeListener(ReplicaList replicas)
+        {
+            return new PartitionIteratorMergeListener(replicas, command, consistency, this);
+        }
+
+        @Override
+        public void startRepair(DigestResolver digestResolver, ReplicaList allReplicas, ReplicaList contactedReplicas, Consumer<PartitionIterator> resultConsumer)
+        {
+            throw new IllegalStateException("Transient data merge repairs cannot perform reads");
+        }
+
+        @Override
+        public void awaitRepair() throws ReadTimeoutException
+        {
+            throw new IllegalStateException("Transient data merge repairs cannot perform reads");
+        }
+
+        @Override
+        public void maybeSendAdditionalDataRequests()
+        {
+            throw new IllegalStateException("Transient data merge repairs cannot perform reads");
+        }
+
+        @Override
+        public void maybeSendAdditionalRepairs()
+        {
+            readRepair.maybeSendAdditionalRepairs();
+        }
+
+        @Override
+        public void awaitRepairs()
+        {
+            readRepair.awaitRepairs();
+        }
+
+        @Override
+        public void repairPartition(DecoratedKey key, Map<Replica, Mutation> mutations, ReplicaList destinations)
+        {
+            Preconditions.checkArgument(mutations.containsKey(from));
+
+            Mutation mutation = mutations.get(from);
+            for (Replica digestSender: forwardTo)
+            {
+                mutations.put(digestSender, mutation);
+            }
+
+            readRepair.repairPartition(key, mutations, destinations);
+        }
     }
 }
