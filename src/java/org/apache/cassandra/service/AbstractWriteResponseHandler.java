@@ -90,7 +90,7 @@ public abstract class AbstractWriteResponseHandler<T> implements IAsyncCallbackW
         }
     }
 
-    private volatile SpeculationContext speculationContext = null;
+    private SpeculationContext speculationContext = null;
 
     /**
       * Delegate to another WriteResponseHandler or possibly this one to track if the ideal consistency level was reached.
