@@ -511,7 +511,7 @@ public class StorageProxy implements StorageProxyMBean
         MessageOut<Commit> message = new MessageOut<Commit>(MessagingService.Verb.PAXOS_PREPARE, toPrepare, Commit.serializer);
         for (Replica replica: replicas)
         {
-            if (canDoLocalRequest(replica.getEndpoint()))
+            if (replica.isLocal())
             {
                 StageManager.getStage(MessagingService.verbStages.get(MessagingService.Verb.PAXOS_PREPARE)).execute(new Runnable()
                 {
@@ -549,7 +549,7 @@ public class StorageProxy implements StorageProxyMBean
         MessageOut<Commit> message = new MessageOut<Commit>(MessagingService.Verb.PAXOS_PROPOSE, proposal, Commit.serializer);
         for (Replica replica : replicas)
         {
-            if (canDoLocalRequest(replica.getEndpoint()))
+            if (replica.isLocal())
             {
                 StageManager.getStage(MessagingService.verbStages.get(MessagingService.Verb.PAXOS_PROPOSE)).execute(new Runnable()
                 {
@@ -614,7 +614,7 @@ public class StorageProxy implements StorageProxyMBean
             {
                 if (shouldBlock)
                 {
-                    if (canDoLocalRequest(destination))
+                    if (replica.isLocal())
                         commitPaxosLocal(replica, message, responseHandler);
                     else
                         MessagingService.instance().sendWriteRR(message, replica, responseHandler, allowHints && shouldHint(replica));
@@ -1045,11 +1045,6 @@ public class StorageProxy implements StorageProxyMBean
         }
     }
 
-    public static boolean canDoLocalRequest(InetAddressAndPort replica)
-    {
-        return replica.equals(FBUtilities.getBroadcastAddressAndPort());
-    }
-
     private static void updateCoordinatorWriteLatencyTableMetric(Collection<? extends IMutation> mutations, long latency)
     {
         if (null == mutations)
@@ -1092,7 +1087,7 @@ public class StorageProxy implements StorageProxyMBean
         {
             logger.trace("Sending batchlog store request {} to {} for {} mutations", batch.id, replica, batch.size());
 
-            if (canDoLocalRequest(replica.getEndpoint()))
+            if (replica.isLocal())
                 performLocally(Stage.MUTATION, replica, Optional.empty(), () -> BatchlogManager.store(batch), handler);
             else
                 MessagingService.instance().sendRR(message, replica.getEndpoint(), handler);
@@ -1108,7 +1103,7 @@ public class StorageProxy implements StorageProxyMBean
             if (logger.isTraceEnabled())
                 logger.trace("Sending batchlog remove request {} to {}", uuid, target);
 
-            if (canDoLocalRequest(target))
+            if (target.equals(FBUtilities.getBroadcastAddressAndPort()))
                 performLocally(Stage.MUTATION, SystemReplicas.getSystemReplica(target), () -> BatchlogManager.remove(uuid));
             else
                 MessagingService.instance().sendOneWay(message, target);
@@ -1314,7 +1309,7 @@ public class StorageProxy implements StorageProxyMBean
 
             if (FailureDetector.instance.isAlive(destination.getEndpoint()))
             {
-                if (canDoLocalRequest(destination.getEndpoint()))
+                if (destination.isLocal())
                 {
                     insertLocal = true;
                     localReplica = destination;

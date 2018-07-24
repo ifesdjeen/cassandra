@@ -175,7 +175,7 @@ public class ShortReadPartitionsProtection extends Transformation<UnfilteredRowI
         DataResolver resolver = new DataResolver(keyspace, cmd, ConsistencyLevel.ONE, ReplicaList.of(source), NoopReadRepair.instance, 1, queryStartNanoTime);
         ReadCallback handler = new ReadCallback(resolver, ConsistencyLevel.ONE, cmd, ReplicaList.of(source), queryStartNanoTime);
 
-        if (StorageProxy.canDoLocalRequest(source.getEndpoint()))
+        if (source.isLocal())
             StageManager.getStage(Stage.READ).maybeExecuteImmediately(new StorageProxy.LocalReadRunnable(cmd, handler));
         else
             MessagingService.instance().sendRRWithFailure(cmd.createMessage(), source.getEndpoint(), handler);
