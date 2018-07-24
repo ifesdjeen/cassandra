@@ -28,10 +28,10 @@ import org.apache.cassandra.tools.NodeTool;
 
 import static com.google.common.base.Preconditions.checkArgument;
 
-@Command(name = "getreplicas", description = "Print the end points that owns the key")
+@Command(name = "getreplicas", description = "Print replicas for a given key")
 public class GetReplicas extends NodeTool.NodeToolCmd
 {
-    @Arguments(usage = "<keyspace> <table> <key>", description = "The keyspace, the table, and the partition key for which we need to find the endpoint")
+    @Arguments(usage = "<keyspace> <table> <key>", description = "The keyspace, the table, and the partition key for which we need to find replicas")
     private List<String> args = new ArrayList<>();
 
     @Override
