@@ -222,6 +222,7 @@ public class BlockingPartitionRepair extends AbstractFuture<Object> implements I
 
         for (Replica replica: candidates)
         {
+            assert replica.isFull();
             int versionIdx = msgVersionIdx(MessagingService.instance().getVersion(replica.getEndpoint()));
 
             Mutation mutation = versionedMutations[versionIdx];
