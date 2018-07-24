@@ -134,7 +134,7 @@ public abstract class AbstractReadExecutor
             Preconditions.checkArgument(replica.isFull() || !readCommand.isDigestQuery(),
                                         "Can not send digest requests to transient replicas");
             InetAddressAndPort endpoint = replica.getEndpoint();
-            if (StorageProxy.canDoLocalRequest(endpoint))
+            if (replica.isLocal())
             {
                 hasLocalEndpoint = true;
                 continue;

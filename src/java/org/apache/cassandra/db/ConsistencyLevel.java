@@ -210,7 +210,6 @@ public enum ConsistencyLevel
         return liveReplicas.subList(0, Math.min(liveReplicas.size(), blockFor(keyspace)));
     }
 
-
     private ReplicaList filterForEachQuorum(Keyspace keyspace, ReplicaList liveReplicas)
     {
         NetworkTopologyStrategy strategy = (NetworkTopologyStrategy) keyspace.getReplicationStrategy();
