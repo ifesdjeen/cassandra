@@ -78,16 +78,12 @@ public class DigestResolver extends ResponseResolver
 
         if (!hasTransientResponse)
         {
-            ReadResponse response = responses.iterator().next().payload;
-            return UnfilteredPartitionIterators.filter(response.makeIterator(command), command.nowInSec());
+            return UnfilteredPartitionIterators.filter(dataResponse.payload.makeIterator(command), command.nowInSec());
         }
         else
         {
             // This path can be triggered only if we've got responses from full replicas and they match, but
             // transient replica response still contains data, which needs to be reconciled.
-            Iterator<MessageIn<ReadResponse>> responseIter = responses.iterator();
-            MessageIn<ReadResponse> fullResponse = responseIter.next();
-
             ReplicaSet forwardTo = new ReplicaSet();
 
             // Create data resolver that will forward data to
@@ -95,24 +91,19 @@ public class DigestResolver extends ResponseResolver
                                                          command,
                                                          consistency,
                                                          replicas,
-                                                         new ForwardingReadRepair(getReplicaFor(fullResponse.from), forwardTo),
+                                                         new ForwardingReadRepair(getReplicaFor(dataResponse.from), forwardTo),
                                                          maxResponseCount,
                                                          queryStartNanoTime);
 
-            dataResolver.preprocess(fullResponse);
-
+            dataResolver.preprocess(dataResponse);
             // Forward differences to all full nodes
-            while (responseIter.hasNext())
+            for (MessageIn<ReadResponse> response : responses)
             {
-                MessageIn<ReadResponse> response = responseIter.next();
-                // We need only one full replica response
+                Replica replica = getReplicaFor(response.from);
                 if (response.payload.isDigestResponse())
-                {
-                    forwardTo.add(getReplicaFor(response.from));
-                    continue;
-                }
-
-                dataResolver.preprocess(response);
+                    forwardTo.add(replica);
+                else if (replica.isTransient())
+                    dataResolver.preprocess(response);
             }
 
             return dataResolver.resolve();
