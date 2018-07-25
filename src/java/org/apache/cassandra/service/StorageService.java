@@ -2823,6 +2823,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                 ReplicaSet replicas = entry.getValue();
                 if (logger.isDebugEnabled())
                     logger.debug("Requesting from {} replicas {}", source, StringUtils.join(replicas, ", "));
+                // TODO: test streaming
                 Replicas.checkFull(replicas);
                 stream.requestRanges(source, keyspaceName, replicas.asRangeSet());
             }
@@ -4081,6 +4082,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         for (String keyspaceName : Schema.instance.getNonLocalStrategyKeyspaces())
         {
             ReplicaMultimap<Range<Token>, ReplicaSet> rangesMM = getChangedRangesForLeaving(keyspaceName, FBUtilities.getBroadcastAddressAndPort());
+            // TODO: test
             Replicas.checkFull(rangesMM.values());
 
             if (logger.isDebugEnabled())
@@ -4335,6 +4337,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                         Set<Replica> currentEndpoints = ImmutableSet.copyOf(strategy.calculateNaturalReplicas(toStream.right, tokenMetaClone));
                         Set<Replica> newEndpoints = ImmutableSet.copyOf(strategy.calculateNaturalReplicas(toStream.right, tokenMetaCloneAllSettled));
 
+                        // TODO: test schema movements
                         Replicas.checkFull(currentEndpoints);
                         Replicas.checkFull(newEndpoints);
 
@@ -4351,6 +4354,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                     {
                         logger.debug("Will stream range {} of keyspace {} to endpoint {}", endpointRanges.get(address), keyspace, address);
                         ReplicaSet ranges = endpointRanges.get(address);
+                        // TODO: test streaming
                         Replicas.checkFull(ranges);
                         streamPlan.transferRanges(address, keyspace, endpointRanges.get(address).asRangeSet());
                     }
@@ -5084,6 +5088,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         {
             String keyspace = entry.getKey();
             ReplicaMultimap<Range<Token>, ReplicaSet> rangesWithEndpoints = entry.getValue();
+            // TODO: test streaming
             Replicas.checkFull(rangesWithEndpoints.values());
 
             if (rangesWithEndpoints.isEmpty())
@@ -5231,6 +5236,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                     {
                         Range<Token> range = entry.getKey();
                         ReplicaList replicas = entry.getValue();
+                        // TODO: test bulk load
                         Replicas.checkFull(replicas);
                         for (InetAddressAndPort endpoint : replicas.asEndpoints())
                             addRangeForEndpoint(range, endpoint);
