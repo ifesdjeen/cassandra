@@ -37,7 +37,7 @@ public class GetReplicas extends NodeTool.NodeToolCmd
     @Override
     public void execute(NodeProbe probe)
     {
-        checkArgument(args.size() == 3, "getendpoints requires keyspace, table and partition key arguments");
+        checkArgument(args.size() == 3, "getreplicas requires keyspace, table and partition key arguments");
         String ks = args.get(0);
         String table = args.get(1);
         String key = args.get(2);
