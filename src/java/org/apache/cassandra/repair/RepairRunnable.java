@@ -237,7 +237,7 @@ public class RepairRunnable extends WrappedRunnable implements ProgressEventNoti
         //pre-calculate output of getLocalReplicas and pass it to getNeighbors to increase performance and prevent
         //calculation multiple times
         ReplicaSet replicatedRanges = storageService.getLocalReplicas(keyspace);
-        Replicas.checkFull(replicatedRanges);
+//        Replicas.checkFull(replicatedRanges);
         Iterable<Range<Token>> keyspaceLocalRanges = storageService.getLocalReplicas(keyspace).asRanges();
 
         try
