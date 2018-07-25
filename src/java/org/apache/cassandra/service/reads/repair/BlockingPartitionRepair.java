@@ -156,14 +156,16 @@ public class BlockingPartitionRepair extends AbstractFuture<Object> implements I
     public void sendInitialRepairs()
     {
         mutationsSentTime = System.nanoTime();
+        Replicas.checkFull(pendingRepairs.keySet());
+
         for (Map.Entry<Replica, Mutation> entry: pendingRepairs.entrySet())
         {
             Replica destination = entry.getKey();
-            Preconditions.checkState(destination.isFull(), "cannot send repair mutations to transient replicas");
             Mutation mutation = entry.getValue();
             TableId tableId = extractUpdate(mutation).metadata().id;
 
             Tracing.trace("Sending read-repair-mutation to {}", destination);
+            logger.trace(">>>>>> Sending read-repair-mutation to {}", destination);
             // use a separate verb here to avoid writing hints on timeouts
             sendRR(mutation.createMessage(MessagingService.Verb.READ_REPAIR), destination.getEndpoint());
             ColumnFamilyStore.metricsFor(tableId).readRepairRequests.mark();
@@ -206,7 +208,7 @@ public class BlockingPartitionRepair extends AbstractFuture<Object> implements I
             return;
 
         ReplicaSet exclude = new ReplicaSet(participants);
-        Iterable<Replica> candidates = Iterables.filter(getCandidateReplicas(), r -> !exclude.containsReplica(r));
+        Iterable<Replica> candidates = Iterables.filter(getCandidateReplicas(), r -> r.isFull() && !exclude.containsReplica(r));
         if (Iterables.isEmpty(candidates))
             return;
 
@@ -222,7 +224,6 @@ public class BlockingPartitionRepair extends AbstractFuture<Object> implements I
 
         for (Replica replica: candidates)
         {
-            assert replica.isFull();
             int versionIdx = msgVersionIdx(MessagingService.instance().getVersion(replica.getEndpoint()));
 
             Mutation mutation = versionedMutations[versionIdx];

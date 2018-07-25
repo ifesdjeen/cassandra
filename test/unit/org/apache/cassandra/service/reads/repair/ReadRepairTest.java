@@ -200,7 +200,6 @@ public class ReadRepairTest
     @Test
     public void additionalMutationRequired() throws Exception
     {
-
         Mutation repair1 = mutation(cell2);
         Mutation repair2 = mutation(cell1);
 
@@ -208,7 +207,6 @@ public class ReadRepairTest
         Map<Replica, Mutation> repairs = new HashMap<>();
         repairs.put(target1, repair1);
         repairs.put(target2, repair2);
-
 
         InstrumentedReadRepairHandler handler = createRepairHandler(repairs, 2);
 
@@ -232,7 +230,6 @@ public class ReadRepairTest
         Assert.assertFalse(handler.awaitRepairs(0, TimeUnit.NANOSECONDS));
         handler.ack(target3.getEndpoint());
         Assert.assertTrue(handler.awaitRepairs(0, TimeUnit.NANOSECONDS));
-
     }
 
     /**

@@ -204,7 +204,7 @@ public class TableMetrics
     public final Counter speculativeInsufficientReplicas;
     public final Gauge<Long> speculativeSampleLatencyNanos;
 
-    public final Counter transientWrites;
+    public final Counter additionalWritesOnUnavailable;
 
     public final static LatencyMetrics globalReadLatency = new LatencyMetrics(globalFactory, globalAliasFactory, "Read");
     public final static LatencyMetrics globalWriteLatency = new LatencyMetrics(globalFactory, globalAliasFactory, "Write");
@@ -777,7 +777,7 @@ public class TableMetrics
             }
         });
 
-        transientWrites = createTableCounter("TransientWrites");
+        additionalWritesOnUnavailable = createTableCounter("TransientWrites");
 
         keyCacheHitRate = Metrics.register(factory.createMetricName("KeyCacheHitRate"),
                                            aliasFactory.createMetricName("KeyCacheHitRate"),
