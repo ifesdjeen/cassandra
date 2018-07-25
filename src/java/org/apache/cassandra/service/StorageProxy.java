@@ -161,6 +161,7 @@ public class StorageProxy implements StorageProxyMBean
                               String localDataCenter,
                               ConsistencyLevel consistencyLevel)
             {
+                // TODO: test counters
                 Replicas.checkFull(targets);
                 counterWriteTask(mutation, targets, responseHandler, localDataCenter).run();
             }
@@ -174,6 +175,7 @@ public class StorageProxy implements StorageProxyMBean
                               String localDataCenter,
                               ConsistencyLevel consistencyLevel)
             {
+                // TODO: test counters
                 Replicas.checkFull(targets);
                 StageManager.getStage(Stage.COUNTER_MUTATION)
                             .execute(counterWriteTask(mutation, targets, responseHandler, localDataCenter));
@@ -358,6 +360,7 @@ public class StorageProxy implements StorageProxyMBean
         Token tk = key.getToken();
         ReplicaList naturalReplicas = StorageService.instance.getNaturalReplicas(metadata.keyspace, tk);
         ReplicaList pendingReplicas = new ReplicaList(StorageService.instance.getTokenMetadata().pendingEndpointsFor(tk, metadata.keyspace));
+        // TODO: test LWTs
         Replicas.checkFull(naturalReplicas);
         Replicas.checkFull(pendingReplicas);
         if (consistencyForPaxos == ConsistencyLevel.LOCAL_SERIAL)
@@ -1426,6 +1429,7 @@ public class StorageProxy implements StorageProxyMBean
             messageIds[idIdx++] = id;
             logger.trace("Adding FWD message to {}@{}", id, destination);
         }
+        // TODO: test non-local DCs
         Replicas.checkFull(targets);
         message = message.withParameter(ParameterType.FORWARD_TO.FORWARD_TO, new ForwardToContainer(targets.asUnmodifiableEndpointCollection(), messageIds));
         // send the combined message + forward headers
@@ -2737,6 +2741,7 @@ public class StorageProxy implements StorageProxyMBean
                                           ReplicaCollection targets,
                                           AbstractWriteResponseHandler<IMutation> responseHandler)
     {
+        // TODO: test hints
         Replicas.checkFull(targets);
         HintRunnable runnable = new HintRunnable(targets)
         {
