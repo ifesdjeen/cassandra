@@ -206,7 +206,7 @@ public class DigestResolver extends ResponseResolver
         }
 
         @Override
-        public void repairPartition(DecoratedKey key, Map<Replica, Mutation> mutations, ReplicaList destinations)
+        public void repairPartition(DecoratedKey key, Map<Replica, Mutation> mutations, ReplicaList sourcesList)
         {
             Preconditions.checkArgument(mutations.containsKey(from));
 
@@ -216,7 +216,7 @@ public class DigestResolver extends ResponseResolver
                 mutations.put(digestSender, mutation);
             }
 
-            readRepair.repairPartition(key, mutations, destinations);
+            readRepair.repairPartition(key, mutations, sourcesList);
         }
     }
 }

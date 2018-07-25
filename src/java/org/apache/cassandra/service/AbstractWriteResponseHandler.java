@@ -409,7 +409,7 @@ public abstract class AbstractWriteResponseHandler<T> implements IAsyncCallbackW
                 for (TableId id : mutation.getTableIds())
                 {
                     ColumnFamilyStore cfs = Schema.instance.getColumnFamilyStoreInstance(id);
-                    cfs.metric.transientWrites.inc();
+                    cfs.metric.additionalWritesOnUnavailable.inc();
                 }
                 ctx.performer.apply(ctx.mutation, ctx.backups,
                                     (AbstractWriteResponseHandler<IMutation>) this,

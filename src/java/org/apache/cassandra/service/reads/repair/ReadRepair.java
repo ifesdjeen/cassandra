@@ -73,7 +73,7 @@ public interface ReadRepair
 
     public void awaitRepairs();
 
-    void repairPartition(DecoratedKey key, Map<Replica, Mutation> mutations, ReplicaList destinations);
+    void repairPartition(DecoratedKey key, Map<Replica, Mutation> mutations, ReplicaList sourcesList);
 
     static ReadRepair create(ReadCommand command, long queryStartNanoTime, ConsistencyLevel consistency)
     {
