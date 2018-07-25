@@ -385,11 +385,11 @@ public abstract class AbstractWriteResponseHandler<T> implements IAsyncCallbackW
 
     public void maybeTryAdditionalReplicas()
     {
-        SpeculationContext ctx = speculationContext;
-        if (ctx == null)
+        // Initialized through getInitialRecipients
+        if (speculationContext == null)
             return;
 
-        IMutation mutation = ctx.mutation;
+        IMutation mutation = speculationContext.mutation;
 
         long timeout = Long.MAX_VALUE;
         for (TableId id : mutation.getTableIds())
@@ -411,9 +411,9 @@ public abstract class AbstractWriteResponseHandler<T> implements IAsyncCallbackW
                     ColumnFamilyStore cfs = Schema.instance.getColumnFamilyStoreInstance(id);
                     cfs.metric.transientWrites.inc();
                 }
-                ctx.performer.apply(ctx.mutation, ctx.backups,
+                speculationContext.performer.apply(speculationContext.mutation, speculationContext.backups,
                                     (AbstractWriteResponseHandler<IMutation>) this,
-                                    ctx.localDC, consistencyLevel);
+                                    speculationContext.localDC, consistencyLevel);
             }
         }
         catch (InterruptedException ex)
