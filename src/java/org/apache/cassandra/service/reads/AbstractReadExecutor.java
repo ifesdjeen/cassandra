@@ -129,10 +129,10 @@ public abstract class AbstractReadExecutor
     {
         boolean hasLocalEndpoint = false;
 
+        Preconditions.checkArgument(replicas.stream().allMatch(replica -> replica.isFull() || !readCommand.isDigestQuery()),
+                                    "Can not send digest requests to transient replicas");
         for (Replica replica: replicas)
         {
-            Preconditions.checkArgument(replica.isFull() || !readCommand.isDigestQuery(),
-                                        "Can not send digest requests to transient replicas");
             InetAddressAndPort endpoint = replica.getEndpoint();
             if (replica.isLocal())
             {
@@ -142,7 +142,6 @@ public abstract class AbstractReadExecutor
 
             if (traceState != null)
                 traceState.trace("reading {} from {}", readCommand.isDigestQuery() ? "digest" : "data", endpoint);
-            logger.info(">>>>>> reading {} from {}", readCommand.isDigestQuery() ? "digest" : "data", endpoint);
             MessageOut<ReadCommand> message = readCommand.createMessage();
             MessagingService.instance().sendRRWithFailure(message, endpoint, handler);
         }
