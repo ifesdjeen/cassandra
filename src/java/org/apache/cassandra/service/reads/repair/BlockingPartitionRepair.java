@@ -25,7 +25,6 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
 import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Preconditions;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
@@ -39,7 +38,6 @@ import org.apache.cassandra.db.Mutation;
 import org.apache.cassandra.db.partitions.PartitionUpdate;
 import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.locator.Replica;
-import org.apache.cassandra.locator.ReplicaCollection;
 import org.apache.cassandra.locator.ReplicaList;
 import org.apache.cassandra.locator.ReplicaSet;
 import org.apache.cassandra.locator.Replicas;
@@ -207,8 +205,9 @@ public class BlockingPartitionRepair extends AbstractFuture<Object> implements I
         if (awaitRepairs(timeout, timeoutUnit))
             return;
 
-        ReplicaSet exclude = new ReplicaSet(participants);
-        Iterable<Replica> candidates = Iterables.filter(getCandidateReplicas(), r -> r.isFull() && !exclude.containsReplica(r));
+        ReplicaSet contacted = new ReplicaSet(participants);
+        Iterable<Replica> candidates = Iterables.filter(BlockingReadRepairs.getCandidateReplicas(keyspace, key.getToken(), consistency),
+                                                        r -> r.isFull() && !contacted.containsReplica(r));
         if (Iterables.isEmpty(candidates))
             return;
 
@@ -244,11 +243,4 @@ public class BlockingPartitionRepair extends AbstractFuture<Object> implements I
             sendRR(mutation.createMessage(MessagingService.Verb.READ_REPAIR), replica.getEndpoint());
         }
     }
-
-    @VisibleForTesting
-    protected ReplicaCollection getCandidateReplicas()
-    {
-        return BlockingReadRepairs.getCandidateReplicas(keyspace, key.getToken(), consistency);
-    }
-
 }

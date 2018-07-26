@@ -54,12 +54,18 @@ public class BlockingReadRepairs
     static ReplicaCollection getCandidateReplicas(Keyspace keyspace, Token token, ConsistencyLevel consistency)
     {
         ReplicaList replicas = StorageProxy.getLiveSortedReplicas(keyspace, token);
-        IEndpointSnitch snitch = keyspace.getReplicationStrategy().snitch;
-        String localDC = snitch.getDatacenter(FBUtilities.getBroadcastAddressAndPort());
 
-        return consistency.isDatacenterLocal() && keyspace.getReplicationStrategy() instanceof NetworkTopologyStrategy
-               ? replicas.filter(replica -> snitch.getDatacenter(replica).equals(localDC))
-               : replicas;
+        if (consistency.isDatacenterLocal() && keyspace.getReplicationStrategy() instanceof NetworkTopologyStrategy)
+        {
+            IEndpointSnitch snitch = keyspace.getReplicationStrategy().snitch;
+            String localDC = DatabaseDescriptor.getLocalDataCenter();
+
+            return replicas.filter(replica -> snitch.getDatacenter(replica).equals(localDC));
+        }
+        else
+        {
+            return replicas;
+        }
     }
 
     /**

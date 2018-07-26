@@ -73,7 +73,6 @@ public abstract class AbstractReadExecutor
     protected volatile PartitionIterator result = null;
 
     protected final Keyspace keyspace;
-    protected final int blockFor;
 
     AbstractReadExecutor(Keyspace keyspace, ColumnFamilyStore cfs, ReadCommand command, ConsistencyLevel consistency, ReplicaList targetReplicas, long queryStartNanoTime)
     {
@@ -82,12 +81,11 @@ public abstract class AbstractReadExecutor
         this.targetReplicas = targetReplicas;
         this.readRepair = ReadRepair.create(command, queryStartNanoTime, consistency);
         this.digestResolver = new DigestResolver(keyspace, command, consistency, targetReplicas, readRepair, targetReplicas.size(), queryStartNanoTime);
-        this.handler = new ReadCallback(digestResolver, consistency, command, targetReplicas, queryStartNanoTime);
+        this.handler = ReadCallback.create(digestResolver, consistency, command, targetReplicas, queryStartNanoTime);
         this.cfs = cfs;
         this.traceState = Tracing.instance.get();
         this.queryStartNanoTime = queryStartNanoTime;
         this.keyspace = keyspace;
-        this.blockFor = consistency.blockFor(keyspace);
 
 
         // Set the digest version (if we request some digests). This is the smallest version amongst all our target replicas since new nodes
@@ -433,8 +431,7 @@ public abstract class AbstractReadExecutor
                 logger.trace("Timed out waiting on digest mismatch repair requests");
             // the caught exception here will have CL.ALL from the repair command,
             // not whatever CL the initial command was at (CASSANDRA-7947)
-            int blockFor = consistency.blockFor(Keyspace.open(command.metadata().keyspace));
-            throw new ReadTimeoutException(consistency, blockFor-1, blockFor, true);
+            throw new ReadTimeoutException(consistency, handler.blockfor-1, handler.blockfor, true);
         }
     }
 
