@@ -121,8 +121,7 @@ public class BlockingReadRepair implements ReadRepair
 
         // Do a full data read to resolve the correct response (and repair node that need be)
         DataResolver resolver = new DataResolver(cfs.keyspace, command, ConsistencyLevel.ALL, allReplicas, this, allReplicas.size(), queryStartNanoTime);
-        ReadCallback readCallback = new ReadCallback(resolver, ConsistencyLevel.ALL, consistency.blockFor(cfs.keyspace), command,
-                                                     cfs.keyspace, allReplicas, queryStartNanoTime);
+        ReadCallback readCallback = ReadCallback.create(resolver, ConsistencyLevel.ALL, command, allReplicas, queryStartNanoTime);
 
         digestRepair = new DigestRepair(resolver, readCallback, resultConsumer, contactedReplicas);
 

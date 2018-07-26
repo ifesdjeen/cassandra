@@ -66,21 +66,20 @@ public class ReadCallback implements IAsyncCallbackWithFailure<ReadResponse>
 
     private final Keyspace keyspace; // TODO push this into ConsistencyLevel?
 
-    /**
-     * Constructor when response count has to be calculated and blocked for.
-     */
-    public ReadCallback(ResponseResolver resolver, ConsistencyLevel consistencyLevel, ReadCommand command, ReplicaList filteredReplicas, long queryStartNanoTime)
+    // Calculates blocked for
+    public static ReadCallback create(ResponseResolver resolver, ConsistencyLevel consistencyLevel, ReadCommand command, ReplicaList filteredReplicas, long queryStartNanoTime)
     {
-        this(resolver,
-             consistencyLevel,
-             consistencyLevel.blockFor(Keyspace.open(command.metadata().keyspace)),
-             command,
-             Keyspace.open(command.metadata().keyspace),
-             filteredReplicas,
-             queryStartNanoTime);
+        Keyspace keyspace = Keyspace.open(command.metadata().keyspace);
+        return new ReadCallback(resolver,
+                                consistencyLevel,
+                                consistencyLevel.blockFor(keyspace),
+                                command,
+                                keyspace,
+                                filteredReplicas,
+                                queryStartNanoTime);
     }
 
-    public ReadCallback(ResponseResolver resolver, ConsistencyLevel consistencyLevel, int blockfor, ReadCommand command, Keyspace keyspace, ReplicaList replicas, long queryStartNanoTime)
+    private ReadCallback(ResponseResolver resolver, ConsistencyLevel consistencyLevel, int blockfor, ReadCommand command, Keyspace keyspace, ReplicaList replicas, long queryStartNanoTime)
     {
         this.command = command;
         this.keyspace = keyspace;
@@ -155,9 +154,7 @@ public class ReadCallback implements IAsyncCallbackWithFailure<ReadResponse>
      */
     private boolean waitingFor(InetAddressAndPort from)
     {
-        return consistencyLevel.isDatacenterLocal()
-             ? DatabaseDescriptor.getLocalDataCenter().equals(DatabaseDescriptor.getEndpointSnitch().getDatacenter(from))
-             : true;
+        return !consistencyLevel.isDatacenterLocal() || DatabaseDescriptor.getLocalDataCenter().equals(DatabaseDescriptor.getEndpointSnitch().getDatacenter(from));
     }
 
     /**
