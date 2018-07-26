@@ -251,7 +251,7 @@ public class RepairJob extends AbstractFuture<RepairResult> implements Runnable
                 return new AsymmetricLocalSyncTask(desc, endpoint1, diff, pendingRepair, previewKind);
 
             if (isTrans2)
-                return new AsymmetricLocalSyncTask(desc, endpoint1, diff, pendingRepair, previewKind);
+                return new AsymmetricLocalSyncTask(desc, endpoint2, diff, pendingRepair, previewKind);
 
             return new LocalSyncTask(desc, endpoint1, endpoint2, diff, pendingRepair, pullRepair, previewKind);
         }
