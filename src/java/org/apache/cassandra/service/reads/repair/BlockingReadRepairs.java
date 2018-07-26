@@ -29,6 +29,7 @@ import org.apache.cassandra.db.Mutation;
 import org.apache.cassandra.db.partitions.PartitionUpdate;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.exceptions.ReadTimeoutException;
+import org.apache.cassandra.locator.IEndpointSnitch;
 import org.apache.cassandra.locator.NetworkTopologyStrategy;
 import org.apache.cassandra.locator.Replica;
 import org.apache.cassandra.locator.ReplicaCollection;
@@ -37,6 +38,7 @@ import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.service.StorageProxy;
 import org.apache.cassandra.tracing.Tracing;
+import org.apache.cassandra.utils.FBUtilities;
 
 public class BlockingReadRepairs
 {
@@ -52,8 +54,11 @@ public class BlockingReadRepairs
     static ReplicaCollection getCandidateReplicas(Keyspace keyspace, Token token, ConsistencyLevel consistency)
     {
         ReplicaList replicas = StorageProxy.getLiveSortedReplicas(keyspace, token);
+        IEndpointSnitch snitch = keyspace.getReplicationStrategy().snitch;
+        String localDC = snitch.getDatacenter(FBUtilities.getBroadcastAddressAndPort());
+
         return consistency.isDatacenterLocal() && keyspace.getReplicationStrategy() instanceof NetworkTopologyStrategy
-               ? replicas.filter(Replica::isLocal)
+               ? replicas.filter(replica -> snitch.getDatacenter(replica).equals(localDC))
                : replicas;
     }
 

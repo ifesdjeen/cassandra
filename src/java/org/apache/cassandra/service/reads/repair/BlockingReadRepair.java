@@ -120,10 +120,9 @@ public class BlockingReadRepair implements ReadRepair
         maybeMarkBlockingRepair();
 
         // Do a full data read to resolve the correct response (and repair node that need be)
-        Keyspace keyspace = Keyspace.open(command.metadata().keyspace);
-        DataResolver resolver = new DataResolver(keyspace, command, ConsistencyLevel.ALL, allReplicas, this, allReplicas.size(), queryStartNanoTime);
+        DataResolver resolver = new DataResolver(cfs.keyspace, command, ConsistencyLevel.ALL, allReplicas, this, allReplicas.size(), queryStartNanoTime);
         ReadCallback readCallback = new ReadCallback(resolver, ConsistencyLevel.ALL, consistency.blockFor(cfs.keyspace), command,
-                                                     keyspace, allReplicas, queryStartNanoTime);
+                                                     cfs.keyspace, allReplicas, queryStartNanoTime);
 
         digestRepair = new DigestRepair(resolver, readCallback, resultConsumer, contactedReplicas);
 
