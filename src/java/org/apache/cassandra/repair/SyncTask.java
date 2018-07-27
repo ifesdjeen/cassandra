@@ -51,6 +51,7 @@ public abstract class SyncTask extends AbstractSyncTask
 
     public SyncTask(RepairJobDesc desc, InetAddressAndPort endpoint1, InetAddressAndPort endpoint2, List<Range<Token>> differences, PreviewKind previewKind)
     {
+        assert !endpoint1.equals(endpoint2) : "Can't stream from the same node";
         this.desc = desc;
         this.endpoint1 = endpoint1;
         this.endpoint2 = endpoint2;

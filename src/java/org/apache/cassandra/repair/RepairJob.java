@@ -172,34 +172,38 @@ public class RepairJob extends AbstractFuture<RepairResult> implements Runnable
         for (int i = 0; i < trees.size() - 1; ++i)
         {
             TreeResponse treeResponse1 = trees.get(i);
-            Map<Range<Token>, Replica> rangeMap1 = new HashMap<>();
+            Map<Range<Token>, Replica> endpoint1Replicas = new HashMap<>();
             for (Replica replica : endpointReplicas.get(treeResponse1.endpoint))
-                assert rangeMap1.put(replica.getRange(), replica) == null : "Duplicate range mapping";
+                assert endpoint1Replicas.put(replica.getRange(), replica) == null : "Duplicate range mapping";
 
             for (int j = i + 1; j < trees.size(); ++j)
             {
                 TreeResponse treeResponse2 = trees.get(j);
-                Map<Range<Token>, Replica> rangeMap2 = new HashMap<>();
+                Map<Range<Token>, Replica> endpoint2Replicas = new HashMap<>();
                 for (Replica replica : endpointReplicas.get(treeResponse2.endpoint))
-                    assert rangeMap2.put(replica.getRange(), replica) == null : "Duplicate range mapping";
+                    assert endpoint2Replicas.put(replica.getRange(), replica) == null : "Duplicate range mapping";
 
-                if (!Iterables.all(rangeMap1.values(), Replica::isTransient) || !Iterables.all(rangeMap1.values(), Replica::isTransient))
+                if (!Iterables.all(endpoint1Replicas.values(), Replica::isTransient) || !Iterables.all(endpoint2Replicas.values(), Replica::isTransient))
                 {
                     // For transient nodes, we go one granularity deeper and send tasks range-wise
                     // TODO: potentially, we could do some coalescing here. Question is only if we would like to do that at this point
                     for (Map.Entry<Range<Token>, MerkleTree> entry : treeResponse1.trees)
                     {
                         Range<Token> range = entry.getKey();
-                        Replica replica1 = rangeMap1.get(range);
-                        Replica replica2 = rangeMap2.get(range);
+                        Replica replica1 = endpoint1Replicas.get(range);
+                        Replica replica2 = endpoint2Replicas.get(range);
                         MerkleTree mk1 = entry.getValue();
                         MerkleTree mk2 = treeResponse2.trees.getMerkleTree(range);
-
+                        logger.info(">>>>>> About to create a task: {} {} {} {}", replica1, replica2, mk1, mk2);
                         AbstractSyncTask task = createSyncTask(replica1.getEndpoint(), replica2.getEndpoint(),
                                                                replica1.isTransient(), replica2.isTransient(),
                                                                MerkleTree.difference(mk1, mk2));
-                        syncTasks.add(task);
-                        taskExecutor.submit(task);
+
+                        if (task != null)
+                        {
+                            syncTasks.add(task);
+                            taskExecutor.submit(task);
+                        }
                     }
                 }
                 else
@@ -224,6 +228,9 @@ public class RepairJob extends AbstractFuture<RepairResult> implements Runnable
                                                difference,
                                                pendingRepair, desc, session.pullRepair, previewKind);
 
+        if (task == null)
+            return null;
+
         if (task instanceof CompletableRemoteSyncTask)
         {
             CompletableRemoteSyncTask remoteSyncTask = (CompletableRemoteSyncTask) task;
@@ -242,25 +249,32 @@ public class RepairJob extends AbstractFuture<RepairResult> implements Runnable
                                                   List<Range<Token>> diff, UUID pendingRepair, RepairJobDesc desc,
                                                   boolean pullRepair, PreviewKind previewKind)
     {
+        // Two transient nodes should not sync
+        if (isTrans1 && isTrans2)
+            return null;
+
         if (FBUtilities.isLocal(endpoint1) || FBUtilities.isLocal(endpoint2))
         {
-            if (isTrans1 && isTrans2)
-                return null;
-
             if (isTrans1)
-                return new AsymmetricLocalSyncTask(desc, endpoint1, diff, pendingRepair, previewKind);
+            {
+                if (FBUtilities.isLocal(endpoint1))
+                    return new AsymmetricRemoteSyncTask(desc, endpoint2, endpoint1, diff, previewKind);
+                else
+                    return new AsymmetricLocalSyncTask(desc, endpoint1, diff, pendingRepair, previewKind);
+            }
 
             if (isTrans2)
-                return new AsymmetricLocalSyncTask(desc, endpoint2, diff, pendingRepair, previewKind);
+            {
+                if (FBUtilities.isLocal(endpoint2))
+                    return new AsymmetricRemoteSyncTask(desc, endpoint1, endpoint2, diff, previewKind);
+                else
+                    return new AsymmetricLocalSyncTask(desc, endpoint2, diff, pendingRepair, previewKind);
+            }
 
             return new LocalSyncTask(desc, endpoint1, endpoint2, diff, pendingRepair, pullRepair, previewKind);
         }
         else
         {
-            // Two transient nodes should not sync
-            if (isTrans1 && isTrans2)
-                return null;
-
             if (isTrans1)
                 return new AsymmetricRemoteSyncTask(desc, endpoint2, endpoint1, diff, previewKind);
 

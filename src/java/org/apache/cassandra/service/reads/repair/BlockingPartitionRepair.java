@@ -163,7 +163,6 @@ public class BlockingPartitionRepair extends AbstractFuture<Object> implements I
             TableId tableId = extractUpdate(mutation).metadata().id;
 
             Tracing.trace("Sending read-repair-mutation to {}", destination);
-            logger.trace(">>>>>> Sending read-repair-mutation to {}", destination);
             // use a separate verb here to avoid writing hints on timeouts
             sendRR(mutation.createMessage(MessagingService.Verb.READ_REPAIR), destination.getEndpoint());
             ColumnFamilyStore.metricsFor(tableId).readRepairRequests.mark();

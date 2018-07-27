@@ -47,6 +47,7 @@ public abstract class AsymmetricSyncTask extends AbstractSyncTask
 
     public AsymmetricSyncTask(RepairJobDesc desc, InetAddressAndPort fetchingNode, InetAddressAndPort fetchFrom, List<Range<Token>> rangesToFetch, PreviewKind previewKind)
     {
+        assert !fetchingNode.equals(fetchFrom) : "Can't stream from the same node";
         this.desc = desc;
         this.fetchFrom = fetchFrom;
         this.fetchingNode = fetchingNode;
