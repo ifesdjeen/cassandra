@@ -43,8 +43,8 @@ public interface ReadRepair
      * repair started by this method.
      */
     public void startRepair(DigestResolver digestResolver,
-                            ReplicaList allEndpoints,
-                            ReplicaList contactedEndpoints,
+                            ReplicaList requestReplicas,
+                            ReplicaList contactedReplicas,
                             Consumer<PartitionIterator> resultConsumer);
 
     /**

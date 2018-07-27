@@ -67,7 +67,15 @@ public abstract class ResponseResolver
 
     public void preprocess(MessageIn<ReadResponse> message)
     {
-        responses.add(message);
+        try
+        {
+            responses.add(message);
+        }
+        catch (IllegalStateException e)
+        {
+            logger.error("Encountered error while trying to preprocess the message {}: %s in command {}, replicas: {}", message, command, readRepair, consistency, replicas);
+            throw e;
+        }
     }
 
     public Accumulator<MessageIn<ReadResponse>> getMessages()

@@ -76,13 +76,15 @@ public class BlockingReadRepair implements ReadRepair
         private final ReadCallback readCallback;
         private final Consumer<PartitionIterator> resultConsumer;
         private final ReplicaCollection initialContacts;
+        private final ReplicaCollection candidates;
 
-        public DigestRepair(DataResolver dataResolver, ReadCallback readCallback, Consumer<PartitionIterator> resultConsumer, ReplicaCollection initialContacts)
+        public DigestRepair(DataResolver dataResolver, ReadCallback readCallback, Consumer<PartitionIterator> resultConsumer, ReplicaCollection initialContacts, ReplicaCollection candidates)
         {
             this.dataResolver = dataResolver;
             this.readCallback = readCallback;
             this.resultConsumer = resultConsumer;
             this.initialContacts = initialContacts;
+            this.candidates = candidates;
         }
     }
 
@@ -115,15 +117,16 @@ public class BlockingReadRepair implements ReadRepair
         }
     }
 
-    public void startRepair(DigestResolver digestResolver, ReplicaList allReplicas, ReplicaList contactedReplicas, Consumer<PartitionIterator> resultConsumer)
+    public void startRepair(DigestResolver digestResolver, ReplicaList requestReplicas, ReplicaList contactedReplicas, Consumer<PartitionIterator> resultConsumer)
     {
         maybeMarkBlockingRepair();
 
         // Do a full data read to resolve the correct response (and repair node that need be)
-        DataResolver resolver = new DataResolver(cfs.keyspace, command, ConsistencyLevel.ALL, allReplicas, this, allReplicas.size(), queryStartNanoTime);
-        ReadCallback readCallback = ReadCallback.create(resolver, ConsistencyLevel.ALL, command, allReplicas, queryStartNanoTime);
+        ReplicaCollection candidates = BlockingReadRepairs.getCandidateReplicas(cfs.keyspace, command.getReplicaToken(), consistency);
+        DataResolver resolver = new DataResolver(cfs.keyspace, command, ConsistencyLevel.ALL, candidates, this, candidates.size(), queryStartNanoTime);
+        ReadCallback readCallback = ReadCallback.create(resolver, ConsistencyLevel.ALL, command, requestReplicas, queryStartNanoTime);
 
-        digestRepair = new DigestRepair(resolver, readCallback, resultConsumer, contactedReplicas);
+        digestRepair = new DigestRepair(resolver, readCallback, resultConsumer, contactedReplicas, candidates);
 
         for (Replica replica : contactedReplicas)
         {
@@ -159,7 +162,8 @@ public class BlockingReadRepair implements ReadRepair
         if (shouldSpeculate() && !repair.readCallback.await(cfs.sampleReadLatencyNanos, TimeUnit.NANOSECONDS))
         {
             ReplicaSet contacted = new ReplicaSet(repair.initialContacts);
-            ReplicaCollection candidates = BlockingReadRepairs.getCandidateReplicas(cfs.keyspace, command.getReplicaToken(), consistency);
+            ReplicaCollection candidates = repair.candidates;
+
             boolean speculated = false;
             for (Replica replica: Iterables.filter(candidates, e -> !contacted.containsReplica(e)))
             {
@@ -209,8 +213,10 @@ public class BlockingReadRepair implements ReadRepair
     @Override
     public void repairPartition(DecoratedKey key, Map<Replica, Mutation> mutations, ReplicaList participants)
     {
+        assert digestRepair != null : "Repair was not started.";
+
         maybeMarkBlockingRepair();
-        BlockingPartitionRepair blockingRepair = new BlockingPartitionRepair(cfs.keyspace, key, consistency, mutations, consistency.blockFor(cfs.keyspace), participants);
+        BlockingPartitionRepair blockingRepair = new BlockingPartitionRepair(consistency, mutations, consistency.blockFor(cfs.keyspace), participants, digestRepair.candidates);
         blockingRepair.sendInitialRepairs();
         repairs.add(blockingRepair);
     }

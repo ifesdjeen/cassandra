@@ -112,7 +112,7 @@ public class ReadCallback implements IAsyncCallbackWithFailure<ReadResponse>
     public void awaitResults() throws ReadFailureException, ReadTimeoutException
     {
         boolean signaled = await(command.getTimeout(), TimeUnit.MILLISECONDS);
-        boolean failed = blockfor + failures > replicas.size();
+        boolean failed = failures > 0  && blockfor + failures > replicas.size();
         if (signaled && !failed)
             return;
 

@@ -38,6 +38,7 @@ import org.apache.cassandra.db.Mutation;
 import org.apache.cassandra.db.partitions.PartitionUpdate;
 import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.locator.Replica;
+import org.apache.cassandra.locator.ReplicaCollection;
 import org.apache.cassandra.locator.ReplicaList;
 import org.apache.cassandra.locator.ReplicaSet;
 import org.apache.cassandra.locator.Replicas;
@@ -51,23 +52,21 @@ import org.apache.cassandra.tracing.Tracing;
 
 public class BlockingPartitionRepair extends AbstractFuture<Object> implements IAsyncCallback<Object>
 {
-    private final Keyspace keyspace;
-    private final DecoratedKey key;
     private final ConsistencyLevel consistency;
-    private final ReplicaList participants;
+    private final ReplicaSet contacted;
+    private final ReplicaCollection candidates;
     private final Map<Replica, Mutation> pendingRepairs;
     private final Map<InetAddressAndPort, Replica> replicaMap;
     private final CountDownLatch latch;
 
     private volatile long mutationsSentTime;
 
-    public BlockingPartitionRepair(Keyspace keyspace, DecoratedKey key, ConsistencyLevel consistency, Map<Replica, Mutation> repairs, int maxBlockFor, ReplicaList participants)
+    public BlockingPartitionRepair(ConsistencyLevel consistency, Map<Replica, Mutation> repairs, int maxBlockFor, ReplicaList participants, ReplicaCollection candidates)
     {
-        this.keyspace = keyspace;
-        this.key = key;
         this.consistency = consistency;
         this.pendingRepairs = new ConcurrentHashMap<>(repairs);
-        this.participants = participants;
+        this.contacted = new ReplicaSet(participants);
+        this.candidates = candidates;
         this.replicaMap = Maps.newHashMapWithExpectedSize(participants.size());
         // here we remove empty repair mutations from the block for total, since
         // we're not sending them mutations
@@ -80,7 +79,7 @@ public class BlockingPartitionRepair extends AbstractFuture<Object> implements I
                 blockFor--;
         }
 
-        for (Replica replica : repairs.keySet())
+        for (Replica replica : candidates)
             replicaMap.put(replica.getEndpoint(), replica);
 
         // there are some cases where logically identical data can return different digests
@@ -204,10 +203,9 @@ public class BlockingPartitionRepair extends AbstractFuture<Object> implements I
         if (awaitRepairs(timeout, timeoutUnit))
             return;
 
-        ReplicaSet contacted = new ReplicaSet(participants);
-        Iterable<Replica> candidates = Iterables.filter(BlockingReadRepairs.getCandidateReplicas(keyspace, key.getToken(), consistency),
-                                                        r -> r.isFull() && !contacted.containsReplica(r));
-        if (Iterables.isEmpty(candidates))
+        Iterable<Replica> newCandidates = Iterables.filter(candidates,
+                                                           r -> r.isFull() && !contacted.containsReplica(r));
+        if (Iterables.isEmpty(newCandidates))
             return;
 
         PartitionUpdate update = mergeUnackedUpdates();
@@ -220,7 +218,7 @@ public class BlockingPartitionRepair extends AbstractFuture<Object> implements I
 
         Mutation[] versionedMutations = new Mutation[msgVersionIdx(MessagingService.current_version) + 1];
 
-        for (Replica replica: candidates)
+        for (Replica replica: newCandidates)
         {
             int versionIdx = msgVersionIdx(MessagingService.instance().getVersion(replica.getEndpoint()));
 
