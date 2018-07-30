@@ -164,7 +164,7 @@ public class DataResolverTransientTest extends AbstractReadResponseTest
 
         Assert.assertFalse(resolver.isDataPresent());
         resolver.preprocess(response(command, EP1, iter(update(row(1000, 5, 5)).build()), false));
-        resolver.preprocess(response(command, EP2, iter(update(row(2000, 4, 4)).build()), true));
+        resolver.preprocess(response(command, EP2, iter(update(row(2000, 4, 4)).build()), false));
         resolver.preprocess(response(command, EP3, EmptyIterators.unfilteredPartition(cfm), false));
 
         Assert.assertFalse(repair.dataWasConsumed());

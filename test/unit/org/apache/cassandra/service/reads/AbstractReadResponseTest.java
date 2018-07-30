@@ -73,7 +73,7 @@ import org.apache.cassandra.utils.FBUtilities;
 /**
  * Base class for testing various components which deal with read responses
  */
-public class AbstractReadResponseTest
+public abstract class AbstractReadResponseTest
 {
     public static final String KEYSPACE1 = "DataResolverTest";
     public static final String CF_STANDARD = "Standard1";

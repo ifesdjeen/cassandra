@@ -709,7 +709,7 @@ public class DataResolverTest extends AbstractReadResponseTest
         builder.addCell(mapCell(0, 0, ts[0]));
 
         InetAddressAndPort peer1 = replicas.get(0).getEndpoint();
-        resolver.preprocess(response(command, peer1, iter(PartitionUpdate.singleRowUpdate(cfm2, dk, builder.build()))));
+        resolver.preprocess(response(cmd, peer1, iter(PartitionUpdate.singleRowUpdate(cfm2, dk, builder.build()))));
 
         builder.newRow(Clustering.EMPTY);
         DeletionTime expectedCmplxDelete = new DeletionTime(ts[1] - 1, nowInSec);
@@ -718,7 +718,7 @@ public class DataResolverTest extends AbstractReadResponseTest
         builder.addCell(expectedCell);
 
         InetAddressAndPort peer2 = replicas.get(1).getEndpoint();
-        resolver.preprocess(response(command, peer2, iter(PartitionUpdate.singleRowUpdate(cfm2, dk, builder.build()))));
+        resolver.preprocess(response(cmd, peer2, iter(PartitionUpdate.singleRowUpdate(cfm2, dk, builder.build()))));
 
         try(PartitionIterator data = resolver.resolve())
         {
@@ -761,14 +761,14 @@ public class DataResolverTest extends AbstractReadResponseTest
         builder.addCell(mapCell(0, 0, ts[0]));
 
         InetAddressAndPort peer1 = replicas.get(0).getEndpoint();
-        resolver.preprocess(response(command, peer1, iter(PartitionUpdate.singleRowUpdate(cfm2, dk, builder.build()))));
+        resolver.preprocess(response(cmd, peer1, iter(PartitionUpdate.singleRowUpdate(cfm2, dk, builder.build()))));
 
         builder.newRow(Clustering.EMPTY);
         DeletionTime expectedCmplxDelete = new DeletionTime(ts[1] - 1, nowInSec);
         builder.addComplexDeletion(m, expectedCmplxDelete);
 
         InetAddressAndPort peer2 = replicas.get(1).getEndpoint();
-        resolver.preprocess(response(command, peer2, iter(PartitionUpdate.singleRowUpdate(cfm2, dk, builder.build()))));
+        resolver.preprocess(response(cmd, peer2, iter(PartitionUpdate.singleRowUpdate(cfm2, dk, builder.build()))));
 
         try(PartitionIterator data = resolver.resolve())
         {
@@ -809,10 +809,10 @@ public class DataResolverTest extends AbstractReadResponseTest
 
         // empty map column
         InetAddressAndPort peer1 = replicas.get(0).getEndpoint();
-        resolver.preprocess(response(command, peer1, iter(PartitionUpdate.singleRowUpdate(cfm2, dk, builder.build()))));
+        resolver.preprocess(response(cmd, peer1, iter(PartitionUpdate.singleRowUpdate(cfm2, dk, builder.build()))));
 
         InetAddressAndPort peer2 = replicas.get(1).getEndpoint();
-        resolver.preprocess(response(command, peer2, iter(PartitionUpdate.emptyUpdate(cfm2, dk))));
+        resolver.preprocess(response(cmd, peer2, iter(PartitionUpdate.emptyUpdate(cfm2, dk))));
 
         try(PartitionIterator data = resolver.resolve())
         {
@@ -855,7 +855,7 @@ public class DataResolverTest extends AbstractReadResponseTest
         builder.addComplexDeletion(m, new DeletionTime(ts[0] - 1, nowInSec));
 
         InetAddressAndPort peer1 = replicas.get(0).getEndpoint();
-        resolver.preprocess(response(command, peer1, iter(PartitionUpdate.singleRowUpdate(cfm2, dk, builder.build()))));
+        resolver.preprocess(response(cmd, peer1, iter(PartitionUpdate.singleRowUpdate(cfm2, dk, builder.build()))));
 
         // newer, overwritten map column
         builder.newRow(Clustering.EMPTY);
@@ -865,7 +865,7 @@ public class DataResolverTest extends AbstractReadResponseTest
         builder.addCell(expectedCell);
 
         InetAddressAndPort peer2 = replicas.get(1).getEndpoint();
-        resolver.preprocess(response(command, peer2, iter(PartitionUpdate.singleRowUpdate(cfm2, dk, builder.build()))));
+        resolver.preprocess(response(cmd, peer2, iter(PartitionUpdate.singleRowUpdate(cfm2, dk, builder.build()))));
 
         try(PartitionIterator data = resolver.resolve())
         {
