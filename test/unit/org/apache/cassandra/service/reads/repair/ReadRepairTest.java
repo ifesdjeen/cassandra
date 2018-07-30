@@ -54,6 +54,7 @@ import org.apache.cassandra.schema.KeyspaceParams;
 import org.apache.cassandra.schema.MigrationManager;
 import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.schema.Tables;
+import org.apache.cassandra.service.reads.AbstractReadExecutor;
 import org.apache.cassandra.utils.ByteBufferUtil;
 
 public class ReadRepairTest
@@ -68,9 +69,9 @@ public class ReadRepairTest
 
     private static class InstrumentedReadRepairHandler extends BlockingPartitionRepair
     {
-        public InstrumentedReadRepairHandler(ConsistencyLevel consistency, Map<Replica, Mutation> repairs, int maxBlockFor, ReplicaList participants, ReplicaCollection candidates)
+        public InstrumentedReadRepairHandler(ConsistencyLevel consistency, Map<Replica, Mutation> repairs, int maxBlockFor, ReplicaList all, ReplicaList targets)
         {
-            super(consistency, repairs, maxBlockFor, participants, candidates);
+            super(consistency, repairs, maxBlockFor, new AbstractReadExecutor.ReplicaPlan(ks, all, targets));
         }
 
         Map<InetAddressAndPort, Mutation> mutationsSent = new HashMap<>();
@@ -129,7 +130,7 @@ public class ReadRepairTest
         target2 = ReplicaUtils.full(InetAddressAndPort.getByName("127.0.0.254"));
         target3 = ReplicaUtils.full(InetAddressAndPort.getByName("127.0.0.253"));
 
-        targets = new ReplicaList(Lists.newArrayList(target1, target2, target3));
+        targets = ReplicaList.of(target1, target2, target3);
 
         // default test values
         key  = dk(5);
@@ -160,10 +161,9 @@ public class ReadRepairTest
         return new Mutation(PartitionUpdate.singleRowUpdate(cfm, key, builder.build()));
     }
 
-    private static InstrumentedReadRepairHandler createRepairHandler(Map<Replica, Mutation> repairs, int maxBlockFor, ReplicaCollection participants, ReplicaCollection candidates)
+    private static InstrumentedReadRepairHandler createRepairHandler(Map<Replica, Mutation> repairs, int maxBlockFor, ReplicaList all, ReplicaList targets)
     {
-        return new InstrumentedReadRepairHandler(ConsistencyLevel.LOCAL_QUORUM, repairs, maxBlockFor, new ReplicaList(participants),
-                                                 candidates);
+        return new InstrumentedReadRepairHandler(ConsistencyLevel.LOCAL_QUORUM, repairs, maxBlockFor, all, targets);
     }
 
     @Test
@@ -198,7 +198,7 @@ public class ReadRepairTest
         repairs.put(target2, repair2);
 
         InstrumentedReadRepairHandler handler = createRepairHandler(repairs, 2,
-                                                                    ReplicaList.of(target1, target2), targets);
+                                                                    targets, ReplicaList.of(target1, target2));
 
         Assert.assertTrue(handler.mutationsSent.isEmpty());
 
@@ -232,7 +232,7 @@ public class ReadRepairTest
         repairs.put(target1, mutation(cell2));
         repairs.put(target2, mutation(cell1));
 
-        ReplicaCollection replicas = ReplicaList.of(target1, target2);
+        ReplicaList replicas = ReplicaList.of(target1, target2);
         InstrumentedReadRepairHandler handler = createRepairHandler(repairs, 2, replicas, targets);
         handler.sendInitialRepairs();
         handler.ack(target1.getEndpoint());
@@ -275,10 +275,9 @@ public class ReadRepairTest
 
         Map<Replica, Mutation> repairs = new HashMap<>();
         repairs.put(target1, repair1);
-        ReplicaList participants = new ReplicaList(Lists.newArrayList(target1, target2));
 
         // check that the correct initial mutations are sent out
-        InstrumentedReadRepairHandler handler = createRepairHandler(repairs, 2, participants, targets);
+        InstrumentedReadRepairHandler handler = createRepairHandler(repairs, 2, targets, ReplicaList.of(target1, target2));
         handler.sendInitialRepairs();
         Assert.assertEquals(1, handler.mutationsSent.size());
         Assert.assertTrue(handler.mutationsSent.containsKey(target1.getEndpoint()));
@@ -327,7 +326,8 @@ public class ReadRepairTest
         Replica remote2 = ReplicaUtils.full(InetAddressAndPort.getByName("10.0.0.2"));
         repairs.put(remote1, mutation(cell1));
 
-        ReplicaList participants = new ReplicaList(Lists.newArrayList(target1, target2, remote1, remote2));
+        ReplicaList participants = ReplicaList.of(target1, target2, remote1, remote2);
+        ReplicaList targets = ReplicaList.of(target1, target2);
 
         InstrumentedReadRepairHandler handler = createRepairHandler(repairs, 2, participants, targets);
         handler.sendInitialRepairs();

@@ -66,7 +66,7 @@ public class DigestResolverTest extends AbstractReadResponseTest
         SinglePartitionReadCommand command = SinglePartitionReadCommand.fullPartitionRead(cfm, nowInSec, dk(5));
         ReplicaList targetReplicas = new ReplicaList(Lists.newArrayList(full(EP1), full(EP2)));
         TestableReadRepair readRepair = new TestableReadRepair(command, ConsistencyLevel.QUORUM);
-        DigestResolver resolver = new DigestResolver(cfs.keyspace, command, ConsistencyLevel.QUORUM, targetReplicas, readRepair, 3, 0);
+        DigestResolver resolver = new DigestResolver(cfs.keyspace, command, ConsistencyLevel.QUORUM, plan(targetReplicas), readRepair, 0);
 
         PartitionUpdate response = update(row(1000, 4, 4), row(1000, 5, 5)).build();
 
@@ -84,7 +84,7 @@ public class DigestResolverTest extends AbstractReadResponseTest
     {
         SinglePartitionReadCommand command = SinglePartitionReadCommand.fullPartitionRead(cfm, nowInSec, dk(5));
         ReplicaList targetReplicas = new ReplicaList(Lists.newArrayList(full(EP1), full(EP2)));
-        DigestResolver resolver = new DigestResolver(cfs.keyspace, command, ConsistencyLevel.QUORUM, targetReplicas, NoopReadRepair.instance, 3, 0);
+        DigestResolver resolver = new DigestResolver(cfs.keyspace, command, ConsistencyLevel.QUORUM, plan(targetReplicas), NoopReadRepair.instance,0);
 
         PartitionUpdate response1 = update(row(1000, 4, 4), row(1000, 5, 5)).build();
         PartitionUpdate response2 = update(row(2000, 4, 5)).build();
@@ -106,7 +106,7 @@ public class DigestResolverTest extends AbstractReadResponseTest
         SinglePartitionReadCommand command = SinglePartitionReadCommand.fullPartitionRead(cfm, nowInSec, dk(5));
         ReplicaList targetReplicas = new ReplicaList(Lists.newArrayList(full(EP1), trans(EP2)));
         TestableReadRepair readRepair = new TestableReadRepair(command, ConsistencyLevel.QUORUM);
-        DigestResolver resolver = new DigestResolver(cfs.keyspace, command, ConsistencyLevel.QUORUM, targetReplicas, readRepair, 3, 0);
+        DigestResolver resolver = new DigestResolver(cfs.keyspace, command, ConsistencyLevel.QUORUM, plan(targetReplicas), readRepair, 0);
 
         PartitionUpdate response1 = update(row(1000, 4, 4), row(1000, 5, 5)).build();
         PartitionUpdate response2 = update(row(1000, 5, 5)).build();
@@ -128,7 +128,7 @@ public class DigestResolverTest extends AbstractReadResponseTest
     {
         SinglePartitionReadCommand command = SinglePartitionReadCommand.fullPartitionRead(cfm, nowInSec, dk(5));
         ReplicaList targetReplicas = new ReplicaList(Lists.newArrayList(full(EP1), trans(EP2)));
-        DigestResolver resolver = new DigestResolver(cfs.keyspace, command, ConsistencyLevel.QUORUM, targetReplicas, NoopReadRepair.instance, 3, 0);
+        DigestResolver resolver = new DigestResolver(cfs.keyspace, command, ConsistencyLevel.QUORUM, plan(targetReplicas), NoopReadRepair.instance, 0);
 
         PartitionUpdate response2 = update(row(1000, 5, 5)).build();
         Assert.assertFalse(resolver.isDataPresent());
@@ -149,7 +149,7 @@ public class DigestResolverTest extends AbstractReadResponseTest
         SinglePartitionReadCommand command = SinglePartitionReadCommand.fullPartitionRead(cfm, nowInSec, dk(5));
         ReplicaList targetReplicas = new ReplicaList(Lists.newArrayList(full(EP1), full(EP2), trans(EP3)));
         TestableReadRepair readRepair = new TestableReadRepair(command, ConsistencyLevel.QUORUM);
-        DigestResolver resolver = new DigestResolver(cfs.keyspace, command, ConsistencyLevel.QUORUM, targetReplicas, readRepair, 3, 0);
+        DigestResolver resolver = new DigestResolver(cfs.keyspace, command, ConsistencyLevel.QUORUM, plan(targetReplicas), readRepair, 0);
 
         PartitionUpdate fullData = update(row(1000, 4, 4), row(1000, 5, 5)).build();
         PartitionUpdate transData = update(row(1000, 6, 6)).build();
@@ -166,6 +166,10 @@ public class DigestResolverTest extends AbstractReadResponseTest
         assertPartitionsEqual(transData.unfilteredIterator(), Iterables.getOnlyElement(readRepair.sent.get(EP1).getPartitionUpdates()).unfilteredIterator());
         assertPartitionsEqual(transData.unfilteredIterator(), Iterables.getOnlyElement(readRepair.sent.get(EP2).getPartitionUpdates()).unfilteredIterator());
         Assert.assertFalse(readRepair.sent.containsKey(EP3));
+    }
 
+    private AbstractReadExecutor.ReplicaPlan plan(ReplicaList replicas)
+    {
+        return new AbstractReadExecutor.ReplicaPlan(ks, replicas, replicas);
     }
 }

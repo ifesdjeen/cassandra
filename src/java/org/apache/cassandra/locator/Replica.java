@@ -18,15 +18,11 @@
 
 package org.apache.cassandra.locator;
 
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Iterables;
-import com.google.common.collect.Lists;
 
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;

@@ -20,19 +20,31 @@ package org.apache.cassandra.service.reads.repair;
 import java.util.Map;
 import java.util.function.Consumer;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.db.DecoratedKey;
+import org.apache.cassandra.db.Keyspace;
 import org.apache.cassandra.db.Mutation;
-import org.apache.cassandra.db.ReadCommand;
 import org.apache.cassandra.db.partitions.PartitionIterator;
+import org.apache.cassandra.db.partitions.PartitionUpdate;
 import org.apache.cassandra.db.partitions.UnfilteredPartitionIterators;
 import org.apache.cassandra.exceptions.ReadTimeoutException;
 import org.apache.cassandra.locator.Replica;
 import org.apache.cassandra.locator.ReplicaList;
+import org.apache.cassandra.net.MessagingService;
+import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.service.reads.DigestResolver;
+import org.apache.cassandra.tracing.Tracing;
 
 public interface ReadRepair
 {
+    static final Logger logger = LoggerFactory.getLogger(ReadRepair.class);
+    static final boolean DROP_OVERSIZED_READ_REPAIR_MUTATIONS = Boolean.getBoolean("cassandra.drop_oversized_readrepair_mutations");
+
+
     /**
      * Used by DataResolver to generate corrections as the partition iterator is consumed
      */
@@ -43,8 +55,6 @@ public interface ReadRepair
      * repair started by this method.
      */
     public void startRepair(DigestResolver digestResolver,
-                            ReplicaList requestReplicas,
-                            ReplicaList contactedReplicas,
                             Consumer<PartitionIterator> resultConsumer);
 
     /**
@@ -73,10 +83,62 @@ public interface ReadRepair
 
     public void awaitRepairs();
 
-    void repairPartition(DecoratedKey key, Map<Replica, Mutation> mutations, ReplicaList sourcesList);
+    /**
+     * Repairs a partition _after_ receiving data responses. This method receives replica list, since
+     * we will block repair only on the replicas that have responded.
+     */
+    void repairPartition(Map<Replica, Mutation> mutations, ReplicaList targets);
 
-    static ReadRepair create(ReadCommand command, long queryStartNanoTime, ConsistencyLevel consistency)
+    /**
+     * Create a read repair mutation from the given update, if the mutation is not larger than the maximum
+     * mutation size, otherwise return null. Or, if we're configured to be strict, throw an exception.
+     */
+    public static Mutation createRepairMutation(PartitionUpdate update, ConsistencyLevel consistency, Replica destination, boolean suppressException)
     {
-        return new BlockingReadRepair(command, queryStartNanoTime, consistency);
+        if (update == null)
+            return null;
+
+        DecoratedKey key = update.partitionKey();
+        Mutation mutation = new Mutation(update);
+        Keyspace keyspace = Keyspace.open(mutation.getKeyspaceName());
+        TableMetadata metadata = update.metadata();
+
+        int messagingVersion = MessagingService.instance().getVersion(destination.getEndpoint());
+
+        int    mutationSize = (int) Mutation.serializer.serializedSize(mutation, messagingVersion);
+        int maxMutationSize = DatabaseDescriptor.getMaxMutationSize();
+
+
+        if (mutationSize <= maxMutationSize)
+        {
+            return mutation;
+        }
+        else if (DROP_OVERSIZED_READ_REPAIR_MUTATIONS)
+        {
+            logger.debug("Encountered an oversized ({}/{}) read repair mutation for table {}, key {}, node {}",
+                         mutationSize,
+                         maxMutationSize,
+                         metadata,
+                         metadata.partitionKeyType.getString(key.getKey()),
+                         destination);
+            return null;
+        }
+        else
+        {
+            logger.warn("Encountered an oversized ({}/{}) read repair mutation for table {}, key {}, node {}",
+                        mutationSize,
+                        maxMutationSize,
+                        metadata,
+                        metadata.partitionKeyType.getString(key.getKey()),
+                        destination);
+
+            if (!suppressException)
+            {
+                int blockFor = consistency.blockFor(keyspace);
+                Tracing.trace("Timed out while read-repairing after receiving all {} data and digest responses", blockFor);
+                throw new ReadTimeoutException(consistency, blockFor - 1, blockFor, true);
+            }
+            return null;
+        }
     }
 }

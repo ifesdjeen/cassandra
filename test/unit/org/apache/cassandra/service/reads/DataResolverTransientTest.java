@@ -91,7 +91,7 @@ public class DataResolverTransientTest extends AbstractReadResponseTest
         SinglePartitionReadCommand command = SinglePartitionReadCommand.fullPartitionRead(update.metadata(), nowInSec, dk(5));
         ReplicaList targetReplicas = ReplicaList.of(full(EP1), full(EP2), trans(EP3));
         TestableReadRepair repair = new TestableReadRepair(command, QUORUM);
-        DataResolver resolver = new DataResolver(keyspace, command, QUORUM, targetReplicas, repair, 3, 0);
+        DataResolver resolver = new DataResolver(keyspace, command, QUORUM, plan(targetReplicas), repair, 0);
 
         Assert.assertFalse(resolver.isDataPresent());
         resolver.preprocess(response(command, EP1, iter(update), false));
@@ -160,7 +160,7 @@ public class DataResolverTransientTest extends AbstractReadResponseTest
         SinglePartitionReadCommand command = SinglePartitionReadCommand.fullPartitionRead(cfm, nowInSec, dk(5));
         ReplicaList targetReplicas = new ReplicaList(Lists.newArrayList(full(EP1), full(EP2), trans(EP3)));
         TestableReadRepair repair = new TestableReadRepair(command, QUORUM);
-        DataResolver resolver = new DataResolver(cfs.keyspace, command, QUORUM, targetReplicas, repair, 3, 0);
+        DataResolver resolver = new DataResolver(cfs.keyspace, command, QUORUM, plan(targetReplicas), repair, 0);
 
         Assert.assertFalse(resolver.isDataPresent());
         resolver.preprocess(response(command, EP1, iter(update(row(1000, 5, 5)).build()), false));
@@ -187,7 +187,7 @@ public class DataResolverTransientTest extends AbstractReadResponseTest
         SinglePartitionReadCommand command = SinglePartitionReadCommand.fullPartitionRead(cfm, nowInSec, dk(5));
         ReplicaList targetReplicas = new ReplicaList(Lists.newArrayList(full(EP1), full(EP2), trans(EP3)));
         TestableReadRepair repair = new TestableReadRepair(command, QUORUM);
-        DataResolver resolver = new DataResolver(cfs.keyspace, command, QUORUM, targetReplicas, repair, 3, 0);
+        DataResolver resolver = new DataResolver(cfs.keyspace, command, QUORUM, plan(targetReplicas), repair, 0);
 
         Assert.assertFalse(resolver.isDataPresent());
         PartitionUpdate transData = update(row(1000, 5, 5)).build();
@@ -205,5 +205,10 @@ public class DataResolverTransientTest extends AbstractReadResponseTest
         assertPartitionsEqual(filter(iter(transData)), filter(iter(repair.sent.get(EP2).getPartitionUpdate(cfm))));
         Assert.assertFalse(repair.sent.containsKey(EP3));
 
+    }
+
+    private AbstractReadExecutor.ReplicaPlan plan(ReplicaList replicas)
+    {
+        return new AbstractReadExecutor.ReplicaPlan(ks, replicas, replicas);
     }
 }

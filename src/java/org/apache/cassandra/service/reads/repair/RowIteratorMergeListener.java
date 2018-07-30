@@ -48,6 +48,8 @@ import org.apache.cassandra.locator.Replica;
 import org.apache.cassandra.locator.ReplicaList;
 import org.apache.cassandra.schema.ColumnMetadata;
 
+import static org.apache.cassandra.service.reads.repair.ReadRepair.createRepairMutation;
+
 public class RowIteratorMergeListener implements UnfilteredRowIterators.MergeListener
 {
     private final DecoratedKey partitionKey;
@@ -330,7 +332,7 @@ public class RowIteratorMergeListener implements UnfilteredRowIterators.MergeLis
                 continue;
 
             Preconditions.checkState(!isTransient(i), "cannot read repair transient replicas");
-            Mutation mutation = BlockingReadRepairs.createRepairMutation(repairs[i].build(), consistency, sources[i], false);
+            Mutation mutation = createRepairMutation(repairs[i].build(), consistency, sources[i], false);
             if (mutation == null)
                 continue;
 
@@ -342,7 +344,7 @@ public class RowIteratorMergeListener implements UnfilteredRowIterators.MergeLis
 
         if (mutations != null)
         {
-            readRepair.repairPartition(partitionKey, mutations, sourcesList);
+            readRepair.repairPartition(mutations, sourcesList);
         }
     }
 }

@@ -41,9 +41,9 @@ public class DataResolver extends ResponseResolver
 {
     private final boolean enforceStrictLiveness;
 
-    public DataResolver(Keyspace keyspace, ReadCommand command, ConsistencyLevel consistency, ReplicaCollection replicas, ReadRepair readRepair, int maxResponseCount, long queryStartNanoTime)
+    public DataResolver(Keyspace keyspace, ReadCommand command, ConsistencyLevel consistency, AbstractReadExecutor.ReplicaPlan replicaPlan, ReadRepair readRepair, long queryStartNanoTime)
     {
-        super(keyspace, command, consistency, replicas, readRepair, maxResponseCount, queryStartNanoTime);
+        super(keyspace, command, consistency, replicaPlan, readRepair, queryStartNanoTime);
         this.enforceStrictLiveness = command.metadata().enforceStrictLiveness();
     }
 
@@ -71,7 +71,7 @@ public class DataResolver extends ResponseResolver
             assert !msg.payload.isDigestResponse();
 
             iters.add(msg.payload.makeIterator(command));
-            Replica replica = getReplicaFor(msg.from);
+            Replica replica = replicaPlan.getReplicaFor(msg.from);
 
             if (replica == null)
                 throw new AssertionError("Should never be missing a replica: " + msg.from);

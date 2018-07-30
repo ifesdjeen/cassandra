@@ -48,6 +48,7 @@ import org.apache.cassandra.concurrent.StageManager;
 import org.apache.cassandra.service.reads.AbstractReadExecutor;
 import org.apache.cassandra.service.reads.DataResolver;
 import org.apache.cassandra.service.reads.ReadCallback;
+import org.apache.cassandra.service.reads.repair.BlockingReadRepair;
 import org.apache.cassandra.service.reads.repair.ReadRepair;
 import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.config.DatabaseDescriptor;
@@ -1953,14 +1954,12 @@ public class StorageProxy implements StorageProxyMBean
     private static class RangeForQuery
     {
         public final AbstractBounds<PartitionPosition> range;
-        public final ReplicaList liveReplicas;
-        public final ReplicaList filteredReplicas;
+        public final AbstractReadExecutor.ReplicaPlan replicaPlan;
 
-        public RangeForQuery(AbstractBounds<PartitionPosition> range, ReplicaList liveReplicas, ReplicaList filteredReplicas)
+        public RangeForQuery(AbstractBounds<PartitionPosition> range, AbstractReadExecutor.ReplicaPlan replicaPlan)
         {
             this.range = range;
-            this.liveReplicas = liveReplicas;
-            this.filteredReplicas = filteredReplicas;
+            this.replicaPlan = replicaPlan;
         }
     }
 
@@ -1996,8 +1995,7 @@ public class StorageProxy implements StorageProxyMBean
             AbstractBounds<PartitionPosition> range = ranges.next();
             ReplicaList liveReplicas = getLiveSortedReplicas(keyspace, range.right);
             return new RangeForQuery(range,
-                                     liveReplicas,
-                                     consistency.filterForQuery(keyspace, liveReplicas));
+                                     new AbstractReadExecutor.ReplicaPlan(keyspace, liveReplicas, consistency.filterForQuery(keyspace, liveReplicas)));
         }
     }
 
@@ -2036,7 +2034,7 @@ public class StorageProxy implements StorageProxyMBean
 
                 RangeForQuery next = ranges.peek();
 
-                ReplicaList merged = ReplicaList.intersectEndpoints(current.liveReplicas, next.liveReplicas);
+                ReplicaList merged = ReplicaList.intersectEndpoints(current.replicaPlan.allReplicas(), next.replicaPlan.allReplicas());
 
                 // Check if there is enough endpoint for the merge to be possible.
                 if (!consistency.isSufficientLiveNodes(keyspace, merged))
@@ -2045,11 +2043,11 @@ public class StorageProxy implements StorageProxyMBean
                 ReplicaList filteredMerged = consistency.filterForQuery(keyspace, merged);
 
                 // Estimate whether merging will be a win or not
-                if (!DatabaseDescriptor.getEndpointSnitch().isWorthMergingForRangeQuery(filteredMerged, current.filteredReplicas, next.filteredReplicas))
+                if (!DatabaseDescriptor.getEndpointSnitch().isWorthMergingForRangeQuery(filteredMerged, current.replicaPlan.targetReplicas(), next.replicaPlan.targetReplicas()))
                     break;
 
                 // If we get there, merge this range and the next one
-                current = new RangeForQuery(current.range.withNewRight(next.range.right), merged, filteredMerged);
+                current = new RangeForQuery(current.range.withNewRight(next.range.right), new AbstractReadExecutor.ReplicaPlan(keyspace, merged, filteredMerged));
                 ranges.next(); // consume the range we just merged since we've only peeked so far
             }
             return current;
@@ -2198,23 +2196,24 @@ public class StorageProxy implements StorageProxyMBean
         {
             PartitionRangeReadCommand rangeCommand = command.forSubRange(toQuery.range, isFirst);
 
-            ReadRepair readRepair = ReadRepair.create(command, queryStartNanoTime, consistency);
-            DataResolver resolver = new DataResolver(keyspace, rangeCommand, consistency, toQuery.filteredReplicas, readRepair, toQuery.filteredReplicas.size(), queryStartNanoTime);
+            ReadRepair readRepair = new BlockingReadRepair(command, toQuery.replicaPlan, queryStartNanoTime, consistency);
+            DataResolver resolver = new DataResolver(keyspace, rangeCommand, consistency, toQuery.replicaPlan, readRepair, queryStartNanoTime);
 
             int blockFor = consistency.blockFor(keyspace);
-            int minResponses = Math.min(toQuery.filteredReplicas.size(), blockFor);
-            ReplicaList minimalEndpoints = toQuery.filteredReplicas.subList(0, minResponses);
-            ReadCallback handler = ReadCallback.create(resolver, consistency, rangeCommand, minimalEndpoints, queryStartNanoTime);
+            int minResponses = Math.min(toQuery.replicaPlan.targetReplicas().size(), blockFor);
+            // TODO: not exactly ideal, improve
+            AbstractReadExecutor.ReplicaPlan plan = toQuery.replicaPlan.withTargets(toQuery.replicaPlan.targetReplicas().subList(0, minResponses));
+            ReadCallback handler = ReadCallback.create(resolver, consistency, rangeCommand, plan, queryStartNanoTime);
 
             handler.assureSufficientLiveNodes();
 
-            if (toQuery.filteredReplicas.size() == 1 && toQuery.filteredReplicas.get(0).isLocal())
+            if (plan.targetReplicas().size() == 1 && plan.targetReplicas().get(0).isLocal())
             {
                 StageManager.getStage(Stage.READ).execute(new LocalReadRunnable(rangeCommand, handler));
             }
             else
             {
-                for (Replica replica : toQuery.filteredReplicas)
+                for (Replica replica : plan.targetReplicas())
                 {
                     Tracing.trace("Enqueuing request to {}", replica);
                     MessagingService.instance().sendRRWithFailure(rangeCommand.createMessage(), replica.getEndpoint(), handler);

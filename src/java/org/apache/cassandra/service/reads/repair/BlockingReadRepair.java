@@ -31,7 +31,6 @@ import org.slf4j.LoggerFactory;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.ConsistencyLevel;
-import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.Keyspace;
 import org.apache.cassandra.db.Mutation;
 import org.apache.cassandra.db.ReadCommand;
@@ -39,11 +38,11 @@ import org.apache.cassandra.db.partitions.PartitionIterator;
 import org.apache.cassandra.db.partitions.UnfilteredPartitionIterators;
 import org.apache.cassandra.exceptions.ReadTimeoutException;
 import org.apache.cassandra.locator.Replica;
-import org.apache.cassandra.locator.ReplicaCollection;
 import org.apache.cassandra.locator.ReplicaList;
 import org.apache.cassandra.locator.ReplicaSet;
 import org.apache.cassandra.metrics.ReadRepairMetrics;
 import org.apache.cassandra.net.MessagingService;
+import org.apache.cassandra.service.reads.AbstractReadExecutor;
 import org.apache.cassandra.service.reads.DataResolver;
 import org.apache.cassandra.service.reads.DigestResolver;
 import org.apache.cassandra.service.reads.ReadCallback;
@@ -61,6 +60,7 @@ public class BlockingReadRepair implements ReadRepair
     private final long queryStartNanoTime;
     private final ConsistencyLevel consistency;
     private final ColumnFamilyStore cfs;
+    private final AbstractReadExecutor.ReplicaPlan replicaPlan;
 
     private final Queue<BlockingPartitionRepair> repairs = new ConcurrentLinkedQueue<>();
 
@@ -73,24 +73,22 @@ public class BlockingReadRepair implements ReadRepair
         private final DataResolver dataResolver;
         private final ReadCallback readCallback;
         private final Consumer<PartitionIterator> resultConsumer;
-        private final ReplicaCollection initialContacts;
-        private final ReplicaCollection candidates;
 
-        public DigestRepair(DataResolver dataResolver, ReadCallback readCallback, Consumer<PartitionIterator> resultConsumer, ReplicaCollection initialContacts, ReplicaCollection candidates)
+        public DigestRepair(DataResolver dataResolver, ReadCallback readCallback, Consumer<PartitionIterator> resultConsumer)
         {
             this.dataResolver = dataResolver;
             this.readCallback = readCallback;
             this.resultConsumer = resultConsumer;
-            this.initialContacts = initialContacts;
-            this.candidates = candidates;
         }
     }
 
     public BlockingReadRepair(ReadCommand command,
+                              AbstractReadExecutor.ReplicaPlan replicaPlan,
                               long queryStartNanoTime,
                               ConsistencyLevel consistency)
     {
         this.command = command;
+        this.replicaPlan = replicaPlan;
         this.queryStartNanoTime = queryStartNanoTime;
         this.consistency = consistency;
         this.cfs = Keyspace.openAndGetStore(command.metadata());
@@ -115,18 +113,16 @@ public class BlockingReadRepair implements ReadRepair
         }
     }
 
-    public void startRepair(DigestResolver digestResolver, ReplicaList requestReplicas, ReplicaList contactedReplicas, Consumer<PartitionIterator> resultConsumer)
+    public void startRepair(DigestResolver digestResolver, Consumer<PartitionIterator> resultConsumer)
     {
         maybeMarkBlockingRepair();
 
         // Do a full data read to resolve the correct response (and repair node that need be)
-        ReplicaCollection candidates = BlockingReadRepairs.getCandidateReplicas(cfs.keyspace, command.getReplicaToken(), consistency);
-        DataResolver resolver = new DataResolver(cfs.keyspace, command, ConsistencyLevel.ALL, candidates, this, candidates.size(), queryStartNanoTime);
-        ReadCallback readCallback = ReadCallback.create(resolver, ConsistencyLevel.ALL, command, requestReplicas, queryStartNanoTime);
+        DataResolver resolver = new DataResolver(cfs.keyspace, command, ConsistencyLevel.ALL, replicaPlan, this, queryStartNanoTime);
+        ReadCallback readCallback = ReadCallback.create(resolver, ConsistencyLevel.ALL, command, replicaPlan, queryStartNanoTime);
+        digestRepair = new DigestRepair(resolver, readCallback, resultConsumer);
 
-        digestRepair = new DigestRepair(resolver, readCallback, resultConsumer, contactedReplicas, candidates);
-
-        for (Replica replica : contactedReplicas)
+        for (Replica replica : replicaPlan.targetReplicas())
         {
             Tracing.trace("Enqueuing full data read to {}", replica);
             MessagingService.instance().sendRRWithFailure(command.createMessage(), replica.getEndpoint(), readCallback);
@@ -159,11 +155,8 @@ public class BlockingReadRepair implements ReadRepair
 
         if (shouldSpeculate() && !repair.readCallback.await(cfs.sampleReadLatencyNanos, TimeUnit.NANOSECONDS))
         {
-            ReplicaSet contacted = new ReplicaSet(repair.initialContacts);
-            ReplicaCollection candidates = repair.candidates;
-
             boolean speculated = false;
-            for (Replica replica: Iterables.filter(candidates, e -> !contacted.containsReplica(e)))
+            for (Replica replica: replicaPlan.additionalReplicas(consistency))
             {
                 speculated = true;
                 Tracing.trace("Enqueuing speculative full data read to {}", replica);
@@ -209,12 +202,11 @@ public class BlockingReadRepair implements ReadRepair
     }
 
     @Override
-    public void repairPartition(DecoratedKey key, Map<Replica, Mutation> mutations, ReplicaList participants)
+    public void repairPartition(Map<Replica, Mutation> mutations, ReplicaList targets)
     {
-        assert digestRepair != null : "Repair was not started.";
-
         maybeMarkBlockingRepair();
-        BlockingPartitionRepair blockingRepair = new BlockingPartitionRepair(consistency, mutations, consistency.blockFor(cfs.keyspace), participants, digestRepair.candidates);
+        // Targets are overriden with ones that have responsed
+        BlockingPartitionRepair blockingRepair = new BlockingPartitionRepair(consistency, mutations, consistency.blockFor(cfs.keyspace), replicaPlan.withTargets(targets));
         blockingRepair.sendInitialRepairs();
         repairs.add(blockingRepair);
     }

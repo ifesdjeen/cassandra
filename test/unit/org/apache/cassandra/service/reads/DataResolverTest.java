@@ -94,8 +94,7 @@ public class DataResolverTest extends AbstractReadResponseTest
     public void testResolveNewerSingleRow()
     {
         ReplicaList replicas = makeReplicas(2);
-
-        DataResolver resolver = new DataResolver(ks, command, ConsistencyLevel.ALL, replicas, readRepair, replicas.size(), System.nanoTime());
+        DataResolver resolver = new DataResolver(ks, command, ConsistencyLevel.ALL, plan(replicas), readRepair, System.nanoTime());
         InetAddressAndPort peer1 = replicas.get(0).getEndpoint();
         resolver.preprocess(response(command, peer1, iter(new RowUpdateBuilder(cfm, nowInSec, 0L, dk).clustering("1")
                                                                                                      .add("c1", "v1")
@@ -127,7 +126,7 @@ public class DataResolverTest extends AbstractReadResponseTest
     public void testResolveDisjointSingleRow()
     {
         ReplicaList replicas = makeReplicas(2);
-        DataResolver resolver = new DataResolver(ks, command, ConsistencyLevel.ALL, replicas, readRepair, replicas.size(), System.nanoTime());
+        DataResolver resolver = new DataResolver(ks, command, ConsistencyLevel.ALL, plan(replicas), readRepair, System.nanoTime());
         InetAddressAndPort peer1 = replicas.get(0).getEndpoint();
         resolver.preprocess(response(command, peer1, iter(new RowUpdateBuilder(cfm, nowInSec, 0L, dk).clustering("1")
                                                                                                      .add("c1", "v1")
@@ -164,7 +163,7 @@ public class DataResolverTest extends AbstractReadResponseTest
     public void testResolveDisjointMultipleRows() throws UnknownHostException
     {
         ReplicaList replicas = makeReplicas(2);
-        DataResolver resolver = new DataResolver(ks, command, ConsistencyLevel.ALL, replicas, readRepair, replicas.size(), System.nanoTime());
+        DataResolver resolver = new DataResolver(ks, command, ConsistencyLevel.ALL, plan(replicas), readRepair, System.nanoTime());
         InetAddressAndPort peer1 = replicas.get(0).getEndpoint();
         resolver.preprocess(response(command, peer1, iter(new RowUpdateBuilder(cfm, nowInSec, 0L, dk).clustering("1")
                                                                                                      .add("c1", "v1")
@@ -211,7 +210,7 @@ public class DataResolverTest extends AbstractReadResponseTest
     public void testResolveDisjointMultipleRowsWithRangeTombstones()
     {
         ReplicaList replicas = makeReplicas(4);
-        DataResolver resolver = new DataResolver(ks, command, ConsistencyLevel.ALL, replicas, readRepair, replicas.size(), System.nanoTime());
+        DataResolver resolver = new DataResolver(ks, command, ConsistencyLevel.ALL, plan(replicas), readRepair, System.nanoTime());
 
         RangeTombstone tombstone1 = tombstone("1", "11", 1, nowInSec);
         RangeTombstone tombstone2 = tombstone("3", "31", 1, nowInSec);
@@ -292,7 +291,7 @@ public class DataResolverTest extends AbstractReadResponseTest
     public void testResolveWithOneEmpty()
     {
         ReplicaList replicas = makeReplicas(2);
-        DataResolver resolver = new DataResolver(ks, command, ConsistencyLevel.ALL, replicas, readRepair, replicas.size(), System.nanoTime());
+        DataResolver resolver = new DataResolver(ks, command, ConsistencyLevel.ALL, plan(replicas), readRepair, System.nanoTime());
         InetAddressAndPort peer1 = replicas.get(0).getEndpoint();
         resolver.preprocess(response(command, peer1, iter(new RowUpdateBuilder(cfm, nowInSec, 1L, dk).clustering("1")
                                                                                                      .add("c2", "v2")
@@ -323,7 +322,7 @@ public class DataResolverTest extends AbstractReadResponseTest
     {
         ReplicaList replicas = makeReplicas(2);
         TestableReadRepair readRepair = new TestableReadRepair(command, ConsistencyLevel.QUORUM);
-        DataResolver resolver = new DataResolver(ks, command, ConsistencyLevel.ALL, replicas, readRepair, 2, System.nanoTime());
+        DataResolver resolver = new DataResolver(ks, command, ConsistencyLevel.ALL, plan(replicas), readRepair, System.nanoTime());
         resolver.preprocess(response(command, replicas.get(0).getEndpoint(), EmptyIterators.unfilteredPartition(cfm)));
         resolver.preprocess(response(command, replicas.get(1).getEndpoint(), EmptyIterators.unfilteredPartition(cfm)));
 
@@ -339,7 +338,7 @@ public class DataResolverTest extends AbstractReadResponseTest
     public void testResolveDeleted()
     {
         ReplicaList replicas = makeReplicas(2);
-        DataResolver resolver = new DataResolver(ks, command, ConsistencyLevel.ALL, replicas, readRepair, replicas.size(), System.nanoTime());
+        DataResolver resolver = new DataResolver(ks, command, ConsistencyLevel.ALL, plan(replicas), readRepair, System.nanoTime());
         // one response with columns timestamped before a delete in another response
         InetAddressAndPort peer1 = replicas.get(0).getEndpoint();
         resolver.preprocess(response(command, peer1, iter(new RowUpdateBuilder(cfm, nowInSec, 0L, dk).clustering("1")
@@ -365,7 +364,7 @@ public class DataResolverTest extends AbstractReadResponseTest
     public void testResolveMultipleDeleted()
     {
         ReplicaList replicas = makeReplicas(4);
-        DataResolver resolver = new DataResolver(ks, command, ConsistencyLevel.ALL, replicas, readRepair, replicas.size(), System.nanoTime());
+        DataResolver resolver = new DataResolver(ks, command, ConsistencyLevel.ALL, plan(replicas), readRepair, System.nanoTime());
         // deletes and columns with interleaved timestamp, with out of order return sequence
         InetAddressAndPort peer1 = replicas.get(0).getEndpoint();
         resolver.preprocess(response(command, peer1, fullPartitionDelete(cfm, dk, 0, nowInSec)));
@@ -450,7 +449,7 @@ public class DataResolverTest extends AbstractReadResponseTest
     private void resolveRangeTombstonesOnBoundary(long timestamp1, long timestamp2)
     {
         ReplicaList replicas = makeReplicas(2);
-        DataResolver resolver = new DataResolver(ks, command, ConsistencyLevel.ALL, replicas, readRepair, replicas.size(), System.nanoTime());
+        DataResolver resolver = new DataResolver(ks, command, ConsistencyLevel.ALL, plan(replicas), readRepair, System.nanoTime());
         InetAddressAndPort peer1 = replicas.get(0).getEndpoint();
         InetAddressAndPort peer2 = replicas.get(1).getEndpoint();
 
@@ -524,7 +523,7 @@ public class DataResolverTest extends AbstractReadResponseTest
     private void testRepairRangeTombstoneBoundary(int timestamp1, int timestamp2, int timestamp3) throws UnknownHostException
     {
         ReplicaList replicas = makeReplicas(2);
-        DataResolver resolver = new DataResolver(ks, command, ConsistencyLevel.ALL, replicas, readRepair, replicas.size(), System.nanoTime());
+        DataResolver resolver = new DataResolver(ks, command, ConsistencyLevel.ALL, plan(replicas), readRepair, System.nanoTime());
         InetAddressAndPort peer1 = replicas.get(0).getEndpoint();
         InetAddressAndPort peer2 = replicas.get(1).getEndpoint();
 
@@ -576,7 +575,7 @@ public class DataResolverTest extends AbstractReadResponseTest
     public void testRepairRangeTombstoneWithPartitionDeletion()
     {
         ReplicaList replicas = makeReplicas(2);
-        DataResolver resolver = new DataResolver(ks, command, ConsistencyLevel.ALL, replicas, readRepair, replicas.size(), System.nanoTime());
+        DataResolver resolver = new DataResolver(ks, command, ConsistencyLevel.ALL, plan(replicas), readRepair, System.nanoTime());
         InetAddressAndPort peer1 = replicas.get(0).getEndpoint();
         InetAddressAndPort peer2 = replicas.get(1).getEndpoint();
 
@@ -615,7 +614,7 @@ public class DataResolverTest extends AbstractReadResponseTest
     public void testRepairRangeTombstoneWithPartitionDeletion2()
     {
         ReplicaList replicas = makeReplicas(2);
-        DataResolver resolver = new DataResolver(ks, command, ConsistencyLevel.ALL, replicas, readRepair, replicas.size(), System.nanoTime());
+        DataResolver resolver = new DataResolver(ks, command, ConsistencyLevel.ALL, plan(replicas), readRepair, System.nanoTime());
         InetAddressAndPort peer1 = replicas.get(0).getEndpoint();
         InetAddressAndPort peer2 = replicas.get(1).getEndpoint();
 
@@ -699,7 +698,7 @@ public class DataResolverTest extends AbstractReadResponseTest
         ReplicaList replicas = makeReplicas(2);
         ReadCommand cmd = Util.cmd(cfs2, dk).withNowInSeconds(nowInSec).build();
         TestableReadRepair readRepair = new TestableReadRepair(cmd, ConsistencyLevel.QUORUM);
-        DataResolver resolver = new DataResolver(ks, cmd, ConsistencyLevel.ALL, replicas, readRepair, replicas.size(), System.nanoTime());
+        DataResolver resolver = new DataResolver(ks, cmd, ConsistencyLevel.ALL, plan(replicas), readRepair, System.nanoTime());
 
         long[] ts = {100, 200};
 
@@ -751,7 +750,7 @@ public class DataResolverTest extends AbstractReadResponseTest
         ReplicaList replicas = makeReplicas(2);
         ReadCommand cmd = Util.cmd(cfs2, dk).withNowInSeconds(nowInSec).build();
         TestableReadRepair readRepair = new TestableReadRepair(cmd, ConsistencyLevel.QUORUM);
-        DataResolver resolver = new DataResolver(ks, cmd, ConsistencyLevel.ALL, replicas, readRepair, replicas.size(), System.nanoTime());
+        DataResolver resolver = new DataResolver(ks, cmd, ConsistencyLevel.ALL, plan(replicas), readRepair, System.nanoTime());
 
         long[] ts = {100, 200};
 
@@ -795,7 +794,7 @@ public class DataResolverTest extends AbstractReadResponseTest
         ReplicaList replicas = makeReplicas(2);
         ReadCommand cmd = Util.cmd(cfs2, dk).withNowInSeconds(nowInSec).build();
         TestableReadRepair readRepair = new TestableReadRepair(cmd, ConsistencyLevel.QUORUM);
-        DataResolver resolver = new DataResolver(ks, cmd, ConsistencyLevel.ALL, replicas, readRepair, replicas.size(), System.nanoTime());
+        DataResolver resolver = new DataResolver(ks, cmd, ConsistencyLevel.ALL, plan(replicas), readRepair, System.nanoTime());
 
         long[] ts = {100, 200};
 
@@ -845,7 +844,7 @@ public class DataResolverTest extends AbstractReadResponseTest
         ReplicaList replicas = makeReplicas(2);
         ReadCommand cmd = Util.cmd(cfs2, dk).withNowInSeconds(nowInSec).build();
         TestableReadRepair readRepair = new TestableReadRepair(cmd, ConsistencyLevel.QUORUM);
-        DataResolver resolver = new DataResolver(ks, cmd, ConsistencyLevel.ALL, replicas, readRepair, replicas.size(), System.nanoTime());
+        DataResolver resolver = new DataResolver(ks, cmd, ConsistencyLevel.ALL, plan(replicas), readRepair, System.nanoTime());
 
         long[] ts = {100, 200};
 
@@ -940,5 +939,8 @@ public class DataResolverTest extends AbstractReadResponseTest
         assertEquals(update.metadata().name, cfm.name);
     }
 
-
+    private AbstractReadExecutor.ReplicaPlan plan(ReplicaList replicas)
+    {
+        return new AbstractReadExecutor.ReplicaPlan(ks, replicas, replicas);
+    }
 }

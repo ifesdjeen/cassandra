@@ -82,7 +82,7 @@ public class TestableReadRepair implements ReadRepair
     }
 
     @Override
-    public void startRepair(DigestResolver digestResolver, ReplicaList allReplicas, ReplicaList contactedReplicas, Consumer<PartitionIterator> resultConsumer)
+    public void startRepair(DigestResolver digestResolver, Consumer<PartitionIterator> resultConsumer)
     {
 
     }
@@ -112,7 +112,7 @@ public class TestableReadRepair implements ReadRepair
     }
 
     @Override
-    public void repairPartition(DecoratedKey key, Map<Replica, Mutation> mutations, ReplicaList destinations)
+    public void repairPartition(Map<Replica, Mutation> mutations, ReplicaList destinations)
     {
         for (Map.Entry<Replica, Mutation> entry: mutations.entrySet())
             sent.put(entry.getKey().getEndpoint(), entry.getValue());

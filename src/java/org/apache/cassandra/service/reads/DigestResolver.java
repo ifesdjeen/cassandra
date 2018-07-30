@@ -18,7 +18,6 @@
 package org.apache.cassandra.service.reads;
 
 import java.nio.ByteBuffer;
-import java.util.Iterator;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
@@ -37,7 +36,6 @@ import org.apache.cassandra.db.partitions.PartitionIterator;
 import org.apache.cassandra.db.partitions.UnfilteredPartitionIterators;
 import org.apache.cassandra.exceptions.ReadTimeoutException;
 import org.apache.cassandra.locator.Replica;
-import org.apache.cassandra.locator.ReplicaCollection;
 import org.apache.cassandra.locator.ReplicaList;
 import org.apache.cassandra.locator.ReplicaSet;
 import org.apache.cassandra.net.MessageIn;
@@ -49,9 +47,9 @@ public class DigestResolver extends ResponseResolver
     private volatile MessageIn<ReadResponse> dataResponse;
     private volatile boolean hasTransientResponse = false;
 
-    public DigestResolver(Keyspace keyspace, ReadCommand command, ConsistencyLevel consistency, ReplicaCollection replicas, ReadRepair readRepair, int maxResponseCount, long queryStartNanoTime)
+    public DigestResolver(Keyspace keyspace, ReadCommand command, ConsistencyLevel consistency, AbstractReadExecutor.ReplicaPlan replicas, ReadRepair readRepair, long queryStartNanoTime)
     {
-        super(keyspace, command, consistency, replicas, readRepair, maxResponseCount, queryStartNanoTime);
+        super(keyspace, command, consistency, replicas, readRepair, queryStartNanoTime);
         Preconditions.checkArgument(command instanceof SinglePartitionReadCommand,
                                     "DigestResolver can only be used with SinglePartitionReadCommand commands");
     }
@@ -60,7 +58,7 @@ public class DigestResolver extends ResponseResolver
     public void preprocess(MessageIn<ReadResponse> message)
     {
         super.preprocess(message);
-        Replica replica = getReplicaFor(message.from);
+        Replica replica = replicaPlan.getReplicaFor(message.from);
         if (dataResponse == null && !message.payload.isDigestResponse() && replica.isFull())
         {
             dataResponse = message;
@@ -90,16 +88,15 @@ public class DigestResolver extends ResponseResolver
             DataResolver dataResolver = new DataResolver(keyspace,
                                                          command,
                                                          consistency,
-                                                         replicas,
-                                                         new ForwardingReadRepair(getReplicaFor(dataResponse.from), forwardTo),
-                                                         maxResponseCount,
+                                                         replicaPlan,
+                                                         new ForwardingReadRepair(replicaPlan.getReplicaFor(dataResponse.from), forwardTo),
                                                          queryStartNanoTime);
 
             dataResolver.preprocess(dataResponse);
             // Forward differences to all full nodes
             for (MessageIn<ReadResponse> response : responses)
             {
-                Replica replica = getReplicaFor(response.from);
+                Replica replica = replicaPlan.getReplicaFor(response.from);
                 if (response.payload.isDigestResponse())
                     forwardTo.add(replica);
                 else if (replica.isTransient())
@@ -118,7 +115,7 @@ public class DigestResolver extends ResponseResolver
         ByteBuffer digest = null;
         for (MessageIn<ReadResponse> message : responses)
         {
-            if (getReplicaFor(message.from).isTransient())
+            if (replicaPlan.getReplicaFor(message.from).isTransient())
                 continue;
 
             ByteBuffer newDigest = message.payload.digest(command);
@@ -176,7 +173,7 @@ public class DigestResolver extends ResponseResolver
         }
 
         @Override
-        public void startRepair(DigestResolver digestResolver, ReplicaList allReplicas, ReplicaList contactedReplicas, Consumer<PartitionIterator> resultConsumer)
+        public void startRepair(DigestResolver digestResolver, Consumer<PartitionIterator> resultConsumer)
         {
             throw new IllegalStateException("Transient data merge repairs cannot perform reads");
         }
@@ -206,7 +203,7 @@ public class DigestResolver extends ResponseResolver
         }
 
         @Override
-        public void repairPartition(DecoratedKey key, Map<Replica, Mutation> mutations, ReplicaList destinations)
+        public void repairPartition(Map<Replica, Mutation> mutations, ReplicaList replicas)
         {
             Preconditions.checkArgument(mutations.containsKey(from));
 
@@ -216,7 +213,7 @@ public class DigestResolver extends ResponseResolver
                 mutations.put(digestSender, mutation);
             }
 
-            readRepair.repairPartition(key, mutations, destinations);
+            readRepair.repairPartition(mutations, replicas);
         }
     }
 }

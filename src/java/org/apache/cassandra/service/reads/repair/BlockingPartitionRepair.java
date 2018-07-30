@@ -27,19 +27,15 @@ import java.util.concurrent.TimeUnit;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
-import com.google.common.collect.Maps;
 import com.google.common.util.concurrent.AbstractFuture;
 
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.ConsistencyLevel;
-import org.apache.cassandra.db.DecoratedKey;
-import org.apache.cassandra.db.Keyspace;
 import org.apache.cassandra.db.Mutation;
 import org.apache.cassandra.db.partitions.PartitionUpdate;
 import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.locator.Replica;
 import org.apache.cassandra.locator.ReplicaCollection;
-import org.apache.cassandra.locator.ReplicaList;
 import org.apache.cassandra.locator.ReplicaSet;
 import org.apache.cassandra.locator.Replicas;
 import org.apache.cassandra.metrics.ReadRepairMetrics;
@@ -48,39 +44,36 @@ import org.apache.cassandra.net.MessageIn;
 import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.schema.TableId;
+import org.apache.cassandra.service.reads.AbstractReadExecutor;
 import org.apache.cassandra.tracing.Tracing;
+
+import static org.apache.cassandra.service.reads.repair.ReadRepair.createRepairMutation;
 
 public class BlockingPartitionRepair extends AbstractFuture<Object> implements IAsyncCallback<Object>
 {
     private final ConsistencyLevel consistency;
-    private final ReplicaSet contacted;
-    private final ReplicaCollection candidates;
+    private final AbstractReadExecutor.ReplicaPlan replicaPlan;
     private final Map<Replica, Mutation> pendingRepairs;
-    private final Map<InetAddressAndPort, Replica> replicaMap;
     private final CountDownLatch latch;
 
     private volatile long mutationsSentTime;
 
-    public BlockingPartitionRepair(ConsistencyLevel consistency, Map<Replica, Mutation> repairs, int maxBlockFor, ReplicaList participants, ReplicaCollection candidates)
+    public BlockingPartitionRepair(ConsistencyLevel consistency, Map<Replica, Mutation> repairs, int maxBlockFor, AbstractReadExecutor.ReplicaPlan replicaPlan)
     {
         this.consistency = consistency;
         this.pendingRepairs = new ConcurrentHashMap<>(repairs);
-        this.contacted = new ReplicaSet(participants);
-        this.candidates = candidates;
-        this.replicaMap = Maps.newHashMapWithExpectedSize(participants.size());
+        this.replicaPlan = replicaPlan;
+
         // here we remove empty repair mutations from the block for total, since
         // we're not sending them mutations
         int blockFor = maxBlockFor;
-        for (Replica participant: participants)
+        for (Replica participant: replicaPlan.targetReplicas())
         {
             // remote dcs can sometimes get involved in dc-local reads. We want to repair
             // them if they do, but they shouldn't interfere with blocking the client read.
             if (!repairs.containsKey(participant) && shouldBlockOn(participant.getEndpoint()))
                 blockFor--;
         }
-
-        for (Replica replica : candidates)
-            replicaMap.put(replica.getEndpoint(), replica);
 
         // there are some cases where logically identical data can return different digests
         // For read repair, this would result in ReadRepairHandler being called with a map of
@@ -112,7 +105,7 @@ public class BlockingPartitionRepair extends AbstractFuture<Object> implements I
     {
         if (shouldBlockOn(from))
         {
-            pendingRepairs.remove(replicaMap.get(from));
+            pendingRepairs.remove(replicaPlan.getReplicaFor(from));
             latch.countDown();
         }
     }
@@ -158,6 +151,7 @@ public class BlockingPartitionRepair extends AbstractFuture<Object> implements I
         for (Map.Entry<Replica, Mutation> entry: pendingRepairs.entrySet())
         {
             Replica destination = entry.getKey();
+            assert destination.isFull() : "Can't send repairs to transient replicas";
             Mutation mutation = entry.getValue();
             TableId tableId = extractUpdate(mutation).metadata().id;
 
@@ -203,9 +197,8 @@ public class BlockingPartitionRepair extends AbstractFuture<Object> implements I
         if (awaitRepairs(timeout, timeoutUnit))
             return;
 
-        Iterable<Replica> newCandidates = Iterables.filter(candidates,
-                                                           r -> r.isFull() && !contacted.containsReplica(r));
-        if (Iterables.isEmpty(newCandidates))
+        ReplicaCollection newCandidates = replicaPlan.additionalReplicas(consistency);
+        if (newCandidates.isEmpty())
             return;
 
         PartitionUpdate update = mergeUnackedUpdates();
@@ -226,7 +219,7 @@ public class BlockingPartitionRepair extends AbstractFuture<Object> implements I
 
             if (mutation == null)
             {
-                mutation = BlockingReadRepairs.createRepairMutation(update, consistency, replica, true);
+                mutation = createRepairMutation(update, consistency, replica, true);
                 versionedMutations[versionIdx] = mutation;
             }
 

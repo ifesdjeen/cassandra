@@ -172,8 +172,10 @@ public class ShortReadPartitionsProtection extends Transformation<UnfilteredRowI
     private UnfilteredPartitionIterator executeReadCommand(ReadCommand cmd)
     {
         Keyspace keyspace = Keyspace.open(command.metadata().keyspace);
-        DataResolver resolver = new DataResolver(keyspace, cmd, ConsistencyLevel.ONE, ReplicaList.of(source), NoopReadRepair.instance, 1, queryStartNanoTime);
-        ReadCallback handler = ReadCallback.create(resolver, ConsistencyLevel.ONE, cmd, ReplicaList.of(source), queryStartNanoTime);
+        ReplicaList singleReplica = ReplicaList.of(source);
+        AbstractReadExecutor.ReplicaPlan plan = new AbstractReadExecutor.ReplicaPlan(keyspace, singleReplica, singleReplica);
+        DataResolver resolver = new DataResolver(keyspace, cmd, ConsistencyLevel.ONE, plan, NoopReadRepair.instance, queryStartNanoTime);
+        ReadCallback handler = ReadCallback.create(resolver, ConsistencyLevel.ONE, cmd, plan, queryStartNanoTime);
 
         if (source.isLocal())
             StageManager.getStage(Stage.READ).maybeExecuteImmediately(new StorageProxy.LocalReadRunnable(cmd, handler));

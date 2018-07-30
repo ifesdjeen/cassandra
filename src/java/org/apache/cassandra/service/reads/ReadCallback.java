@@ -53,7 +53,7 @@ public class ReadCallback implements IAsyncCallbackWithFailure<ReadResponse>
     final SimpleCondition condition = new SimpleCondition();
     private final long queryStartNanoTime;
     final int blockfor;
-    final ReplicaList replicas;
+    final AbstractReadExecutor.ReplicaPlan replicas;
     private final ReadCommand command;
     private final ConsistencyLevel consistencyLevel;
     private static final AtomicIntegerFieldUpdater<ReadCallback> recievedUpdater
@@ -67,7 +67,7 @@ public class ReadCallback implements IAsyncCallbackWithFailure<ReadResponse>
     private final Keyspace keyspace; // TODO push this into ConsistencyLevel?
 
     // Calculates blocked for
-    public static ReadCallback create(ResponseResolver resolver, ConsistencyLevel consistencyLevel, ReadCommand command, ReplicaList filteredReplicas, long queryStartNanoTime)
+    public static ReadCallback create(ResponseResolver resolver, ConsistencyLevel consistencyLevel, ReadCommand command, AbstractReadExecutor.ReplicaPlan replicaPlan, long queryStartNanoTime)
     {
         Keyspace keyspace = Keyspace.open(command.metadata().keyspace);
         return new ReadCallback(resolver,
@@ -75,11 +75,11 @@ public class ReadCallback implements IAsyncCallbackWithFailure<ReadResponse>
                                 consistencyLevel.blockFor(keyspace),
                                 command,
                                 keyspace,
-                                filteredReplicas,
+                                replicaPlan,
                                 queryStartNanoTime);
     }
 
-    private ReadCallback(ResponseResolver resolver, ConsistencyLevel consistencyLevel, int blockfor, ReadCommand command, Keyspace keyspace, ReplicaList replicas, long queryStartNanoTime)
+    private ReadCallback(ResponseResolver resolver, ConsistencyLevel consistencyLevel, int blockfor, ReadCommand command, Keyspace keyspace, AbstractReadExecutor.ReplicaPlan replicas, long queryStartNanoTime)
     {
         this.command = command;
         this.keyspace = keyspace;
@@ -90,7 +90,7 @@ public class ReadCallback implements IAsyncCallbackWithFailure<ReadResponse>
         this.replicas = replicas;
         this.failureReasonByEndpoint = new ConcurrentHashMap<>();
         // we don't support read repair (or rapid read protection) for range scans yet (CASSANDRA-6897)
-        assert !(command instanceof PartitionRangeReadCommand) || blockfor >= replicas.size();
+        assert !(command instanceof PartitionRangeReadCommand) || blockfor >= replicas.targetReplicas().size();
 
         if (logger.isTraceEnabled())
             logger.trace("Blockfor is {}; setting up requests to {}", blockfor, this.replicas);
@@ -112,7 +112,7 @@ public class ReadCallback implements IAsyncCallbackWithFailure<ReadResponse>
     public void awaitResults() throws ReadFailureException, ReadTimeoutException
     {
         boolean signaled = await(command.getTimeout(), TimeUnit.MILLISECONDS);
-        boolean failed = failures > 0  && blockfor + failures > replicas.size();
+        boolean failed = failures > 0  && blockfor + failures > replicas.targetReplicas().size();
         if (signaled && !failed)
             return;
 
@@ -177,7 +177,7 @@ public class ReadCallback implements IAsyncCallbackWithFailure<ReadResponse>
 
     public void assureSufficientLiveNodes() throws UnavailableException
     {
-        consistencyLevel.assureSufficientLiveNodes(keyspace, replicas);
+        consistencyLevel.assureSufficientLiveNodes(keyspace, replicas.targetReplicas());
     }
 
     public boolean isLatencyForSnitch()
@@ -194,7 +194,7 @@ public class ReadCallback implements IAsyncCallbackWithFailure<ReadResponse>
 
         failureReasonByEndpoint.put(from, failureReason);
 
-        if (blockfor + n > replicas.size())
+        if (blockfor + n > replicas.targetReplicas().size())
             condition.signalAll();
     }
 }

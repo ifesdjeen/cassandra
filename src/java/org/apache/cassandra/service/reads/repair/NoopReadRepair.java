@@ -21,7 +21,6 @@ package org.apache.cassandra.service.reads.repair;
 import java.util.Map;
 import java.util.function.Consumer;
 
-import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.Mutation;
 import org.apache.cassandra.db.partitions.PartitionIterator;
 import org.apache.cassandra.db.partitions.UnfilteredPartitionIterators;
@@ -41,7 +40,8 @@ public class NoopReadRepair implements ReadRepair
         return UnfilteredPartitionIterators.MergeListener.NOOP;
     }
 
-    public void startRepair(DigestResolver digestResolver, ReplicaList allReplicas, ReplicaList contactedReplicas, Consumer<PartitionIterator> resultConsumer)
+    @Override
+    public void startRepair(DigestResolver digestResolver, Consumer<PartitionIterator> resultConsumer)
     {
         resultConsumer.accept(digestResolver.getData());
     }
@@ -69,7 +69,7 @@ public class NoopReadRepair implements ReadRepair
     }
 
     @Override
-    public void repairPartition(DecoratedKey key, Map<Replica, Mutation> mutations, ReplicaList destinations)
+    public void repairPartition(Map<Replica, Mutation> mutations, ReplicaList destinations)
     {
 
     }

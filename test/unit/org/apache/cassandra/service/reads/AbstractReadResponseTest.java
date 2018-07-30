@@ -27,6 +27,7 @@ import java.util.TreeSet;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.BeforeClass;
+import org.junit.Ignore;
 
 import org.apache.cassandra.SchemaLoader;
 import org.apache.cassandra.Util;
@@ -73,6 +74,7 @@ import org.apache.cassandra.utils.FBUtilities;
 /**
  * Base class for testing various components which deal with read responses
  */
+@Ignore
 public abstract class AbstractReadResponseTest
 {
     public static final String KEYSPACE1 = "DataResolverTest";
