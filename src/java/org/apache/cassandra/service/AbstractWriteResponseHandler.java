@@ -339,9 +339,11 @@ public abstract class AbstractWriteResponseHandler<T> implements IAsyncCallbackW
         {
             if (replica.isFull())
             {
-                initial.add(replica);
                 if (livePredicate.test(replica.getEndpoint()))
+                {
+                    initial.add(replica);
                     liveRecipients++;
+                }
             }
             else
             {
