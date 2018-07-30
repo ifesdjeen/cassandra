@@ -89,7 +89,7 @@ public class DataResolverTransientTest extends AbstractReadResponseTest
     {
         Keyspace keyspace = Schema.instance.getKeyspaceInstance(update.metadata().keyspace);
         SinglePartitionReadCommand command = SinglePartitionReadCommand.fullPartitionRead(update.metadata(), nowInSec, dk(5));
-        ReplicaList targetReplicas = new ReplicaList(Lists.newArrayList(full(EP1), full(EP2), trans(EP3)));
+        ReplicaList targetReplicas = ReplicaList.of(full(EP1), full(EP2), trans(EP3));
         TestableReadRepair repair = new TestableReadRepair(command, QUORUM);
         DataResolver resolver = new DataResolver(keyspace, command, QUORUM, targetReplicas, repair, 3, 0);
 
