@@ -68,8 +68,9 @@ public class DataResolver extends ResponseResolver
         for (int i = 0; i < count; i++)
         {
             MessageIn<ReadResponse> msg = responses.get(i);
-            iters.add(msg.payload.makeIterator(command));
+            assert !msg.payload.isDigestResponse();
 
+            iters.add(msg.payload.makeIterator(command));
             Replica replica = getReplicaFor(msg.from);
 
             if (replica == null)
@@ -91,7 +92,6 @@ public class DataResolver extends ResponseResolver
          *
          * See CASSANDRA-13747 for more details.
          */
-
         DataLimits.Counter mergedResultCounter =
             command.limits().newCounter(command.nowInSec(), true, command.selectsFullPartition(), enforceStrictLiveness);
 

@@ -95,7 +95,7 @@ public class DataResolverTransientTest extends AbstractReadResponseTest
 
         Assert.assertFalse(resolver.isDataPresent());
         resolver.preprocess(response(command, EP1, iter(update), false));
-        resolver.preprocess(response(command, EP2, iter(update), true));
+        resolver.preprocess(response(command, EP2, iter(update), false));
         resolver.preprocess(response(command, EP3, EmptyIterators.unfilteredPartition(update.metadata()), false));
 
         Assert.assertFalse(repair.dataWasConsumed());
@@ -192,7 +192,7 @@ public class DataResolverTransientTest extends AbstractReadResponseTest
         Assert.assertFalse(resolver.isDataPresent());
         PartitionUpdate transData = update(row(1000, 5, 5)).build();
         resolver.preprocess(response(command, EP1, EmptyIterators.unfilteredPartition(cfm), false));
-        resolver.preprocess(response(command, EP2, EmptyIterators.unfilteredPartition(cfm), true));
+        resolver.preprocess(response(command, EP2, EmptyIterators.unfilteredPartition(cfm), false));
         resolver.preprocess(response(command, EP3, iter(transData), false));
 
         Assert.assertFalse(repair.dataWasConsumed());
