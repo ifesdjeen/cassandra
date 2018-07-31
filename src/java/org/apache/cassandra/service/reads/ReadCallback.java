@@ -64,7 +64,7 @@ public class ReadCallback implements IAsyncCallbackWithFailure<ReadResponse>
     private volatile int failures = 0;
     private final Map<InetAddressAndPort, RequestFailureReason> failureReasonByEndpoint;
 
-    private final Keyspace keyspace; // TODO push this into ConsistencyLevel?
+    private final Keyspace keyspace;
 
     // Calculates blocked for
     public static ReadCallback create(ResponseResolver resolver, ConsistencyLevel consistencyLevel, ReadCommand command, AbstractReadExecutor.ReplicaPlan replicaPlan, long queryStartNanoTime)
@@ -79,7 +79,7 @@ public class ReadCallback implements IAsyncCallbackWithFailure<ReadResponse>
                                 queryStartNanoTime);
     }
 
-    private ReadCallback(ResponseResolver resolver, ConsistencyLevel consistencyLevel, int blockfor, ReadCommand command, Keyspace keyspace, AbstractReadExecutor.ReplicaPlan replicas, long queryStartNanoTime)
+    public ReadCallback(ResponseResolver resolver, ConsistencyLevel consistencyLevel, int blockfor, ReadCommand command, Keyspace keyspace, AbstractReadExecutor.ReplicaPlan replicas, long queryStartNanoTime)
     {
         this.command = command;
         this.keyspace = keyspace;

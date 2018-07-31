@@ -24,7 +24,6 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
-import com.google.common.collect.Iterables;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -39,7 +38,6 @@ import org.apache.cassandra.db.partitions.UnfilteredPartitionIterators;
 import org.apache.cassandra.exceptions.ReadTimeoutException;
 import org.apache.cassandra.locator.Replica;
 import org.apache.cassandra.locator.ReplicaList;
-import org.apache.cassandra.locator.ReplicaSet;
 import org.apache.cassandra.metrics.ReadRepairMetrics;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.service.reads.AbstractReadExecutor;
@@ -119,7 +117,7 @@ public class BlockingReadRepair implements ReadRepair
 
         // Do a full data read to resolve the correct response (and repair node that need be)
         DataResolver resolver = new DataResolver(cfs.keyspace, command, ConsistencyLevel.ALL, replicaPlan, this, queryStartNanoTime);
-        ReadCallback readCallback = ReadCallback.create(resolver, ConsistencyLevel.ALL, command, replicaPlan, queryStartNanoTime);
+        ReadCallback readCallback = new ReadCallback(resolver, ConsistencyLevel.ALL, replicaPlan.targetReplicas().size(), command, cfs.keyspace, replicaPlan, queryStartNanoTime);
         digestRepair = new DigestRepair(resolver, readCallback, resultConsumer);
 
         for (Replica replica : replicaPlan.targetReplicas())
