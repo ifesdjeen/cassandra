@@ -160,6 +160,11 @@ public class RepairJob extends AbstractFuture<RepairResult> implements Runnable
         }, taskExecutor);
     }
 
+    private boolean isTransient(InetAddressAndPort ep)
+    {
+        return session.transEndpoints.contains(ep);
+    }
+
     private AsyncFunction<List<TreeResponse>, List<SyncStat>> standardSyncing()
     {
         return trees ->
@@ -174,17 +179,22 @@ public class RepairJob extends AbstractFuture<RepairResult> implements Runnable
                 for (int j = i + 1; j < trees.size(); ++j)
                 {
                     TreeResponse r2 = trees.get(j);
+
+                    if (isTransient(r1.endpoint) && isTransient(r2.endpoint))
+                        continue;
+
                     SyncTask task;
                     if (r1.endpoint.equals(local) || r2.endpoint.equals(local))
                     {
-                        task = new LocalSyncTask(desc, r1, r2, isIncremental ? desc.parentSessionId : null, session.pullRepair, session.previewKind);
+                        task = new LocalSyncTask(desc, r1, r2, this::isTransient, isIncremental ? desc.parentSessionId : null, session.pullRepair, session.previewKind);
                     }
                     else
                     {
-                        task = new RemoteSyncTask(desc, r1, r2, session.previewKind);
+                        RemoteSyncTask remoteTask = new RemoteSyncTask(desc, r1, r2, this::isTransient, session.previewKind);
+                        task = remoteTask;
                         // RemoteSyncTask expects SyncComplete message sent back.
                         // Register task to RepairSession to receive response.
-                        session.waitForSync(Pair.create(desc, new NodePair(r1.endpoint, r2.endpoint)), (RemoteSyncTask) task);
+                        session.waitForSync(Pair.create(desc, new NodePair(remoteTask.streamTo(), remoteTask.streamFrom())), (RemoteSyncTask) task);
                     }
                     syncTasks.add(task);
                     taskExecutor.submit(task);
@@ -215,6 +225,11 @@ public class RepairJob extends AbstractFuture<RepairResult> implements Runnable
             for (int i = 0; i < trees.size(); i++)
             {
                 InetAddressAndPort address = trees.get(i).endpoint;
+
+                // we don't stream to transient replicas
+                if (isTransient(address))
+                    continue;
+
                 HostDifferences streamsFor = reducedDifferences.get(address);
                 if (streamsFor != null)
                 {

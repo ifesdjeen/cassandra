@@ -19,6 +19,7 @@ package org.apache.cassandra.repair;
 
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Predicate;
 
 import com.google.common.util.concurrent.AbstractFuture;
 import org.slf4j.Logger;
@@ -27,6 +28,7 @@ import org.slf4j.LoggerFactory;
 import org.apache.cassandra.db.Keyspace;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
+import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.streaming.PreviewKind;
 import org.apache.cassandra.tracing.Tracing;
 import org.apache.cassandra.utils.MerkleTrees;
@@ -42,16 +44,18 @@ public abstract class SyncTask extends AbstractFuture<SyncStat> implements Runna
     protected final RepairJobDesc desc;
     protected final TreeResponse r1;
     protected final TreeResponse r2;
+    protected final Predicate<InetAddressAndPort> isTransient;
     protected final PreviewKind previewKind;
 
     protected volatile SyncStat stat;
     protected long startTime = Long.MIN_VALUE;
 
-    public SyncTask(RepairJobDesc desc, TreeResponse r1, TreeResponse r2, PreviewKind previewKind)
+    public SyncTask(RepairJobDesc desc, TreeResponse r1, TreeResponse r2, Predicate<InetAddressAndPort> isTransient, PreviewKind previewKind)
     {
         this.desc = desc;
         this.r1 = r1;
         this.r2 = r2;
+        this.isTransient = isTransient;
         this.previewKind = previewKind;
     }
 

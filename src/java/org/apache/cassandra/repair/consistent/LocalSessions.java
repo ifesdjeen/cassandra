@@ -22,6 +22,7 @@ import java.io.IOException;
 import java.net.UnknownHostException;
 import java.nio.ByteBuffer;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Date;
 import java.util.HashMap;
@@ -52,6 +53,8 @@ import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.ColumnFamilyStore;
+import org.apache.cassandra.locator.Replica;
+import org.apache.cassandra.locator.ReplicaSet;
 import org.apache.cassandra.repair.KeyspaceRepairManager;
 import org.apache.cassandra.schema.Schema;
 import org.apache.cassandra.db.marshal.UTF8Type;
@@ -83,6 +86,7 @@ import org.apache.cassandra.schema.TableId;
 import org.apache.cassandra.service.ActiveRepairService;
 import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.utils.FBUtilities;
+import org.apache.cassandra.utils.Pair;
 
 import static org.apache.cassandra.repair.consistent.ConsistentSession.State.*;
 
@@ -543,9 +547,47 @@ public class LocalSessions
     }
 
     @VisibleForTesting
-    ListenableFuture prepareSession(KeyspaceRepairManager repairManager, UUID sessionID, Collection<ColumnFamilyStore> tables, Collection<Range<Token>> ranges, ExecutorService executor)
+    ListenableFuture prepareSession(KeyspaceRepairManager repairManager,
+                                    UUID sessionID,
+                                    Collection<ColumnFamilyStore> tables,
+                                    Collection<Range<Token>> fullRanges,
+                                    Collection<Range<Token>> transRanges,
+                                    ExecutorService executor)
     {
-        return repairManager.prepareIncrementalRepair(sessionID, tables, ranges, executor);
+        return repairManager.prepareIncrementalRepair(sessionID, tables, fullRanges, transRanges, executor);
+    }
+
+    Pair<Collection<Range<Token>>, Collection<Range<Token>>> splitRanges(String keyspace, Collection<Range<Token>> ranges)
+    {
+        List<Range<Token>> fullRanges = new ArrayList<>();
+        List<Range<Token>> transRanges = new ArrayList<>();
+
+        ReplicaSet localReplicas = StorageService.instance.getLocalReplicas(keyspace);
+        for (Range<Token> range: ranges)
+        {
+            for (Replica replica: localReplicas)
+            {
+                if (replica.getRange().contains(range))
+                {
+                    if (replica.isFull())
+                    {
+                        fullRanges.add(range);
+                    }
+                    else
+                    {
+                        transRanges.add(range);
+                    }
+                }
+                else
+                {
+                    // sanity check that the ranges we're suppose to split match
+                    // up with the ranges replicated by this node
+                    Preconditions.checkState(!replica.getRange().intersects(range));
+                }
+            }
+        }
+
+        return Pair.create(fullRanges, transRanges);
     }
 
     /**
@@ -582,7 +624,8 @@ public class LocalSessions
         ExecutorService executor = Executors.newFixedThreadPool(parentSession.getColumnFamilyStores().size());
 
         KeyspaceRepairManager repairManager = parentSession.getKeyspace().getRepairManager();
-        ListenableFuture repairPreparation = prepareSession(repairManager, sessionID, parentSession.getColumnFamilyStores(), parentSession.getRanges(), executor);
+        Pair<Collection<Range<Token>>, Collection<Range<Token>>> rangePair = splitRanges(parentSession.getKeyspace().getName(), parentSession.getRanges());
+        ListenableFuture repairPreparation = prepareSession(repairManager, sessionID, parentSession.getColumnFamilyStores(), rangePair.left, rangePair.right, executor);
 
         Futures.addCallback(repairPreparation, new FutureCallback<Object>()
         {

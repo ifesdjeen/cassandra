@@ -3593,7 +3593,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
             }
             else
             {
-                Iterables.addAll(option.getRanges(), getLocalReplicas(keyspace).asRanges());
+                Iterables.addAll(option.getRanges(), getLocalReplicas(keyspace).filter(Replica::isFull).asRanges());
             }
         }
         if (option.getRanges().isEmpty() || Keyspace.open(keyspace).getReplicationStrategy().getReplicationFactor().replicas < 2)

@@ -40,9 +40,13 @@ public class CassandraKeyspaceRepairManager implements KeyspaceRepairManager
     }
 
     @Override
-    public ListenableFuture prepareIncrementalRepair(UUID sessionID, Collection<ColumnFamilyStore> tables, Collection<Range<Token>> ranges, ExecutorService executor)
+    public ListenableFuture prepareIncrementalRepair(UUID sessionID,
+                                                     Collection<ColumnFamilyStore> tables,
+                                                     Collection<Range<Token>> fullRanges,
+                                                     Collection<Range<Token>> transRanges,
+                                                     ExecutorService executor)
     {
-        PendingAntiCompaction pac = new PendingAntiCompaction(sessionID, tables, ranges, executor);
+        PendingAntiCompaction pac = new PendingAntiCompaction(sessionID, tables, fullRanges, transRanges, executor);
         return pac.run();
     }
 }

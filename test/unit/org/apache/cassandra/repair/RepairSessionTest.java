@@ -20,6 +20,7 @@ package org.apache.cassandra.repair;
 
 import java.io.IOException;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
@@ -64,7 +65,7 @@ public class RepairSessionTest
         Set<InetAddressAndPort> endpoints = Sets.newHashSet(remote);
         RepairSession session = new RepairSession(parentSessionId, sessionId, Arrays.asList(repairRange),
                                                   "Keyspace1", RepairParallelism.SEQUENTIAL,
-                                                  endpoints, false, false, false,
+                                                  endpoints, Collections.emptySet(), false, false, false,
                                                   PreviewKind.NONE, false, "Standard1");
 
         // perform convict

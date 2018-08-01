@@ -153,11 +153,11 @@ public abstract class AbstractStrategyHolder
 
     protected abstract void setStrategyInternal(CompactionParams params, int numTokenPartitions);
 
-    public abstract boolean managesRepairedState(long repairedAt, UUID pendingRepair);
+    public abstract boolean managesRepairedState(long repairedAt, UUID pendingRepair, boolean isTransient);
 
     public boolean managesSSTable(SSTableReader sstable)
     {
-        return managesRepairedState(sstable.getRepairedAt(), sstable.getPendingRepair());
+        return managesRepairedState(sstable.getRepairedAt(), sstable.getPendingRepair(), sstable.isTransient());
     }
 
     public abstract AbstractCompactionStrategy getStrategyFor(SSTableReader sstable);
@@ -188,10 +188,13 @@ public abstract class AbstractStrategyHolder
                                                                 long keyCount,
                                                                 long repairedAt,
                                                                 UUID pendingRepair,
+                                                                boolean isTransient,
                                                                 MetadataCollector collector,
                                                                 SerializationHeader header,
                                                                 Collection<Index> indexes,
                                                                 LifecycleTransaction txn);
 
     public abstract int getStrategyIndex(AbstractCompactionStrategy strategy);
+
+    public abstract boolean containsSSTable(SSTableReader sstable);
 }

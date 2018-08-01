@@ -19,12 +19,13 @@ package org.apache.cassandra.repair;
 
 import java.util.List;
 import java.util.UUID;
+import java.util.function.Predicate;
 
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.base.Preconditions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.apache.cassandra.db.SystemKeyspace;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.locator.InetAddressAndPort;
@@ -51,9 +52,9 @@ public class LocalSyncTask extends SyncTask implements StreamEventHandler
     private final UUID pendingRepair;
     private final boolean pullRepair;
 
-    public LocalSyncTask(RepairJobDesc desc, TreeResponse r1, TreeResponse r2, UUID pendingRepair, boolean pullRepair, PreviewKind previewKind)
+    public LocalSyncTask(RepairJobDesc desc, TreeResponse r1, TreeResponse r2, Predicate<InetAddressAndPort> isTransient, UUID pendingRepair, boolean pullRepair, PreviewKind previewKind)
     {
-        super(desc, r1, r2, previewKind);
+        super(desc, r1, r2, isTransient, previewKind);
         this.pendingRepair = pendingRepair;
         this.pullRepair = pullRepair;
     }
@@ -65,7 +66,8 @@ public class LocalSyncTask extends SyncTask implements StreamEventHandler
                           .listeners(this)
                           .flushBeforeTransfer(pendingRepair == null)
                           .requestRanges(dst, desc.keyspace, differences, desc.columnFamily);  // request ranges from the remote node
-        if (!pullRepair)
+
+        if (!pullRepair && !isTransient.test(dst))
         {
             // send ranges to the remote node if we are not performing a pull repair
             plan.transferRanges(dst, desc.keyspace, differences, desc.columnFamily);
@@ -84,6 +86,7 @@ public class LocalSyncTask extends SyncTask implements StreamEventHandler
         InetAddressAndPort local = FBUtilities.getBroadcastAddressAndPort();
         // We can take anyone of the node as source or destination, however if one is localhost, we put at source to avoid a forwarding
         InetAddressAndPort dst = r2.endpoint.equals(local) ? r1.endpoint : r2.endpoint;
+        Preconditions.checkState(!isTransient.test(local));
 
         String message = String.format("Performing streaming repair of %d ranges with %s", differences.size(), dst);
         logger.info("{} {}", previewKind.logPrefix(desc.sessionId), message);

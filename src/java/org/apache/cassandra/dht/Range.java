@@ -19,6 +19,7 @@ package org.apache.cassandra.dht;
 
 import java.io.Serializable;
 import java.util.*;
+import java.util.function.Predicate;
 
 import org.apache.commons.lang3.ObjectUtils;
 
@@ -529,7 +530,7 @@ public class Range<T extends RingPosition<T>> extends AbstractBounds<T> implemen
     /**
      * Helper class to check if a token is contained within a given collection of ranges
      */
-    public static class OrderedRangeContainmentChecker
+    public static class OrderedRangeContainmentChecker implements Predicate<Token>
     {
         private final Iterator<Range<Token>> normalizedRangesIterator;
         private Token lastToken = null;
@@ -550,7 +551,8 @@ public class Range<T extends RingPosition<T>> extends AbstractBounds<T> implemen
          * @param t token to check, must be larger than or equal to the last token passed
          * @return true if the token is contained within the ranges given to the constructor.
          */
-        public boolean contains(Token t)
+        @Override
+        public boolean test(Token t)
         {
             assert lastToken == null || lastToken.compareTo(t) <= 0;
             lastToken = t;

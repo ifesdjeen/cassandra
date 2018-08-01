@@ -112,6 +112,16 @@ public abstract class ReplicaCollection implements Iterable<Replica>
         return Iterables.transform(Iterables.filter(this, Replica::isTransient), Replica::getRange);
     }
 
+    public Iterable<InetAddressAndPort> fullEndpoints()
+    {
+        return Iterables.transform(Iterables.filter(this, Replica::isFull), Replica::getEndpoint);
+    }
+
+    public Iterable<InetAddressAndPort> transientEndpoints()
+    {
+        return Iterables.transform(Iterables.filter(this, Replica::isTransient), Replica::getEndpoint);
+    }
+
     public boolean containsEndpoint(InetAddressAndPort endpoint)
     {
         Preconditions.checkNotNull(endpoint);

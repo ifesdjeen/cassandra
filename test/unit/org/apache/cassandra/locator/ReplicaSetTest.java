@@ -195,4 +195,14 @@ public class ReplicaSetTest extends ReplicaCollectionTestBase
         assertTrue(check.remove(i.next()));
         assertTrue(check.remove(i.next()));
     }
+
+    @Test
+    public void intersectOnEndpoints()
+    {
+        ReplicaSet initial = ReplicaSet.of(A, B, C);
+        Set<InetAddressAndPort> endpoints = Sets.newHashSet(A.getEndpoint(), B.getEndpoint());
+        ReplicaSet expected = ReplicaSet.of(A, B);
+        ReplicaSet actual = initial.intersectOnEndpoints(endpoints);
+        Assert.assertEquals(expected, actual);
+    }
 }

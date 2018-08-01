@@ -190,7 +190,17 @@ public class ReplicaSet extends ReplicaCollection
             // FIXME: add support for transient replicas
             throw new UnsupportedOperationException("transient replicas are currently unsupported");
         }
+    }
 
+    public ReplicaSet intersectOnEndpoints(Set<InetAddressAndPort> endpoints)
+    {
+        ReplicaSet intersection = new ReplicaSet(size());
+        for (Replica replica : this)
+        {
+            if (endpoints.contains(replica.getEndpoint()))
+                intersection.add(replica);
+        }
+        return intersection;
     }
 
     public ReplicaSet filter(Predicate<Replica>... predicates)

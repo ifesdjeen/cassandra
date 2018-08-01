@@ -24,6 +24,7 @@ import java.util.List;
 import java.util.UUID;
 
 import com.google.common.base.Preconditions;
+import com.google.common.collect.Iterables;
 
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.SerializationHeader;
@@ -71,12 +72,13 @@ public class CompactionStrategyHolder extends AbstractStrategyHolder
     }
 
     @Override
-    public boolean managesRepairedState(long repairedAt, UUID pendingRepair)
+    public boolean managesRepairedState(long repairedAt, UUID pendingRepair, boolean isTransient)
     {
         if (pendingRepair != ActiveRepairService.NO_PENDING_REPAIR)
         {
             return false;
         }
+        Preconditions.checkArgument(!isTransient, "isTransient can only be true for sstables pending repairs");
         return (repairedAt != ActiveRepairService.UNREPAIRED_SSTABLE) == isRepaired;
     }
 
@@ -208,7 +210,15 @@ public class CompactionStrategyHolder extends AbstractStrategyHolder
     }
 
     @Override
-    public SSTableMultiWriter createSSTableMultiWriter(Descriptor descriptor, long keyCount, long repairedAt, UUID pendingRepair, MetadataCollector collector, SerializationHeader header, Collection<Index> indexes, LifecycleTransaction txn)
+    public SSTableMultiWriter createSSTableMultiWriter(Descriptor descriptor,
+                                                       long keyCount,
+                                                       long repairedAt,
+                                                       UUID pendingRepair,
+                                                       boolean isTransient,
+                                                       MetadataCollector collector,
+                                                       SerializationHeader header,
+                                                       Collection<Index> indexes,
+                                                       LifecycleTransaction txn)
     {
         if (isRepaired)
         {
@@ -228,6 +238,7 @@ public class CompactionStrategyHolder extends AbstractStrategyHolder
                                                  keyCount,
                                                  repairedAt,
                                                  pendingRepair,
+                                                 isTransient,
                                                  collector,
                                                  header,
                                                  indexes,
@@ -238,5 +249,11 @@ public class CompactionStrategyHolder extends AbstractStrategyHolder
     public int getStrategyIndex(AbstractCompactionStrategy strategy)
     {
         return strategies.indexOf(strategy);
+    }
+
+    @Override
+    public boolean containsSSTable(SSTableReader sstable)
+    {
+        return Iterables.any(strategies, acs -> acs.getSSTables().contains(sstable));
     }
 }

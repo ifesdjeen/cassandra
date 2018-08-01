@@ -812,4 +812,16 @@ public class StreamSession implements IEndpointStateChangeSubscriber
         }
         maybeCompleted();
     }
+
+    @VisibleForTesting
+    public int getNumRequests()
+    {
+        return requests.size();
+    }
+
+    @VisibleForTesting
+    public int getNumTransfers()
+    {
+        return transferredRangesPerKeyspace.size();
+    }
 }

@@ -19,6 +19,8 @@ package org.apache.cassandra.streaming;
 
 import java.util.*;
 
+import com.google.common.annotations.VisibleForTesting;
+
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.locator.InetAddressAndPort;
@@ -181,5 +183,11 @@ public class StreamPlan
     public boolean getFlushBeforeTransfer()
     {
         return flushBeforeTransfer;
+    }
+
+    @VisibleForTesting
+    public StreamCoordinator getCoordinator()
+    {
+        return coordinator;
     }
 }

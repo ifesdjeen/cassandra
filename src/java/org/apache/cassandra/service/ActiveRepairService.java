@@ -61,7 +61,7 @@ import org.apache.cassandra.gms.IFailureDetectionEventListener;
 import org.apache.cassandra.gms.VersionedValue;
 import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.locator.ReplicaList;
-import org.apache.cassandra.locator.Replicas;
+import org.apache.cassandra.locator.ReplicaSet;
 import org.apache.cassandra.locator.TokenMetadata;
 import org.apache.cassandra.net.IAsyncCallbackWithFailure;
 import org.apache.cassandra.net.MessageIn;
@@ -208,6 +208,7 @@ public class ActiveRepairService implements IEndpointStateChangeSubscriber, IFai
                                              String keyspace,
                                              RepairParallelism parallelismDegree,
                                              Set<InetAddressAndPort> endpoints,
+                                             Set<InetAddressAndPort> transEndpoints,
                                              boolean isIncremental,
                                              boolean pullRepair,
                                              boolean force,
@@ -219,11 +220,15 @@ public class ActiveRepairService implements IEndpointStateChangeSubscriber, IFai
         if (endpoints.isEmpty())
             return null;
 
+        Preconditions.checkArgument(endpoints.containsAll(transEndpoints), "transEndpoints must be a subset of endpoints");
+
         if (cfnames.length == 0)
             return null;
 
 
-        final RepairSession session = new RepairSession(parentRepairSession, UUIDGen.getTimeUUID(), range, keyspace, parallelismDegree, endpoints, isIncremental, pullRepair, force, previewKind, optimiseStreams, cfnames);
+        final RepairSession session = new RepairSession(parentRepairSession, UUIDGen.getTimeUUID(), range, keyspace,
+                                                        parallelismDegree, endpoints, transEndpoints, isIncremental,
+                                                        pullRepair, force, previewKind, optimiseStreams, cfnames);
 
         sessions.put(session.getId(), session);
         // register listeners
@@ -296,9 +301,9 @@ public class ActiveRepairService implements IEndpointStateChangeSubscriber, IFai
      *
      * @return neighbors with whom we share the provided range
      */
-    public static Set<InetAddressAndPort> getNeighbors(String keyspaceName, Iterable<Range<Token>> keyspaceLocalRanges,
-                                                       Range<Token> toRepair, Collection<String> dataCenters,
-                                                       Collection<String> hosts)
+    public static ReplicaSet getNeighbors(String keyspaceName, Iterable<Range<Token>> keyspaceLocalRanges,
+                                          Range<Token> toRepair, Collection<String> dataCenters,
+                                          Collection<String> hosts)
     {
         StorageService ss = StorageService.instance;
         Map<Range<Token>, ReplicaList> replicaSets = ss.getRangeToAddressMap(keyspaceName);
@@ -319,12 +324,11 @@ public class ActiveRepairService implements IEndpointStateChangeSubscriber, IFai
             }
         }
         if (rangeSuperSet == null || !replicaSets.containsKey(rangeSuperSet))
-            return Collections.emptySet();
+            return ReplicaSet.empty();
 
+        ReplicaSet neighbors = new ReplicaSet(replicaSets.get(rangeSuperSet));
 
-        Replicas.checkFull(replicaSets.get(rangeSuperSet));
-        Set<InetAddressAndPort> neighbors = replicaSets.get(rangeSuperSet).asEndpointSet();
-        neighbors.remove(FBUtilities.getBroadcastAddressAndPort());
+        neighbors.removeEndpoint(FBUtilities.getBroadcastAddressAndPort());
 
         if (dataCenters != null && !dataCenters.isEmpty())
         {
@@ -337,7 +341,7 @@ public class ActiveRepairService implements IEndpointStateChangeSubscriber, IFai
                 if (c != null)
                     dcEndpoints.addAll(c);
             }
-            return Sets.intersection(neighbors, dcEndpoints);
+            return neighbors.intersectOnEndpoints(dcEndpoints);
         }
         else if (hosts != null && !hosts.isEmpty())
         {
@@ -347,7 +351,7 @@ public class ActiveRepairService implements IEndpointStateChangeSubscriber, IFai
                 try
                 {
                     final InetAddressAndPort endpoint = InetAddressAndPort.getByName(host.trim());
-                    if (endpoint.equals(FBUtilities.getBroadcastAddressAndPort()) || neighbors.contains(endpoint))
+                    if (endpoint.equals(FBUtilities.getBroadcastAddressAndPort()) || neighbors.containsEndpoint(endpoint))
                         specifiedHost.add(endpoint);
                 }
                 catch (UnknownHostException e)
@@ -368,8 +372,7 @@ public class ActiveRepairService implements IEndpointStateChangeSubscriber, IFai
             }
 
             specifiedHost.remove(FBUtilities.getBroadcastAddressAndPort());
-            return specifiedHost;
-
+            return neighbors.intersectOnEndpoints(specifiedHost);
         }
 
         return neighbors;

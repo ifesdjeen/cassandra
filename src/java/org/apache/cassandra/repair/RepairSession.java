@@ -96,6 +96,7 @@ public class RepairSession extends AbstractFuture<RepairSessionResult> implement
     /** Range to repair */
     public final Collection<Range<Token>> ranges;
     public final Set<InetAddressAndPort> endpoints;
+    public final Set<InetAddressAndPort> transEndpoints;
     public final boolean isIncremental;
     public final PreviewKind previewKind;
 
@@ -114,13 +115,13 @@ public class RepairSession extends AbstractFuture<RepairSessionResult> implement
 
     /**
      * Create new repair session.
-     *
-     * @param parentRepairSession the parent sessions id
+     *  @param parentRepairSession the parent sessions id
      * @param id this sessions id
      * @param ranges ranges to repair
      * @param keyspace name of keyspace
      * @param parallelismDegree specifies the degree of parallelism when calculating the merkle trees
-     * @param endpoints the data centers that should be part of the repair; null for all DCs
+     * @param endpoints the endpoints involved in this repair, excluding this endpoint
+     * @param transEndpoints
      * @param pullRepair true if the repair should be one way (from remote host to this host and only applicable between two hosts--see RepairOption)
      * @param force true if the repair should ignore dead endpoints (instead of failing)
      * @param cfnames names of columnfamilies
@@ -131,6 +132,7 @@ public class RepairSession extends AbstractFuture<RepairSessionResult> implement
                          String keyspace,
                          RepairParallelism parallelismDegree,
                          Set<InetAddressAndPort> endpoints,
+                         Set<InetAddressAndPort> transEndpoints,
                          boolean isIncremental,
                          boolean pullRepair,
                          boolean force,
@@ -138,6 +140,7 @@ public class RepairSession extends AbstractFuture<RepairSessionResult> implement
                          boolean optimiseStreams,
                          String... cfnames)
     {
+        this.transEndpoints = transEndpoints;
         assert cfnames.length > 0 : "Repairing no column families seems pointless, doesn't it";
 
         this.parentRepairSession = parentRepairSession;

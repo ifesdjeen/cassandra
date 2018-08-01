@@ -38,5 +38,9 @@ public interface KeyspaceRepairManager
      * been notified that the repair session has been completed, the data associated with the given session id must
      * not be combined with repaired or unrepaired data, or data from other repair sessions.
      */
-    ListenableFuture prepareIncrementalRepair(UUID sessionID, Collection<ColumnFamilyStore> tables, Collection<Range<Token>> ranges, ExecutorService executor);
+    ListenableFuture prepareIncrementalRepair(UUID sessionID,
+                                              Collection<ColumnFamilyStore> tables,
+                                              Collection<Range<Token>> fullRanges,
+                                              Collection<Range<Token>> transRanges,
+                                              ExecutorService executor);
 }

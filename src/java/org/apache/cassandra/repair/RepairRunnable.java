@@ -45,7 +45,6 @@ import org.apache.cassandra.concurrent.NamedThreadFactory;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.gms.FailureDetector;
 import org.apache.cassandra.locator.ReplicaSet;
-import org.apache.cassandra.locator.Replicas;
 import org.apache.cassandra.repair.consistent.SyncStatSummary;
 import org.apache.cassandra.schema.SchemaConstants;
 import org.apache.cassandra.db.Keyspace;
@@ -138,17 +137,24 @@ public class RepairRunnable extends WrappedRunnable implements ProgressEventNoti
         recordFailure(message, completionMessage);
     }
 
+    /**
+     * Groups ranges with identical endpoints/transient endpoints
+     */
     @VisibleForTesting
     static class CommonRange
     {
         public final Set<InetAddressAndPort> endpoints;
+        public final Set<InetAddressAndPort> transEndpoints;
         public final Collection<Range<Token>> ranges;
 
-        public CommonRange(Set<InetAddressAndPort> endpoints, Collection<Range<Token>> ranges)
+        public CommonRange(Set<InetAddressAndPort> endpoints, Set<InetAddressAndPort> transEndpoints, Collection<Range<Token>> ranges)
         {
-            Preconditions.checkArgument(endpoints != null && !endpoints.isEmpty());
-            Preconditions.checkArgument(ranges != null && !ranges.isEmpty());
             this.endpoints = endpoints;
+            this.transEndpoints = transEndpoints;
+            Preconditions.checkArgument(endpoints != null && !endpoints.isEmpty());
+            Preconditions.checkArgument(transEndpoints != null);
+            Preconditions.checkArgument(endpoints.containsAll(transEndpoints), "transEndpoints must be a subset of endpoints");
+            Preconditions.checkArgument(ranges != null && !ranges.isEmpty());
             this.ranges = ranges;
         }
 
@@ -160,12 +166,14 @@ public class RepairRunnable extends WrappedRunnable implements ProgressEventNoti
             CommonRange that = (CommonRange) o;
 
             if (!endpoints.equals(that.endpoints)) return false;
+            if (!transEndpoints.equals(that.transEndpoints)) return false;
             return ranges.equals(that.ranges);
         }
 
         public int hashCode()
         {
             int result = endpoints.hashCode();
+            result = 31 * result + transEndpoints.hashCode();
             result = 31 * result + ranges.hashCode();
             return result;
         }
@@ -174,6 +182,7 @@ public class RepairRunnable extends WrappedRunnable implements ProgressEventNoti
         {
             return "CommonRange{" +
                    "endpoints=" + endpoints +
+                   ", transEndpoints=" + transEndpoints +
                    ", ranges=" + ranges +
                    '}';
         }
@@ -235,22 +244,21 @@ public class RepairRunnable extends WrappedRunnable implements ProgressEventNoti
         Set<InetAddressAndPort> allNeighbors = new HashSet<>();
         List<CommonRange> commonRanges = new ArrayList<>();
 
-        //pre-calculate output of getLocalReplicas and pass it to getNeighbors to increase performance and prevent
-        //calculation multiple times
-        ReplicaSet replicatedRanges = storageService.getLocalReplicas(keyspace);
-        Replicas.checkFull(replicatedRanges);
-        Iterable<Range<Token>> keyspaceLocalRanges = storageService.getLocalReplicas(keyspace).asRanges();
+        // pre-calculate output of getLocalReplicas and pass it to getNeighbors
+        // to increase performance and prevent calculation multiple times
+        // we don't coordinate repairs for transient ranges
+        Iterable<Range<Token>> keyspaceLocalRanges = storageService.getLocalReplicas(keyspace).fullRanges();
 
         try
         {
             for (Range<Token> range : options.getRanges())
             {
-                Set<InetAddressAndPort> neighbors = ActiveRepairService.getNeighbors(keyspace, keyspaceLocalRanges, range,
-                                                                                     options.getDataCenters(),
-                                                                                     options.getHosts());
+                ReplicaSet neighbors = ActiveRepairService.getNeighbors(keyspace, keyspaceLocalRanges, range,
+                                                                        options.getDataCenters(),
+                                                                        options.getHosts());
 
                 addRangeToNeighbors(commonRanges, range, neighbors);
-                allNeighbors.addAll(neighbors);
+                allNeighbors.addAll(neighbors.asEndpointSet());
             }
 
             progress.incrementAndGet();
@@ -386,11 +394,13 @@ public class RepairRunnable extends WrappedRunnable implements ProgressEventNoti
             for (CommonRange commonRange: commonRanges)
             {
                 Set<InetAddressAndPort> endpoints = ImmutableSet.copyOf(Iterables.filter(commonRange.endpoints, liveEndpoints::contains));
+                Set<InetAddressAndPort> transEndpoints = ImmutableSet.copyOf(Iterables.filter(commonRange.transEndpoints, liveEndpoints::contains));
+                Preconditions.checkState(endpoints.containsAll(transEndpoints), "transEndpoints must be a subset of endpoints");
 
                 // this node is implicitly a participant in this repair, so a single endpoint is ok here
                 if (!endpoints.isEmpty())
                 {
-                    filtered.add(new CommonRange(endpoints, commonRange.ranges));
+                    filtered.add(new CommonRange(endpoints, transEndpoints, commonRange.ranges));
                 }
             }
             Preconditions.checkState(!filtered.isEmpty(), "Not enough live endpoints for a repair");
@@ -521,6 +531,7 @@ public class RepairRunnable extends WrappedRunnable implements ProgressEventNoti
                                                                                      keyspace,
                                                                                      options.getParallelism(),
                                                                                      cr.endpoints,
+                                                                                     cr.transEndpoints,
                                                                                      isIncremental,
                                                                                      options.isPullRepair(),
                                                                                      force,
@@ -683,13 +694,15 @@ public class RepairRunnable extends WrappedRunnable implements ProgressEventNoti
                                                ImmutableList.of(failureMessage, completionMessage));
     }
 
-    private void addRangeToNeighbors(List<CommonRange> neighborRangeList, Range<Token> range, Set<InetAddressAndPort> neighbors)
+    private void addRangeToNeighbors(List<CommonRange> neighborRangeList, Range<Token> range, ReplicaSet neighbors)
     {
+        Set<InetAddressAndPort> endpoints = Sets.newHashSet(neighbors.asEndpoints());
+        Set<InetAddressAndPort> transEndpoints = Sets.newHashSet(neighbors.transientEndpoints());
         for (int i = 0; i < neighborRangeList.size(); i++)
         {
             CommonRange cr = neighborRangeList.get(i);
 
-            if (cr.endpoints.containsAll(neighbors))
+            if (cr.endpoints.containsAll(endpoints) && cr.transEndpoints.containsAll(transEndpoints))
             {
                 cr.ranges.add(range);
                 return;
@@ -698,7 +711,7 @@ public class RepairRunnable extends WrappedRunnable implements ProgressEventNoti
 
         List<Range<Token>> ranges = new ArrayList<>();
         ranges.add(range);
-        neighborRangeList.add(new CommonRange(neighbors, ranges));
+        neighborRangeList.add(new CommonRange(endpoints, transEndpoints, ranges));
     }
 
     private Thread createQueryThread(final int cmd, final UUID sessionId)

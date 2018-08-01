@@ -27,6 +27,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Predicate;
 
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Iterables;
@@ -58,6 +59,7 @@ import org.apache.cassandra.service.ActiveRepairService;
 import org.apache.cassandra.SchemaLoader;
 import org.apache.cassandra.streaming.PreviewKind;
 import org.apache.cassandra.utils.ByteBufferUtil;
+import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.UUIDGen;
 import org.apache.cassandra.utils.concurrent.Refs;
 import org.apache.cassandra.UpdateBuilder;
@@ -79,6 +81,8 @@ public class AntiCompactionTest
     private static final String CF = "AntiCompactionTest";
     private static TableMetadata metadata;
     private static ColumnFamilyStore cfs;
+
+    private static Collection<Range<Token>> NO_RANGES = Collections.emptyList();
 
     @BeforeClass
     public static void defineSchema() throws ConfigurationException
@@ -106,47 +110,65 @@ public class AntiCompactionTest
                                                                  repairedAt, true, PreviewKind.NONE);
     }
 
-    private void antiCompactOne(long repairedAt, UUID pendingRepair) throws Exception
+    private static Collection<Range<Token>> range(int l, int r)
     {
-        assert repairedAt != UNREPAIRED_SSTABLE || pendingRepair != null;
+        return Collections.singleton(new Range<>(new BytesToken(Integer.toString(l).getBytes()), new BytesToken(Integer.toString(r).getBytes())));
+    }
 
-        ColumnFamilyStore store = prepareColumnFamilyStore();
-        Collection<SSTableReader> sstables = getUnrepairedSSTables(store);
-        assertEquals(store.getLiveSSTables().size(), sstables.size());
-        Range<Token> range = new Range<Token>(new BytesToken("0".getBytes()), new BytesToken("4".getBytes()));
-        List<Range<Token>> ranges = Arrays.asList(range);
-
-        int repairedKeys = 0;
+    private static class SSTableStats
+    {
+        int numLiveSSTables = 0;
         int pendingKeys = 0;
-        int nonRepairedKeys = 0;
+        int transKeys = 0;
+        int unrepairedKeys = 0;
+    }
+
+    private SSTableStats antiCompactRanges(ColumnFamilyStore store, Collection<Range<Token>> fullRanges, Collection<Range<Token>> transRanges) throws IOException
+    {
+        UUID sessionID = UUID.randomUUID();
+        Collection<SSTableReader> sstables = getUnrepairedSSTables(store);
         try (LifecycleTransaction txn = store.getTracker().tryModify(sstables, OperationType.ANTICOMPACTION);
              Refs<SSTableReader> refs = Refs.ref(sstables))
         {
             if (txn == null)
                 throw new IllegalStateException();
-            UUID parentRepairSession = pendingRepair == null ? UUID.randomUUID() : pendingRepair;
-            registerParentRepairSession(parentRepairSession, ranges, repairedAt, pendingRepair);
-            CompactionManager.instance.performAnticompaction(store, ranges, refs, txn, repairedAt, pendingRepair, parentRepairSession);
+            registerParentRepairSession(sessionID, Sets.newHashSet(Iterables.concat(fullRanges, transRanges)), FBUtilities.nowInSeconds(), sessionID);
+            CompactionManager.instance.performAnticompaction(store, fullRanges, transRanges, refs, txn, sessionID);
         }
 
-        assertEquals(2, store.getLiveSSTables().size());
+        SSTableStats stats = new SSTableStats();
+        stats.numLiveSSTables = store.getLiveSSTables().size();
+
+        Predicate<Token> fullContains = t -> Iterables.any(fullRanges, r -> r.contains(t));
+        Predicate<Token> transContains = t -> Iterables.any(transRanges, r -> r.contains(t));
         for (SSTableReader sstable : store.getLiveSSTables())
         {
+            assertFalse(sstable.isRepaired());
+            assertEquals(sstable.isPendingRepair() ? sessionID : NO_PENDING_REPAIR, sstable.getPendingRepair());
             try (ISSTableScanner scanner = sstable.getScanner())
             {
                 while (scanner.hasNext())
                 {
                     UnfilteredRowIterator row = scanner.next();
-                    if (sstable.isRepaired() || sstable.isPendingRepair())
+                    Token token = row.partitionKey().getToken();
+                    if (sstable.isPendingRepair() && !sstable.isTransient())
                     {
-                        assertTrue(range.contains(row.partitionKey().getToken()));
-                        repairedKeys += sstable.isRepaired() ? 1 : 0;
-                        pendingKeys += sstable.isPendingRepair() ? 1 : 0;
+                        assertTrue(fullContains.test(token));
+                        assertFalse(transContains.test(token));
+                        stats.pendingKeys++;
+                    }
+                    else if (sstable.isPendingRepair() && sstable.isTransient())
+                    {
+
+                        assertTrue(transContains.test(token));
+                        assertFalse(fullContains.test(token));
+                        stats.transKeys++;
                     }
                     else
                     {
-                        assertFalse(range.contains(row.partitionKey().getToken()));
-                        nonRepairedKeys++;
+                        assertFalse(fullContains.test(token));
+                        assertFalse(transContains.test(token));
+                        stats.unrepairedKeys++;
                     }
                 }
             }
@@ -157,21 +179,40 @@ public class AntiCompactionTest
             assertEquals(1, sstable.selfRef().globalCount());
         }
         assertEquals(0, store.getTracker().getCompacting().size());
-        assertEquals(repairedKeys, repairedAt != UNREPAIRED_SSTABLE ? 4 : 0);
-        assertEquals(pendingKeys, pendingRepair != NO_PENDING_REPAIR ? 4 : 0);
-        assertEquals(nonRepairedKeys, 6);
+        return stats;
     }
 
     @Test
-    public void antiCompactOneRepairedAt() throws Exception
+    public void antiCompactOneFull() throws Exception
     {
-        antiCompactOne(1000, NO_PENDING_REPAIR);
+        ColumnFamilyStore store = prepareColumnFamilyStore();
+        SSTableStats stats = antiCompactRanges(store, range(0, 4), NO_RANGES);
+        assertEquals(2, stats.numLiveSSTables);
+        assertEquals(stats.pendingKeys, 4);
+        assertEquals(stats.transKeys, 0);
+        assertEquals(stats.unrepairedKeys, 6);
     }
 
     @Test
-    public void antiCompactOnePendingRepair() throws Exception
+    public void antiCompactOneMixed() throws Exception
     {
-        antiCompactOne(UNREPAIRED_SSTABLE, UUIDGen.getTimeUUID());
+        ColumnFamilyStore store = prepareColumnFamilyStore();
+        SSTableStats stats = antiCompactRanges(store, range(0, 4), range(4, 8));
+        assertEquals(3, stats.numLiveSSTables);
+        assertEquals(stats.pendingKeys, 4);
+        assertEquals(stats.transKeys, 4);
+        assertEquals(stats.unrepairedKeys, 2);
+    }
+
+    @Test
+    public void antiCompactOneTransOnly() throws Exception
+    {
+        ColumnFamilyStore store = prepareColumnFamilyStore();
+        SSTableStats stats = antiCompactRanges(store, NO_RANGES, range(0, 4));
+        assertEquals(2, stats.numLiveSSTables);
+        assertEquals(stats.pendingKeys, 0);
+        assertEquals(stats.transKeys, 4);
+        assertEquals(stats.unrepairedKeys, 6);
     }
 
     @Test
@@ -190,7 +231,7 @@ public class AntiCompactionTest
         try (LifecycleTransaction txn = cfs.getTracker().tryModify(sstables, OperationType.ANTICOMPACTION);
              Refs<SSTableReader> refs = Refs.ref(sstables))
         {
-            CompactionManager.instance.performAnticompaction(cfs, ranges, refs, txn, 12345, NO_PENDING_REPAIR, parentRepairSession);
+            CompactionManager.instance.performAnticompaction(cfs, ranges, NO_RANGES, refs, txn, parentRepairSession);
         }
         long sum = 0;
         long rows = 0;
@@ -208,7 +249,7 @@ public class AntiCompactionTest
         File dir = cfs.getDirectories().getDirectoryForNewSSTables();
         Descriptor desc = cfs.newSSTableDescriptor(dir);
 
-        try (SSTableTxnWriter writer = SSTableTxnWriter.create(cfs, desc, 0, 0, NO_PENDING_REPAIR, new SerializationHeader(true, cfs.metadata(), cfs.metadata().regularAndStaticColumns(), EncodingStats.NO_STATS)))
+        try (SSTableTxnWriter writer = SSTableTxnWriter.create(cfs, desc, 0, 0, NO_PENDING_REPAIR, false, new SerializationHeader(true, cfs.metadata(), cfs.metadata().regularAndStaticColumns(), EncodingStats.NO_STATS)))
         {
             for (int i = 0; i < count; i++)
             {
@@ -240,7 +281,7 @@ public class AntiCompactionTest
     }
 
     @Test
-    public void antiCompactTen() throws InterruptedException, IOException
+    public void antiCompactTenFull() throws InterruptedException, IOException
     {
         Keyspace keyspace = Keyspace.open(KEYSPACE1);
         ColumnFamilyStore store = keyspace.getColumnFamilyStore(CF);
@@ -250,56 +291,59 @@ public class AntiCompactionTest
         {
             generateSStable(store,Integer.toString(table));
         }
-        Collection<SSTableReader> sstables = getUnrepairedSSTables(store);
-        assertEquals(store.getLiveSSTables().size(), sstables.size());
-
-        Range<Token> range = new Range<Token>(new BytesToken("0".getBytes()), new BytesToken("4".getBytes()));
-        List<Range<Token>> ranges = Arrays.asList(range);
-
-        long repairedAt = 1000;
-        UUID parentRepairSession = UUID.randomUUID();
-        registerParentRepairSession(parentRepairSession, ranges, repairedAt, null);
-        try (LifecycleTransaction txn = store.getTracker().tryModify(sstables, OperationType.ANTICOMPACTION);
-             Refs<SSTableReader> refs = Refs.ref(sstables))
-        {
-            CompactionManager.instance.performAnticompaction(store, ranges, refs, txn, repairedAt, NO_PENDING_REPAIR, parentRepairSession);
-        }
+        SSTableStats stats = antiCompactRanges(store, range(0, 4), NO_RANGES);
         /*
         Anticompaction will be anti-compacting 10 SSTables but will be doing this two at a time
         so there will be no net change in the number of sstables
          */
-        assertEquals(10, store.getLiveSSTables().size());
-        int repairedKeys = 0;
-        int nonRepairedKeys = 0;
-        for (SSTableReader sstable : store.getLiveSSTables())
-        {
-            try (ISSTableScanner scanner = sstable.getScanner())
-            {
-                while (scanner.hasNext())
-                {
-                    try (UnfilteredRowIterator row = scanner.next())
-                    {
-                        if (sstable.isRepaired())
-                        {
-                            assertTrue(range.contains(row.partitionKey().getToken()));
-                            assertEquals(repairedAt, sstable.getSSTableMetadata().repairedAt);
-                            repairedKeys++;
-                        }
-                        else
-                        {
-                            assertFalse(range.contains(row.partitionKey().getToken()));
-                            assertEquals(ActiveRepairService.UNREPAIRED_SSTABLE, sstable.getSSTableMetadata().repairedAt);
-                            nonRepairedKeys++;
-                        }
-                    }
-                }
-            }
-        }
-        assertEquals(repairedKeys, 40);
-        assertEquals(nonRepairedKeys, 60);
+        assertEquals(10, stats.numLiveSSTables);
+        assertEquals(stats.pendingKeys, 40);
+        assertEquals(stats.transKeys, 0);
+        assertEquals(stats.unrepairedKeys, 60);
     }
 
-    private void shouldMutate(long repairedAt, UUID pendingRepair) throws InterruptedException, IOException
+    @Test
+    public void antiCompactTenTrans() throws InterruptedException, IOException
+    {
+        Keyspace keyspace = Keyspace.open(KEYSPACE1);
+        ColumnFamilyStore store = keyspace.getColumnFamilyStore(CF);
+        store.disableAutoCompaction();
+
+        for (int table = 0; table < 10; table++)
+        {
+            generateSStable(store,Integer.toString(table));
+        }
+        SSTableStats stats = antiCompactRanges(store, NO_RANGES, range(0, 4));
+        /*
+        Anticompaction will be anti-compacting 10 SSTables but will be doing this two at a time
+        so there will be no net change in the number of sstables
+         */
+        assertEquals(10, stats.numLiveSSTables);
+        assertEquals(stats.pendingKeys, 0);
+        assertEquals(stats.transKeys, 40);
+        assertEquals(stats.unrepairedKeys, 60);
+    }
+
+    @Test
+    public void antiCompactTenMixed() throws InterruptedException, IOException
+    {
+        Keyspace keyspace = Keyspace.open(KEYSPACE1);
+        ColumnFamilyStore store = keyspace.getColumnFamilyStore(CF);
+        store.disableAutoCompaction();
+
+        for (int table = 0; table < 10; table++)
+        {
+            generateSStable(store,Integer.toString(table));
+        }
+        SSTableStats stats = antiCompactRanges(store, range(0, 4), range(4, 8));
+        assertEquals(15, stats.numLiveSSTables);
+        assertEquals(stats.pendingKeys, 40);
+        assertEquals(stats.transKeys, 40);
+        assertEquals(stats.unrepairedKeys, 20);
+    }
+
+    @Test
+    public void shouldMutatePendingRepair() throws InterruptedException, IOException
     {
         ColumnFamilyStore store = prepareColumnFamilyStore();
         Collection<SSTableReader> sstables = getUnrepairedSSTables(store);
@@ -307,32 +351,20 @@ public class AntiCompactionTest
         // the sstables start at "0".getBytes() = 48, we need to include that first token, with "/".getBytes() = 47
         Range<Token> range = new Range<Token>(new BytesToken("/".getBytes()), new BytesToken("9999".getBytes()));
         List<Range<Token>> ranges = Arrays.asList(range);
-        UUID parentRepairSession = pendingRepair == null ? UUID.randomUUID() : pendingRepair;
-        registerParentRepairSession(parentRepairSession, ranges, repairedAt, pendingRepair);
+        UUID pendingRepair = UUID.randomUUID();
+        registerParentRepairSession(pendingRepair, ranges, UNREPAIRED_SSTABLE, pendingRepair);
 
         try (LifecycleTransaction txn = store.getTracker().tryModify(sstables, OperationType.ANTICOMPACTION);
              Refs<SSTableReader> refs = Refs.ref(sstables))
         {
-            CompactionManager.instance.performAnticompaction(store, ranges, refs, txn, repairedAt, pendingRepair, parentRepairSession);
+            CompactionManager.instance.performAnticompaction(store, ranges, Collections.emptyList(), refs, txn, pendingRepair);
         }
 
         assertThat(store.getLiveSSTables().size(), is(1));
-        assertThat(Iterables.get(store.getLiveSSTables(), 0).isRepaired(), is(repairedAt != UNREPAIRED_SSTABLE));
-        assertThat(Iterables.get(store.getLiveSSTables(), 0).isPendingRepair(), is(pendingRepair != NO_PENDING_REPAIR));
+        assertThat(Iterables.get(store.getLiveSSTables(), 0).isRepaired(), is(false));
+        assertThat(Iterables.get(store.getLiveSSTables(), 0).isPendingRepair(), is(true));
         assertThat(Iterables.get(store.getLiveSSTables(), 0).selfRef().globalCount(), is(1));
         assertThat(store.getTracker().getCompacting().size(), is(0));
-    }
-
-    @Test
-    public void shouldMutateRepairedAt() throws InterruptedException, IOException
-    {
-        shouldMutate(1, NO_PENDING_REPAIR);
-    }
-
-    @Test
-    public void shouldMutatePendingRepair() throws InterruptedException, IOException
-    {
-        shouldMutate(UNREPAIRED_SSTABLE, UUIDGen.getTimeUUID());
     }
 
     @Test
@@ -358,7 +390,7 @@ public class AntiCompactionTest
         try (LifecycleTransaction txn = store.getTracker().tryModify(sstables, OperationType.ANTICOMPACTION);
              Refs<SSTableReader> refs = Refs.ref(sstables))
         {
-            CompactionManager.instance.performAnticompaction(store, ranges, refs, txn, 1, NO_PENDING_REPAIR, parentRepairSession);
+            CompactionManager.instance.performAnticompaction(store, ranges, Collections.emptyList(), refs, txn, parentRepairSession);
         }
         catch (IllegalStateException e)
         {
@@ -428,7 +460,7 @@ public class AntiCompactionTest
             Assert.assertFalse(refs.isEmpty());
             try
             {
-                CompactionManager.instance.performAnticompaction(store, ranges, refs, txn, 1, missingRepairSession, missingRepairSession);
+                CompactionManager.instance.performAnticompaction(store, ranges, Collections.emptyList(), refs, txn, missingRepairSession);
                 Assert.fail("expected RuntimeException");
             }
             catch (RuntimeException e)
@@ -484,8 +516,7 @@ public class AntiCompactionTest
 
         Range<Token> r = new Range<>(t(9), t(100)); // sstable is not intersecting and should not be included
 
-        Iterator<SSTableReader> sstableIterator = sstables.iterator();
-        CompactionManager.findSSTablesToAnticompact(sstableIterator, Collections.singletonList(r), UUID.randomUUID());
+        CompactionManager.validateSSTableBoundsForAnticompaction(UUID.randomUUID(), sstables, Collections.singletonList(r), Collections.emptyList());
     }
 
     @Test(expected = IllegalStateException.class)
@@ -500,8 +531,7 @@ public class AntiCompactionTest
 
         Range<Token> r = new Range<>(t(10), t(11)); // no sstable included, throw
 
-        Iterator<SSTableReader> sstableIterator = sstables.iterator();
-        CompactionManager.findSSTablesToAnticompact(sstableIterator, Collections.singletonList(r), UUID.randomUUID());
+        CompactionManager.validateSSTableBoundsForAnticompaction(UUID.randomUUID(), sstables, Collections.singletonList(r), Collections.emptyList());
     }
 
     @Test

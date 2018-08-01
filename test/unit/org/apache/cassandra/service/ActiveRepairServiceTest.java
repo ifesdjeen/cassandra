@@ -111,7 +111,7 @@ public class ActiveRepairServiceTest
         Set<InetAddressAndPort> neighbors = new HashSet<>();
         for (Range<Token> range : ranges)
         {
-            neighbors.addAll(ActiveRepairService.getNeighbors(KEYSPACE5, ranges, range, null, null));
+            neighbors.addAll(ActiveRepairService.getNeighbors(KEYSPACE5, ranges, range, null, null).asEndpointSet());
         }
         assertEquals(expected, neighbors);
     }
@@ -134,7 +134,7 @@ public class ActiveRepairServiceTest
         Set<InetAddressAndPort> neighbors = new HashSet<>();
         for (Range<Token> range : ranges)
         {
-            neighbors.addAll(ActiveRepairService.getNeighbors(KEYSPACE5, ranges, range, null, null));
+            neighbors.addAll(ActiveRepairService.getNeighbors(KEYSPACE5, ranges, range, null, null).asEndpointSet());
         }
         assertEquals(expected, neighbors);
     }
@@ -156,7 +156,7 @@ public class ActiveRepairServiceTest
         Set<InetAddressAndPort> neighbors = new HashSet<>();
         for (Range<Token> range : ranges)
         {
-            neighbors.addAll(ActiveRepairService.getNeighbors(KEYSPACE5, ranges, range, Arrays.asList(DatabaseDescriptor.getLocalDataCenter()), null));
+            neighbors.addAll(ActiveRepairService.getNeighbors(KEYSPACE5, ranges, range, Arrays.asList(DatabaseDescriptor.getLocalDataCenter()), null).asEndpointSet());
         }
         assertEquals(expected, neighbors);
     }
@@ -184,7 +184,7 @@ public class ActiveRepairServiceTest
         Set<InetAddressAndPort> neighbors = new HashSet<>();
         for (Range<Token> range : ranges)
         {
-            neighbors.addAll(ActiveRepairService.getNeighbors(KEYSPACE5, ranges, range, Arrays.asList(DatabaseDescriptor.getLocalDataCenter()), null));
+            neighbors.addAll(ActiveRepairService.getNeighbors(KEYSPACE5, ranges, range, Arrays.asList(DatabaseDescriptor.getLocalDataCenter()), null).asEndpointSet());
         }
         assertEquals(expected, neighbors);
     }
@@ -209,7 +209,7 @@ public class ActiveRepairServiceTest
 
         assertEquals(expected.get(0), ActiveRepairService.getNeighbors(KEYSPACE5, ranges,
                                                                        ranges.iterator().next(),
-                                                                       null, hosts).iterator().next());
+                                                                       null, hosts).asEndpoints().iterator().next());
     }
 
     @Test(expected = IllegalArgumentException.class)
