@@ -239,12 +239,12 @@ public abstract class AbstractReadExecutor
     void onReadTimeout() {}
 
     public static class ReplicaPlan {
-        private final ReplicaList allReplicas;
+        protected final ReplicaList allReplicas;
         // Might be modified by speculative strategy
-        private volatile ReplicaList targetReplicas;
+        protected volatile ReplicaList targetReplicas;
 
-        private final Keyspace keyspace;
-        private final Map<InetAddressAndPort, Replica> replicaMap;
+        protected final Keyspace keyspace;
+        protected final Map<InetAddressAndPort, Replica> replicaMap;
 
         public ReplicaPlan(Keyspace keyspace, ReplicaList allReplicas, ReplicaList targetReplicas)
         {

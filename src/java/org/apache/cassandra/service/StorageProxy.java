@@ -1951,15 +1951,24 @@ public class StorageProxy implements StorageProxyMBean
         return (maxExpectedResults / DatabaseDescriptor.getNumTokens()) / keyspace.getReplicationStrategy().getReplicationFactor().replicas;
     }
 
-    private static class RangeForQuery
+    private static class RangeForQuery extends AbstractReadExecutor.ReplicaPlan
     {
         public final AbstractBounds<PartitionPosition> range;
-        public final AbstractReadExecutor.ReplicaPlan replicaPlan;
 
-        public RangeForQuery(AbstractBounds<PartitionPosition> range, AbstractReadExecutor.ReplicaPlan replicaPlan)
+        public RangeForQuery(Keyspace keyspace, AbstractBounds<PartitionPosition> range, ReplicaList allReplicas, ReplicaList targetReplicas)
         {
+            super(keyspace, allReplicas, targetReplicas);
             this.range = range;
-            this.replicaPlan = replicaPlan;
+        }
+
+        public RangeForQuery withTargets(ReplicaList newTargets)
+        {
+            return new RangeForQuery(keyspace, range, allReplicas, newTargets);
+        }
+
+        public RangeForQuery withRange(AbstractBounds<PartitionPosition> newRange)
+        {
+            return new RangeForQuery(keyspace, newRange, allReplicas, targetReplicas);
         }
     }
 
@@ -1994,8 +2003,13 @@ public class StorageProxy implements StorageProxyMBean
 
             AbstractBounds<PartitionPosition> range = ranges.next();
             ReplicaList liveReplicas = getLiveSortedReplicas(keyspace, range.right);
-            return new RangeForQuery(range,
-                                     new AbstractReadExecutor.ReplicaPlan(keyspace, liveReplicas, consistency.filterForQuery(keyspace, liveReplicas)));
+
+            int blockFor = consistency.blockFor(keyspace);
+            ReplicaList targetReplicas = consistency.filterForQuery(keyspace, liveReplicas)
+            int minResponses = Math.min(targetReplicas.size(), blockFor);
+
+            return new RangeForQuery(keyspace, range,
+                                     liveReplicas, targetReplicas.subList(0, minResponses));
         }
     }
 
@@ -2034,7 +2048,7 @@ public class StorageProxy implements StorageProxyMBean
 
                 RangeForQuery next = ranges.peek();
 
-                ReplicaList merged = ReplicaList.intersectEndpoints(current.replicaPlan.allReplicas(), next.replicaPlan.allReplicas());
+                ReplicaList merged = ReplicaList.intersectEndpoints(current.allReplicas(), next.allReplicas());
 
                 // Check if there is enough endpoint for the merge to be possible.
                 if (!consistency.isSufficientLiveNodes(keyspace, merged))
@@ -2043,11 +2057,11 @@ public class StorageProxy implements StorageProxyMBean
                 ReplicaList filteredMerged = consistency.filterForQuery(keyspace, merged);
 
                 // Estimate whether merging will be a win or not
-                if (!DatabaseDescriptor.getEndpointSnitch().isWorthMergingForRangeQuery(filteredMerged, current.replicaPlan.targetReplicas(), next.replicaPlan.targetReplicas()))
+                if (!DatabaseDescriptor.getEndpointSnitch().isWorthMergingForRangeQuery(filteredMerged, current.targetReplicas(), next.targetReplicas()))
                     break;
 
                 // If we get there, merge this range and the next one
-                current = new RangeForQuery(current.range.withNewRight(next.range.right), new AbstractReadExecutor.ReplicaPlan(keyspace, merged, filteredMerged));
+                current = new RangeForQuery(keyspace,  current.range.withNewRight(next.range.right), merged, filteredMerged);
                 ranges.next(); // consume the range we just merged since we've only peeked so far
             }
             return current;
@@ -2192,21 +2206,15 @@ public class StorageProxy implements StorageProxyMBean
          * {@code DataLimits}) may have "state" information and that state may only be valid for the first query (in
          * that it's the query that "continues" whatever we're previously queried).
          */
-        private SingleRangeResponse query(RangeForQuery toQuery, boolean isFirst)
+        private SingleRangeResponse query(RangeForQuery plan, boolean isFirst)
         {
-            PartitionRangeReadCommand rangeCommand = command.forSubRange(toQuery.range, isFirst);
+            PartitionRangeReadCommand rangeCommand = command.forSubRange(plan.range, isFirst);
+            ReadRepair readRepair = new BlockingReadRepair(command, plan, queryStartNanoTime, consistency);
+            DataResolver resolver = new DataResolver(keyspace, rangeCommand, consistency, plan, readRepair, queryStartNanoTime);
 
-            ReadRepair readRepair = new BlockingReadRepair(command, toQuery.replicaPlan, queryStartNanoTime, consistency);
-            DataResolver resolver = new DataResolver(keyspace, rangeCommand, consistency, toQuery.replicaPlan, readRepair, queryStartNanoTime);
-
-            int blockFor = consistency.blockFor(keyspace);
-            int minResponses = Math.min(toQuery.replicaPlan.targetReplicas().size(), blockFor);
-            // TODO: not exactly ideal, improve
-            AbstractReadExecutor.ReplicaPlan plan = toQuery.replicaPlan.withTargets(toQuery.replicaPlan.targetReplicas().subList(0, minResponses));
             ReadCallback handler = ReadCallback.create(resolver, consistency, rangeCommand, plan, queryStartNanoTime);
 
             handler.assureSufficientLiveNodes();
-
             if (plan.targetReplicas().size() == 1 && plan.targetReplicas().get(0).isLocal())
             {
                 StageManager.getStage(Stage.READ).execute(new LocalReadRunnable(rangeCommand, handler));
