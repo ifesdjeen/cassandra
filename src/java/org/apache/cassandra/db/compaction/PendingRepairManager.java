@@ -147,9 +147,22 @@ class PendingRepairManager
             strategy.removeSSTable(sstable);
     }
 
+
+    void removeSSTables(Iterable<SSTableReader> removed)
+    {
+        for (SSTableReader sstable : removed)
+            removeSSTable(sstable);
+    }
+
     synchronized void addSSTable(SSTableReader sstable)
     {
         getOrCreate(sstable).addSSTable(sstable);
+    }
+
+    void addSSTables(Iterable<SSTableReader> added)
+    {
+        for (SSTableReader sstable : added)
+            addSSTable(sstable);
     }
 
     synchronized void replaceSSTables(Set<SSTableReader> removed, Set<SSTableReader> added)
@@ -391,7 +404,7 @@ class PendingRepairManager
         return strategies.keySet().contains(sessionID);
     }
 
-    public Collection<AbstractCompactionTask> createUserDefinedTasks(List<SSTableReader> sstables, int gcBefore)
+    public Collection<AbstractCompactionTask> createUserDefinedTasks(Collection<SSTableReader> sstables, int gcBefore)
     {
         Map<UUID, List<SSTableReader>> group = sstables.stream().collect(Collectors.groupingBy(s -> s.getSSTableMetadata().pendingRepair));
         return group.entrySet().stream().map(g -> strategies.get(g.getKey()).getUserDefinedTask(g.getValue(), gcBefore)).collect(Collectors.toList());
