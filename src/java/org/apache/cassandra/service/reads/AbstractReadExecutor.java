@@ -177,7 +177,6 @@ public abstract class AbstractReadExecutor
     {
         Keyspace keyspace = Keyspace.open(command.metadata().keyspace);
         ReplicaList allReplicas = StorageProxy.getLiveSortedReplicas(keyspace, command.partitionKey());
-        allReplicas.prioritizeForRead();
         ReplicaList targetReplicas = consistencyLevel.filterForQuery(keyspace, allReplicas);
 
         ReplicaPlan replicaPlan = new ReplicaPlan(keyspace, allReplicas, targetReplicas);

@@ -1929,6 +1929,8 @@ public class StorageProxy implements StorageProxyMBean
     public static ReplicaList getLiveSortedReplicas(Keyspace keyspace, RingPosition pos)
     {
         ReplicaList liveReplicas = StorageService.instance.getLiveNaturalReplicas(keyspace, pos);
+        Preconditions.checkState(liveReplicas.stream().anyMatch(Replica::isFull), "At least one full replica required for reads");
+
         DatabaseDescriptor.getEndpointSnitch().sortByProximity(FBUtilities.getBroadcastAddressAndPort(), liveReplicas);
         return liveReplicas;
     }

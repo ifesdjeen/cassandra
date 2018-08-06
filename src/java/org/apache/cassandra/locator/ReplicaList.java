@@ -35,6 +35,7 @@ import java.util.stream.Collector;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Predicate;
 import com.google.common.collect.ImmutableList;
@@ -287,17 +288,6 @@ public class ReplicaList extends ReplicaCollection
     }
 
     /**
-     * For allocating ReplicaLists where the final size is unknown, but
-     * should be less than the given size. Prevents overallocations in cases
-     * where there are less than the default ArrayList size, and defers to the
-     * ArrayList algorithm where there might be more
-     */
-    public static ReplicaList withMaxSize(int size)
-    {
-        return size < 10 ? new ReplicaList(size) : new ReplicaList();
-    }
-
-    /**
      * Use of this method to synthesize Replicas is almost always wrong. In repair it turns out the concerns of transient
      * vs non-transient are handled at a higher level, but eventually repair needs to ask streaming to actually move
      * the data and at that point it doesn't have a great handle on what the replicas are and it doesn't really matter.
@@ -312,7 +302,8 @@ public class ReplicaList extends ReplicaCollection
      * @param ranges
      * @return
      */
-    public static ReplicaList toDummyList(Collection<Range<Token>> ranges)
+    @VisibleForTesting
+    static ReplicaList toDummyList(Collection<Range<Token>> ranges)
     {
         InetAddressAndPort dummy;
         try
@@ -329,42 +320,5 @@ public class ReplicaList extends ReplicaCollection
                                .map(range -> new Replica(dummy, range, true))
                                .collect(Collectors.toList()));
 
-    }
-
-    public void prioritizeForRead()
-    {
-        // TODO: remove in favor of a smarter snitch / replication strategy based approach
-        // put a full replica first
-        int firstFull = -1;
-        for (int i=0; i<size(); i++)
-        {
-            if (get(i).isFull())
-            {
-                firstFull = i;
-                break;
-            }
-        }
-
-        Preconditions.checkState(firstFull >= 0, "At least one full replica required for reads");
-
-        if (firstFull > 0)
-        {
-            Collections.rotate(replicaList.subList(0, firstFull + 1), 1);
-        }
-
-        int firstTrans = -1;
-        for (int i=1; i<size(); i++)
-        {
-            if (get(i).isTransient())
-            {
-                firstTrans = i;
-                break;
-            }
-        }
-
-        if (firstTrans > 1)
-        {
-            Collections.rotate(replicaList.subList(1, firstTrans + 1), 1);
-        }
     }
 }
