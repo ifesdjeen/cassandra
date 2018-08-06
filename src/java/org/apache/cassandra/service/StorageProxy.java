@@ -604,7 +604,8 @@ public class StorageProxy implements StorageProxyMBean
         if (shouldBlock)
         {
             AbstractReplicationStrategy rs = keyspace.getReplicationStrategy();
-            responseHandler = rs.getWriteResponseHandler(naturalReplicas, pendingReplicas, consistencyLevel, null, WriteType.SIMPLE, queryStartNanoTime);
+            responseHandler = rs.getWriteResponseHandler(WritePathReplicaPlan.createReplicaPlan(keyspace, naturalReplicas, pendingReplicas),
+                                                         consistencyLevel, null, WriteType.SIMPLE, queryStartNanoTime);
             responseHandler.setSupportsBackPressure(false);
         }
 
@@ -695,7 +696,7 @@ public class StorageProxy implements StorageProxyMBean
         final String localDataCenter = DatabaseDescriptor.getEndpointSnitch().getDatacenter(FBUtilities.getBroadcastAddressAndPort());
 
         long startTime = System.nanoTime();
-        List<AbstractWriteResponseHandler<IMutation>> responseHandlers = new ArrayList<>(mutations.size());
+        Map<IMutation, AbstractWriteResponseHandler<IMutation>> responseHandlers = new HashMap<>(mutations.size());
 
         try
         {
@@ -703,22 +704,22 @@ public class StorageProxy implements StorageProxyMBean
             {
                 if (mutation instanceof CounterMutation)
                 {
-                    responseHandlers.add(mutateCounter((CounterMutation)mutation, localDataCenter, queryStartNanoTime));
+                    responseHandlers.put(mutation, mutateCounter((CounterMutation)mutation, localDataCenter, queryStartNanoTime));
                 }
                 else
                 {
                     WriteType wt = mutations.size() <= 1 ? WriteType.SIMPLE : WriteType.UNLOGGED_BATCH;
-                    responseHandlers.add(performWrite(mutation, consistency_level, localDataCenter, standardWritePerformer, null, wt, queryStartNanoTime));
+                    responseHandlers.put(mutation, performWrite(mutation, consistency_level, localDataCenter, standardWritePerformer, null, wt, queryStartNanoTime));
                 }
             }
 
-            for (AbstractWriteResponseHandler<IMutation> responseHandler : responseHandlers)
+            for (Map.Entry<IMutation, AbstractWriteResponseHandler<IMutation>> entry : responseHandlers.entrySet())
             {
-                responseHandler.maybeTryAdditionalReplicas();
+                entry.getValue().maybeTryAdditionalReplicas(entry.getKey(), standardWritePerformer, localDataCenter);
             }
 
             // wait for writes.  throws TimeoutException if necessary
-            for (AbstractWriteResponseHandler<IMutation> responseHandler : responseHandlers)
+            for (AbstractWriteResponseHandler<IMutation> responseHandler : responseHandlers.values())
             {
                 responseHandler.get();
             }
@@ -1077,8 +1078,8 @@ public class StorageProxy implements StorageProxyMBean
     throws WriteTimeoutException, WriteFailureException
     {
         ReplicaList replicas = SystemReplicas.getSystemReplicas(endpoints);
-        WriteResponseHandler<?> handler = new WriteResponseHandler<>(replicas,
-                                                                     ReplicaList.empty(),
+
+        WriteResponseHandler<?> handler = new WriteResponseHandler<>(WritePathReplicaPlan.createReplicaPlan(null, replicas, ReplicaList.empty()),
                                                                      replicas.size() == 1 ? ConsistencyLevel.ONE : ConsistencyLevel.TWO,
                                                                      Keyspace.open(SchemaConstants.SYSTEM_KEYSPACE_NAME),
                                                                      null,
@@ -1118,7 +1119,8 @@ public class StorageProxy implements StorageProxyMBean
     {
         for (WriteResponseHandlerWrapper wrapper : wrappers)
         {
-            ReplicaCollection replicas = Replicas.concatNaturalAndPending(wrapper.handler.naturalReplicas, wrapper.handler.pendingReplicas);
+            Replicas.checkFull(wrapper.handler.replicaPlan.allReplicas());
+            ReplicaCollection replicas = wrapper.handler.replicaPlan.allReplicas();
 
             try
             {
@@ -1136,7 +1138,9 @@ public class StorageProxy implements StorageProxyMBean
     {
         for (WriteResponseHandlerWrapper wrapper : wrappers)
         {
-            ReplicaCollection replicas = Replicas.concatNaturalAndPending(wrapper.handler.naturalReplicas, wrapper.handler.pendingReplicas);
+            Replicas.checkFull(wrapper.handler.replicaPlan.allReplicas());
+            ReplicaCollection replicas = wrapper.handler.replicaPlan.allReplicas();
+
             sendToHintedReplicas(wrapper.mutation, replicas, wrapper.handler, localDataCenter, stage);
         }
 
@@ -1166,21 +1170,22 @@ public class StorageProxy implements StorageProxyMBean
                                                                        Runnable callback,
                                                                        WriteType writeType,
                                                                        long queryStartNanoTime)
-    throws UnavailableException, OverloadedException
     {
         String keyspaceName = mutation.getKeyspaceName();
-        AbstractReplicationStrategy rs = Keyspace.open(keyspaceName).getReplicationStrategy();
+        Keyspace keyspace = Keyspace.open(keyspaceName);
+        AbstractReplicationStrategy rs = keyspace.getReplicationStrategy();
 
         Token tk = mutation.key().getToken();
         ReplicaList naturalReplicas = StorageService.instance.getNaturalReplicas(keyspaceName, tk);
         ReplicaCollection pendingReplicas = StorageService.instance.getTokenMetadata().pendingEndpointsFor(tk, keyspaceName);
 
-        AbstractWriteResponseHandler<IMutation> responseHandler = rs.getWriteResponseHandler(naturalReplicas, pendingReplicas, consistency_level, callback, writeType, queryStartNanoTime);
+        WritePathReplicaPlan replicaPlan = WritePathReplicaPlan.createReplicaPlan(keyspace, consistency_level, naturalReplicas, pendingReplicas, FailureDetector.instance::isAlive);
+        AbstractWriteResponseHandler<IMutation> responseHandler = rs.getWriteResponseHandler(replicaPlan, consistency_level, callback, writeType, queryStartNanoTime);
 
         // exit early if we can't fulfill the CL at this time
         responseHandler.assureSufficientLiveNodes();
 
-        performer.apply(mutation, responseHandler.getInitialRecipients(mutation, performer, localDataCenter), responseHandler, localDataCenter, consistency_level);
+        performer.apply(mutation, replicaPlan.targetReplicas(), responseHandler, localDataCenter, consistency_level);
         return responseHandler;
     }
 
@@ -1198,7 +1203,9 @@ public class StorageProxy implements StorageProxyMBean
         Token tk = mutation.key().getToken();
         ReplicaList naturalEndpoints = StorageService.instance.getNaturalReplicas(keyspaceName, tk);
         ReplicaCollection pendingEndpoints = StorageService.instance.getTokenMetadata().pendingEndpointsFor(tk, keyspaceName);
-        AbstractWriteResponseHandler<IMutation> writeHandler = rs.getWriteResponseHandler(naturalEndpoints, pendingEndpoints, consistency_level, null, writeType, queryStartNanoTime);
+
+        AbstractWriteResponseHandler<IMutation> writeHandler = rs.getWriteResponseHandler(WritePathReplicaPlan.createReplicaPlan(keyspace, naturalEndpoints, pendingEndpoints),
+                                                                                          consistency_level, null, writeType, queryStartNanoTime);
         BatchlogResponseHandler<IMutation> batchHandler = new BatchlogResponseHandler<>(writeHandler, batchConsistencyLevel.blockFor(keyspace), cleanup, queryStartNanoTime);
         return new WriteResponseHandlerWrapper(batchHandler, mutation);
     }
@@ -1221,7 +1228,10 @@ public class StorageProxy implements StorageProxyMBean
         String keyspaceName = mutation.getKeyspaceName();
         Token tk = mutation.key().getToken();
         ReplicaCollection pendingEndpoints = StorageService.instance.getTokenMetadata().pendingEndpointsFor(tk, keyspaceName);
-        AbstractWriteResponseHandler<IMutation> writeHandler = rs.getWriteResponseHandler(naturalEndpoints, pendingEndpoints, consistency_level, () -> {
+
+        WritePathReplicaPlan plan = WritePathReplicaPlan.createReplicaPlan(keyspace, naturalEndpoints, pendingEndpoints);
+
+        AbstractWriteResponseHandler<IMutation> writeHandler = rs.getWriteResponseHandler(plan, consistency_level, () -> {
             long delay = Math.max(0, System.currentTimeMillis() - baseComplete.get());
             viewWriteMetrics.viewWriteLatency.update(delay, TimeUnit.MILLISECONDS);
         }, writeType, queryStartNanoTime);
@@ -1515,12 +1525,14 @@ public class StorageProxy implements StorageProxyMBean
         {
             // Exit now if we can't fulfill the CL here instead of forwarding to the leader replica
             String keyspaceName = cm.getKeyspaceName();
+            Keyspace keyspace = Keyspace.open(keyspaceName);
             AbstractReplicationStrategy rs = Keyspace.open(keyspaceName).getReplicationStrategy();
             Token tk = cm.key().getToken();
             ReplicaList naturalEndpoints = StorageService.instance.getNaturalReplicas(keyspaceName, tk);
             ReplicaCollection pendingEndpoints = StorageService.instance.getTokenMetadata().pendingEndpointsFor(tk, keyspaceName);
 
-            rs.getWriteResponseHandler(naturalEndpoints, pendingEndpoints, cm.consistency(), null, WriteType.COUNTER, queryStartNanoTime).assureSufficientLiveNodes();
+            rs.getWriteResponseHandler(WritePathReplicaPlan.createReplicaPlan(keyspace, naturalEndpoints, pendingEndpoints),
+                                       cm.consistency(), null, WriteType.COUNTER, queryStartNanoTime).assureSufficientLiveNodes();
 
             // Forward the actual update to the chosen leader replica
             AbstractWriteResponseHandler<IMutation> responseHandler = new WriteResponseHandler<>(replica, WriteType.COUNTER, queryStartNanoTime);

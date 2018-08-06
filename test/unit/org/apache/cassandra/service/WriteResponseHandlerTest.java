@@ -234,7 +234,7 @@ public class WriteResponseHandlerTest
 
     private static AbstractWriteResponseHandler createWriteResponseHandler(ConsistencyLevel cl, ConsistencyLevel ideal, long queryStartTime)
     {
-        return ks.getReplicationStrategy().getWriteResponseHandler(targets, ReplicaList.of(), cl, new Runnable() {
+        return ks.getReplicationStrategy().getWriteResponseHandler(WritePathReplicaPlan.createReplicaPlan(null, targets, ReplicaList.of()), cl, new Runnable() {
             public void run()
             {
 

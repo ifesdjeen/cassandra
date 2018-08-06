@@ -36,8 +36,6 @@ import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.locator.Replica;
 import org.apache.cassandra.locator.ReplicaList;
-import org.apache.cassandra.locator.ReplicaSet;
-import org.apache.cassandra.locator.ReplicaCollection;
 import org.apache.cassandra.locator.Replicas;
 import org.apache.cassandra.schema.SchemaConstants;
 import org.apache.cassandra.cql3.UntypedResultSet;
@@ -58,6 +56,7 @@ import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.schema.TableId;
 import org.apache.cassandra.service.StorageService;
+import org.apache.cassandra.service.WritePathReplicaPlan;
 import org.apache.cassandra.service.WriteResponseHandler;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.UUIDGen;
@@ -456,6 +455,7 @@ public class BatchlogManager implements BatchlogManagerMBean
         {
             ReplicaList liveReplicas = new ReplicaList();
             String ks = mutation.getKeyspaceName();
+            Keyspace keyspace = Keyspace.open(ks);
             Token tk = mutation.key().getToken();
 
             for (Replica replica : StorageService.instance.getNaturalAndPendingReplicas(ks, tk))
@@ -482,7 +482,7 @@ public class BatchlogManager implements BatchlogManagerMBean
 
             Replicas.checkFull(liveReplicas);
 
-            ReplayWriteResponseHandler<Mutation> handler = new ReplayWriteResponseHandler<>(liveReplicas, System.nanoTime());
+            ReplayWriteResponseHandler<Mutation> handler = new ReplayWriteResponseHandler<>(keyspace, liveReplicas, System.nanoTime());
             MessageOut<Mutation> message = mutation.createMessage();
             for (Replica replica : liveReplicas)
                 MessagingService.instance().sendWriteRR(message, replica, handler, false);
@@ -505,16 +505,17 @@ public class BatchlogManager implements BatchlogManagerMBean
         {
             private final Set<InetAddressAndPort> undelivered = Collections.newSetFromMap(new ConcurrentHashMap<>());
 
-            ReplayWriteResponseHandler(ReplicaList writeReplicas, long queryStartNanoTime)
+            ReplayWriteResponseHandler(Keyspace keyspace, ReplicaList writeReplicas, long queryStartNanoTime)
             {
-                super(writeReplicas, ReplicaList.of(), null, null, null, WriteType.UNLOGGED_BATCH, queryStartNanoTime);
+                super(WritePathReplicaPlan.createReplicaPlan(keyspace, writeReplicas, ReplicaList.of()),
+                      null, null, null, WriteType.UNLOGGED_BATCH, queryStartNanoTime);
                 Iterables.addAll(undelivered, writeReplicas.asEndpoints());
             }
 
             @Override
             protected int totalBlockFor()
             {
-                return this.naturalReplicas.size();
+                return this.replicaPlan.targetReplicas().size();
             }
 
             @Override
