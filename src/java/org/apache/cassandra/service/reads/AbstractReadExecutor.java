@@ -100,7 +100,7 @@ public abstract class AbstractReadExecutor
         // TODO: we need this when talking with pre-3.0 nodes. So if we preserve the digest format moving forward, we can get rid of this once
         // we stop being compatible with pre-3.0 nodes.
         int digestVersion = MessagingService.current_version;
-        for (Replica replica : replicaPlan.targetReplicas)
+        for (Replica replica : replicaPlan.targetReplicas())
             digestVersion = Math.min(digestVersion, MessagingService.instance().getVersion(replica.getEndpoint()));
         command.setDigestVersion(digestVersion);
     }
@@ -164,13 +164,6 @@ public abstract class AbstractReadExecutor
      * to see if the original requests are answered first.
      */
     public abstract void maybeTryAdditionalReplicas();
-
-    /**
-     * Get the replicas involved in the [finished] request.
-     *
-     * @return target replicas + the extra replica, *IF* we speculated.
-     */
-    public abstract ReplicaList getContactedReplicas();
 
     /**
      * send the initial set of requests
@@ -322,9 +315,9 @@ public abstract class AbstractReadExecutor
 
         public void executeAsync()
         {
-            makeDataRequests(replicaPlan.targetReplicas.subList(0, 1));
-            if (replicaPlan.targetReplicas.size() > 1)
-                makeDigestRequests(replicaPlan.targetReplicas.subList(1, replicaPlan.targetReplicas.size()));
+            makeDataRequests(replicaPlan.targetReplicas().subList(0, 1));
+            if (replicaPlan.targetReplicas().size() > 1)
+                makeDigestRequests(replicaPlan.targetReplicas().subList(1, replicaPlan.targetReplicas().size()));
         }
 
         public void maybeTryAdditionalReplicas()
@@ -333,12 +326,6 @@ public abstract class AbstractReadExecutor
             {
                 cfs.metric.speculativeInsufficientReplicas.inc();
             }
-        }
-
-        // TODO: might be not necessary anymore
-        public ReplicaList getContactedReplicas()
-        {
-            return replicaPlan.targetReplicas;
         }
     }
 
@@ -358,7 +345,7 @@ public abstract class AbstractReadExecutor
 
         public void executeAsync()
         {
-            ReplicaList initialReplicas = replicaPlan.targetReplicas;
+            ReplicaList initialReplicas = replicaPlan.targetReplicas();
 
             if (handler.blockfor < initialReplicas.size())
             {
@@ -385,10 +372,10 @@ public abstract class AbstractReadExecutor
             {
                 //Handle speculation stats first in case the callback fires immediately
                 speculated = true;
-                replicaPlan.targetReplicas = replicaPlan.allReplicas.subList(0, replicaPlan.targetReplicas.size() + 1);
+                replicaPlan.targetReplicas = replicaPlan.allReplicas().subList(0, replicaPlan.targetReplicas().size() + 1);
                 cfs.metric.speculativeRetries.inc();
                 // Could be waiting on the data, or on enough digests.
-                Replica extraReplica = Iterables.getLast(replicaPlan.targetReplicas);
+                Replica extraReplica = Iterables.getLast(replicaPlan.targetReplicas());
                 ReadCommand retryCommand = command;
 
                 if (handler.resolver.isDataPresent() && extraReplica.isFull())
@@ -399,11 +386,6 @@ public abstract class AbstractReadExecutor
                 logger.trace("speculating read retry on {}", extraReplica);
                 MessagingService.instance().sendRRWithFailure(retryCommand.createMessage(), extraReplica.getEndpoint(), handler);
             }
-        }
-
-        public ReplicaList getContactedReplicas()
-        {
-            return replicaPlan.targetReplicas;
         }
 
         @Override
@@ -433,17 +415,12 @@ public abstract class AbstractReadExecutor
             // no-op
         }
 
-        public ReplicaList getContactedReplicas()
-        {
-            return replicaPlan.targetReplicas;
-        }
-
         @Override
         public void executeAsync()
         {
-            makeDataRequests(replicaPlan.targetReplicas.subList(0, replicaPlan.targetReplicas.size() > 1 ? 2 : 1));
-            if (replicaPlan.targetReplicas.size() > 2)
-                makeDigestRequests(replicaPlan.targetReplicas.subList(2, replicaPlan.targetReplicas.size()));
+            makeDataRequests(replicaPlan.targetReplicas().subList(0, replicaPlan.targetReplicas().size() > 1 ? 2 : 1));
+            if (replicaPlan.targetReplicas().size() > 2)
+                makeDigestRequests(replicaPlan.targetReplicas().subList(2, replicaPlan.targetReplicas().size()));
             cfs.metric.speculativeRetries.inc();
         }
 

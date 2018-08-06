@@ -1965,11 +1965,6 @@ public class StorageProxy implements StorageProxyMBean
         {
             return new RangeForQuery(keyspace, range, allReplicas, newTargets);
         }
-
-        public RangeForQuery withRange(AbstractBounds<PartitionPosition> newRange)
-        {
-            return new RangeForQuery(keyspace, newRange, allReplicas, targetReplicas);
-        }
     }
 
     private static class RangeIterator extends AbstractIterator<RangeForQuery>
@@ -2005,7 +2000,7 @@ public class StorageProxy implements StorageProxyMBean
             ReplicaList liveReplicas = getLiveSortedReplicas(keyspace, range.right);
 
             int blockFor = consistency.blockFor(keyspace);
-            ReplicaList targetReplicas = consistency.filterForQuery(keyspace, liveReplicas)
+            ReplicaList targetReplicas = consistency.filterForQuery(keyspace, liveReplicas);
             int minResponses = Math.min(targetReplicas.size(), blockFor);
 
             return new RangeForQuery(keyspace, range,
@@ -2200,7 +2195,7 @@ public class StorageProxy implements StorageProxyMBean
         /**
          * Queries the provided sub-range.
          *
-         * @param toQuery the subRange to query.
+         * @param plan the subRange to query.
          * @param isFirst in the case where multiple queries are sent in parallel, whether that's the first query on
          * that batch or not. The reason it matters is that whe paging queries, the command (more specifically the
          * {@code DataLimits}) may have "state" information and that state may only be valid for the first query (in
