@@ -26,7 +26,6 @@ import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
 
 import org.apache.cassandra.db.ConsistencyLevel;
-import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.Keyspace;
 import org.apache.cassandra.db.Mutation;
 import org.apache.cassandra.db.ReadCommand;
@@ -39,6 +38,7 @@ import org.apache.cassandra.locator.Replica;
 import org.apache.cassandra.locator.ReplicaList;
 import org.apache.cassandra.locator.ReplicaSet;
 import org.apache.cassandra.net.MessageIn;
+import org.apache.cassandra.service.ReplicaPlan;
 import org.apache.cassandra.service.reads.repair.PartitionIteratorMergeListener;
 import org.apache.cassandra.service.reads.repair.ReadRepair;
 
@@ -47,7 +47,7 @@ public class DigestResolver extends ResponseResolver
     private volatile MessageIn<ReadResponse> dataResponse;
     private volatile boolean hasTransientResponse = false;
 
-    public DigestResolver(Keyspace keyspace, ReadCommand command, ConsistencyLevel consistency, AbstractReadExecutor.ReplicaPlan replicas, ReadRepair readRepair, long queryStartNanoTime)
+    public DigestResolver(Keyspace keyspace, ReadCommand command, ConsistencyLevel consistency, ReplicaPlan replicas, ReadRepair readRepair, long queryStartNanoTime)
     {
         super(keyspace, command, consistency, replicas, readRepair, queryStartNanoTime);
         Preconditions.checkArgument(command instanceof SinglePartitionReadCommand,

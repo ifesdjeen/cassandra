@@ -40,7 +40,7 @@ import org.apache.cassandra.locator.Replica;
 import org.apache.cassandra.locator.ReplicaList;
 import org.apache.cassandra.metrics.ReadRepairMetrics;
 import org.apache.cassandra.net.MessagingService;
-import org.apache.cassandra.service.reads.AbstractReadExecutor;
+import org.apache.cassandra.service.ReplicaPlan;
 import org.apache.cassandra.service.reads.DataResolver;
 import org.apache.cassandra.service.reads.DigestResolver;
 import org.apache.cassandra.service.reads.ReadCallback;
@@ -58,7 +58,7 @@ public class BlockingReadRepair implements ReadRepair
     private final long queryStartNanoTime;
     private final ConsistencyLevel consistency;
     private final ColumnFamilyStore cfs;
-    private final AbstractReadExecutor.ReplicaPlan replicaPlan;
+    private final ReplicaPlan replicaPlan;
 
     private final Queue<BlockingPartitionRepair> repairs = new ConcurrentLinkedQueue<>();
 
@@ -81,7 +81,7 @@ public class BlockingReadRepair implements ReadRepair
     }
 
     public BlockingReadRepair(ReadCommand command,
-                              AbstractReadExecutor.ReplicaPlan replicaPlan,
+                              ReplicaPlan replicaPlan,
                               long queryStartNanoTime,
                               ConsistencyLevel consistency)
     {

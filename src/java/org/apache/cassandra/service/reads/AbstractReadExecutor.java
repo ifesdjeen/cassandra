@@ -17,18 +17,15 @@
  */
 package org.apache.cassandra.service.reads;
 
-import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Iterables;
-import com.google.common.collect.Maps;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.concurrent.Stage;
 import org.apache.cassandra.concurrent.StageManager;
-import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.db.DecoratedKey;
@@ -39,16 +36,14 @@ import org.apache.cassandra.db.partitions.PartitionIterator;
 import org.apache.cassandra.exceptions.ReadFailureException;
 import org.apache.cassandra.exceptions.ReadTimeoutException;
 import org.apache.cassandra.exceptions.UnavailableException;
-import org.apache.cassandra.locator.IEndpointSnitch;
 import org.apache.cassandra.locator.InetAddressAndPort;
-import org.apache.cassandra.locator.NetworkTopologyStrategy;
 import org.apache.cassandra.locator.Replica;
 import org.apache.cassandra.locator.ReplicaCollection;
 import org.apache.cassandra.locator.ReplicaList;
-import org.apache.cassandra.locator.ReplicaSet;
 import org.apache.cassandra.locator.Replicas;
 import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
+import org.apache.cassandra.service.ReplicaPlan;
 import org.apache.cassandra.service.StorageProxy;
 import org.apache.cassandra.service.reads.repair.BlockingReadRepair;
 import org.apache.cassandra.service.reads.repair.ReadRepair;
@@ -230,73 +225,6 @@ public abstract class AbstractReadExecutor
 
     void onReadTimeout() {}
 
-    public static class ReplicaPlan {
-        protected final ReplicaList allReplicas;
-        // Might be modified by speculative strategy
-        protected volatile ReplicaList targetReplicas;
-
-        protected final Keyspace keyspace;
-        protected final Map<InetAddressAndPort, Replica> replicaMap;
-
-        public ReplicaPlan(Keyspace keyspace, ReplicaList allReplicas, ReplicaList targetReplicas)
-        {
-            this.keyspace = keyspace;
-            this.allReplicas = allReplicas;
-            this.targetReplicas = targetReplicas;
-            this.replicaMap = Maps.newHashMapWithExpectedSize(allReplicas.size());
-
-            for (Replica replica: allReplicas)
-                replicaMap.put(replica.getEndpoint(), replica);
-        }
-
-        public Replica getReplicaFor(InetAddressAndPort endpoint)
-        {
-            Replica replica = replicaMap.get(endpoint);
-
-            if (replica != null)
-                return replica;
-
-            throw new IllegalArgumentException("Cannot find replica for " + endpoint);
-        }
-
-        /**
-         * Returns all of the endpoints that are replicas for the given key that were not contacted during this query.
-         * If the consistency level is datacenter local, only the endpoints in the local dc will be returned.
-         */
-        public ReplicaCollection additionalReplicas(ConsistencyLevel consistency)
-        {
-            ReplicaSet contacted = new ReplicaSet(targetReplicas);
-
-            if (consistency.isDatacenterLocal() && keyspace.getReplicationStrategy() instanceof NetworkTopologyStrategy)
-            {
-                IEndpointSnitch snitch = keyspace.getReplicationStrategy().snitch;
-                String localDC = DatabaseDescriptor.getLocalDataCenter();
-
-                return allReplicas.filter(replica -> !contacted.containsReplica(replica) &&
-                                                     snitch.getDatacenter(replica).equals(localDC));
-            }
-            else
-            {
-                return allReplicas.filter(replica -> !contacted.containsReplica(replica));
-            }
-        }
-
-        public ReplicaList allReplicas()
-        {
-            return allReplicas;
-        }
-
-        public ReplicaList targetReplicas()
-        {
-            return targetReplicas;
-        }
-
-        public ReplicaPlan withTargets(ReplicaList targets)
-        {
-            return new ReplicaPlan(keyspace, allReplicas, targets);
-        }
-    }
-
     public static class NeverSpeculatingReadExecutor extends AbstractReadExecutor
     {
         /**
@@ -371,7 +299,7 @@ public abstract class AbstractReadExecutor
             {
                 //Handle speculation stats first in case the callback fires immediately
                 speculated = true;
-                replicaPlan.targetReplicas = replicaPlan.allReplicas().subList(0, replicaPlan.targetReplicas().size() + 1);
+                replicaPlan.resetTargetReplicas(replicaPlan.allReplicas().subList(0, replicaPlan.targetReplicas().size() + 1));
                 cfs.metric.speculativeRetries.inc();
                 // Could be waiting on the data, or on enough digests.
                 Replica extraReplica = Iterables.getLast(replicaPlan.targetReplicas());

@@ -23,8 +23,8 @@ import com.google.common.base.Joiner;
 import com.google.common.collect.Iterables;
 
 import org.apache.cassandra.locator.Replica;
-import org.apache.cassandra.locator.ReplicaCollection;
 import org.apache.cassandra.locator.ReplicaList;
+import org.apache.cassandra.service.ReplicaPlan;
 import org.apache.cassandra.service.reads.repair.ReadRepair;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.filter.*;
@@ -41,7 +41,7 @@ public class DataResolver extends ResponseResolver
 {
     private final boolean enforceStrictLiveness;
 
-    public DataResolver(Keyspace keyspace, ReadCommand command, ConsistencyLevel consistency, AbstractReadExecutor.ReplicaPlan replicaPlan, ReadRepair readRepair, long queryStartNanoTime)
+    public DataResolver(Keyspace keyspace, ReadCommand command, ConsistencyLevel consistency, ReplicaPlan replicaPlan, ReadRepair readRepair, long queryStartNanoTime)
     {
         super(keyspace, command, consistency, replicaPlan, readRepair, queryStartNanoTime);
         this.enforceStrictLiveness = command.metadata().enforceStrictLiveness();

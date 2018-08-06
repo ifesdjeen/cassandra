@@ -39,6 +39,7 @@ import org.apache.cassandra.locator.ReplicaUtils;
 import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.schema.KeyspaceParams;
+import org.apache.cassandra.service.ReplicaPlan;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.fail;
@@ -214,13 +215,13 @@ public class ReadExecutorTest
 
     }
 
-    private AbstractReadExecutor.ReplicaPlan plan(ReplicaList targets)
+    private ReplicaPlan plan(ReplicaList targets)
     {
         return plan(targets, targets);
     }
 
-    private AbstractReadExecutor.ReplicaPlan plan(ReplicaList all, ReplicaList target)
+    private ReplicaPlan plan(ReplicaList all, ReplicaList target)
     {
-        return new AbstractReadExecutor.ReplicaPlan(ks, all, target);
+        return new ReplicaPlan(ks, all, target);
     }
 }

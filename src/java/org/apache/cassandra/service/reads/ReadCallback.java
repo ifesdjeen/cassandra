@@ -37,10 +37,10 @@ import org.apache.cassandra.exceptions.ReadTimeoutException;
 import org.apache.cassandra.exceptions.RequestFailureReason;
 import org.apache.cassandra.exceptions.UnavailableException;
 import org.apache.cassandra.locator.InetAddressAndPort;
-import org.apache.cassandra.locator.ReplicaList;
 import org.apache.cassandra.net.IAsyncCallbackWithFailure;
 import org.apache.cassandra.net.MessageIn;
 import org.apache.cassandra.net.MessagingService;
+import org.apache.cassandra.service.ReplicaPlan;
 import org.apache.cassandra.tracing.Tracing;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.concurrent.SimpleCondition;
@@ -53,7 +53,7 @@ public class ReadCallback implements IAsyncCallbackWithFailure<ReadResponse>
     final SimpleCondition condition = new SimpleCondition();
     private final long queryStartNanoTime;
     final int blockfor;
-    final AbstractReadExecutor.ReplicaPlan replicas;
+    final ReplicaPlan replicas;
     private final ReadCommand command;
     private final ConsistencyLevel consistencyLevel;
     private static final AtomicIntegerFieldUpdater<ReadCallback> recievedUpdater
@@ -67,7 +67,7 @@ public class ReadCallback implements IAsyncCallbackWithFailure<ReadResponse>
     private final Keyspace keyspace;
 
     // Calculates blocked for
-    public static ReadCallback create(ResponseResolver resolver, ConsistencyLevel consistencyLevel, ReadCommand command, AbstractReadExecutor.ReplicaPlan replicaPlan, long queryStartNanoTime)
+    public static ReadCallback create(ResponseResolver resolver, ConsistencyLevel consistencyLevel, ReadCommand command, ReplicaPlan replicaPlan, long queryStartNanoTime)
     {
         Keyspace keyspace = Keyspace.open(command.metadata().keyspace);
         return new ReadCallback(resolver,
@@ -79,7 +79,7 @@ public class ReadCallback implements IAsyncCallbackWithFailure<ReadResponse>
                                 queryStartNanoTime);
     }
 
-    public ReadCallback(ResponseResolver resolver, ConsistencyLevel consistencyLevel, int blockfor, ReadCommand command, Keyspace keyspace, AbstractReadExecutor.ReplicaPlan replicas, long queryStartNanoTime)
+    public ReadCallback(ResponseResolver resolver, ConsistencyLevel consistencyLevel, int blockfor, ReadCommand command, Keyspace keyspace, ReplicaPlan replicas, long queryStartNanoTime)
     {
         this.command = command;
         this.keyspace = keyspace;

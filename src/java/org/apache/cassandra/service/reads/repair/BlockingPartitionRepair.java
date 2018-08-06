@@ -36,7 +36,6 @@ import org.apache.cassandra.db.partitions.PartitionUpdate;
 import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.locator.Replica;
 import org.apache.cassandra.locator.ReplicaCollection;
-import org.apache.cassandra.locator.ReplicaSet;
 import org.apache.cassandra.locator.Replicas;
 import org.apache.cassandra.metrics.ReadRepairMetrics;
 import org.apache.cassandra.net.IAsyncCallback;
@@ -44,7 +43,7 @@ import org.apache.cassandra.net.MessageIn;
 import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.schema.TableId;
-import org.apache.cassandra.service.reads.AbstractReadExecutor;
+import org.apache.cassandra.service.ReplicaPlan;
 import org.apache.cassandra.tracing.Tracing;
 
 import static org.apache.cassandra.service.reads.repair.ReadRepair.createRepairMutation;
@@ -52,13 +51,13 @@ import static org.apache.cassandra.service.reads.repair.ReadRepair.createRepairM
 public class BlockingPartitionRepair extends AbstractFuture<Object> implements IAsyncCallback<Object>
 {
     private final ConsistencyLevel consistency;
-    private final AbstractReadExecutor.ReplicaPlan replicaPlan;
+    private final ReplicaPlan replicaPlan;
     private final Map<Replica, Mutation> pendingRepairs;
     private final CountDownLatch latch;
 
     private volatile long mutationsSentTime;
 
-    public BlockingPartitionRepair(ConsistencyLevel consistency, Map<Replica, Mutation> repairs, int maxBlockFor, AbstractReadExecutor.ReplicaPlan replicaPlan)
+    public BlockingPartitionRepair(ConsistencyLevel consistency, Map<Replica, Mutation> repairs, int maxBlockFor, ReplicaPlan replicaPlan)
     {
         this.consistency = consistency;
         this.pendingRepairs = new ConcurrentHashMap<>(repairs);

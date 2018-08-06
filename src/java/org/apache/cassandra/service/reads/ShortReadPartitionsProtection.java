@@ -39,8 +39,8 @@ import org.apache.cassandra.dht.ExcludingBounds;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.locator.Replica;
 import org.apache.cassandra.locator.ReplicaList;
-import org.apache.cassandra.locator.Replicas;
 import org.apache.cassandra.net.MessagingService;
+import org.apache.cassandra.service.ReplicaPlan;
 import org.apache.cassandra.service.reads.repair.NoopReadRepair;
 import org.apache.cassandra.service.StorageProxy;
 import org.apache.cassandra.tracing.Tracing;
@@ -173,7 +173,7 @@ public class ShortReadPartitionsProtection extends Transformation<UnfilteredRowI
     {
         Keyspace keyspace = Keyspace.open(command.metadata().keyspace);
         ReplicaList singleReplica = ReplicaList.of(source);
-        AbstractReadExecutor.ReplicaPlan plan = new AbstractReadExecutor.ReplicaPlan(keyspace, singleReplica, singleReplica);
+        ReplicaPlan plan = new ReplicaPlan(keyspace, singleReplica, singleReplica);
         DataResolver resolver = new DataResolver(keyspace, cmd, ConsistencyLevel.ONE, plan, NoopReadRepair.instance, queryStartNanoTime);
         ReadCallback handler = ReadCallback.create(resolver, ConsistencyLevel.ONE, cmd, plan, queryStartNanoTime);
 

@@ -30,6 +30,7 @@ import org.apache.cassandra.db.partitions.PartitionUpdate;
 import org.apache.cassandra.db.rows.Row;
 import org.apache.cassandra.locator.ReplicaList;
 import org.apache.cassandra.schema.TableMetadata;
+import org.apache.cassandra.service.ReplicaPlan;
 import org.apache.cassandra.service.reads.repair.NoopReadRepair;
 import org.apache.cassandra.service.reads.repair.TestableReadRepair;
 
@@ -168,8 +169,8 @@ public class DigestResolverTest extends AbstractReadResponseTest
         Assert.assertFalse(readRepair.sent.containsKey(EP3));
     }
 
-    private AbstractReadExecutor.ReplicaPlan plan(ReplicaList replicas)
+    private ReplicaPlan plan(ReplicaList replicas)
     {
-        return new AbstractReadExecutor.ReplicaPlan(ks, replicas, replicas);
+        return new ReplicaPlan(ks, replicas, replicas);
     }
 }

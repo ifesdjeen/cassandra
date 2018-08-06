@@ -25,29 +25,16 @@ import com.google.common.collect.Iterators;
 import com.google.common.collect.Sets;
 import org.junit.*;
 
-import org.apache.cassandra.SchemaLoader;
 import org.apache.cassandra.Util;
 import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.locator.ReplicaList;
 import org.apache.cassandra.locator.ReplicaUtils;
-import org.apache.cassandra.schema.TableMetadata;
-import org.apache.cassandra.schema.ColumnMetadata;
-import org.apache.cassandra.config.DatabaseDescriptor;
-import org.apache.cassandra.cql3.ColumnIdentifier;
 import org.apache.cassandra.db.*;
-import org.apache.cassandra.db.marshal.ByteType;
-import org.apache.cassandra.db.marshal.IntegerType;
-import org.apache.cassandra.db.marshal.MapType;
 import org.apache.cassandra.db.rows.*;
-import org.apache.cassandra.db.marshal.AsciiType;
-import org.apache.cassandra.db.marshal.BytesType;
 import org.apache.cassandra.db.partitions.*;
-import org.apache.cassandra.exceptions.ConfigurationException;
-import org.apache.cassandra.net.*;
-import org.apache.cassandra.schema.KeyspaceParams;
+import org.apache.cassandra.service.ReplicaPlan;
 import org.apache.cassandra.service.reads.repair.TestableReadRepair;
 import org.apache.cassandra.utils.ByteBufferUtil;
-import org.apache.cassandra.utils.FBUtilities;
 
 import static org.apache.cassandra.Util.assertClustering;
 import static org.apache.cassandra.Util.assertColumn;
@@ -939,8 +926,8 @@ public class DataResolverTest extends AbstractReadResponseTest
         assertEquals(update.metadata().name, cfm.name);
     }
 
-    private AbstractReadExecutor.ReplicaPlan plan(ReplicaList replicas)
+    private ReplicaPlan plan(ReplicaList replicas)
     {
-        return new AbstractReadExecutor.ReplicaPlan(ks, replicas, replicas);
+        return new ReplicaPlan(ks, replicas, replicas);
     }
 }

@@ -1953,7 +1953,7 @@ public class StorageProxy implements StorageProxyMBean
         return (maxExpectedResults / DatabaseDescriptor.getNumTokens()) / keyspace.getReplicationStrategy().getReplicationFactor().replicas;
     }
 
-    private static class RangeForQuery extends AbstractReadExecutor.ReplicaPlan
+    private static class RangeForQuery extends ReplicaPlan
     {
         public final AbstractBounds<PartitionPosition> range;
 

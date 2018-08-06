@@ -25,6 +25,7 @@ import org.apache.cassandra.db.Keyspace;
 import org.apache.cassandra.db.ReadCommand;
 import org.apache.cassandra.db.ReadResponse;
 import org.apache.cassandra.net.MessageIn;
+import org.apache.cassandra.service.ReplicaPlan;
 import org.apache.cassandra.service.reads.repair.ReadRepair;
 import org.apache.cassandra.utils.concurrent.Accumulator;
 
@@ -35,14 +36,14 @@ public abstract class ResponseResolver
     protected final Keyspace keyspace;
     protected final ReadCommand command;
     protected final ConsistencyLevel consistency;
-    protected final AbstractReadExecutor.ReplicaPlan replicaPlan;
+    protected final ReplicaPlan replicaPlan;
     protected final ReadRepair readRepair;
 
     // Accumulator gives us non-blocking thread-safety with optimal algorithmic constraints
     protected final Accumulator<MessageIn<ReadResponse>> responses;
     protected final long queryStartNanoTime;
 
-    public ResponseResolver(Keyspace keyspace, ReadCommand command, ConsistencyLevel consistency, AbstractReadExecutor.ReplicaPlan replicaPlan, ReadRepair readRepair, long queryStartNanoTime)
+    public ResponseResolver(Keyspace keyspace, ReadCommand command, ConsistencyLevel consistency, ReplicaPlan replicaPlan, ReadRepair readRepair, long queryStartNanoTime)
     {
         this.keyspace = keyspace;
         this.command = command;

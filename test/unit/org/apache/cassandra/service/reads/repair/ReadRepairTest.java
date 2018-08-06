@@ -23,7 +23,6 @@ import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 import com.google.common.collect.Iterables;
-import com.google.common.collect.Lists;
 import org.junit.Assert;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -45,7 +44,6 @@ import org.apache.cassandra.db.rows.Cell;
 import org.apache.cassandra.db.rows.Row;
 import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.locator.Replica;
-import org.apache.cassandra.locator.ReplicaCollection;
 import org.apache.cassandra.locator.ReplicaList;
 import org.apache.cassandra.locator.ReplicaUtils;
 import org.apache.cassandra.net.MessageOut;
@@ -54,7 +52,7 @@ import org.apache.cassandra.schema.KeyspaceParams;
 import org.apache.cassandra.schema.MigrationManager;
 import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.schema.Tables;
-import org.apache.cassandra.service.reads.AbstractReadExecutor;
+import org.apache.cassandra.service.ReplicaPlan;
 import org.apache.cassandra.utils.ByteBufferUtil;
 
 public class ReadRepairTest
@@ -71,7 +69,7 @@ public class ReadRepairTest
     {
         public InstrumentedReadRepairHandler(ConsistencyLevel consistency, Map<Replica, Mutation> repairs, int maxBlockFor, ReplicaList all, ReplicaList targets)
         {
-            super(consistency, repairs, maxBlockFor, new AbstractReadExecutor.ReplicaPlan(ks, all, targets));
+            super(consistency, repairs, maxBlockFor, new ReplicaPlan(ks, all, targets));
         }
 
         Map<InetAddressAndPort, Mutation> mutationsSent = new HashMap<>();

@@ -39,6 +39,7 @@ import org.apache.cassandra.db.rows.Row;
 import org.apache.cassandra.locator.ReplicaList;
 import org.apache.cassandra.schema.Schema;
 import org.apache.cassandra.schema.TableMetadata;
+import org.apache.cassandra.service.ReplicaPlan;
 import org.apache.cassandra.service.reads.repair.TestableReadRepair;
 import org.apache.cassandra.utils.ByteBufferUtil;
 
@@ -207,8 +208,8 @@ public class DataResolverTransientTest extends AbstractReadResponseTest
 
     }
 
-    private AbstractReadExecutor.ReplicaPlan plan(ReplicaList replicas)
+    private ReplicaPlan plan(ReplicaList replicas)
     {
-        return new AbstractReadExecutor.ReplicaPlan(ks, replicas, replicas);
+        return new ReplicaPlan(ks, replicas, replicas);
     }
 }
