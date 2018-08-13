@@ -18,6 +18,8 @@
 
 package org.apache.cassandra.service;
 
+import org.apache.cassandra.locator.EndpointsByReplica;
+import org.apache.cassandra.locator.ReplicaCollection;
 import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -32,7 +34,6 @@ import org.apache.cassandra.locator.IEndpointSnitch;
 import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.locator.Replica;
 import org.apache.cassandra.locator.ReplicaMultimap;
-import org.apache.cassandra.locator.ReplicaSet;
 import org.apache.cassandra.locator.SimpleStrategy;
 import org.apache.cassandra.locator.TokenMetadata;
 
@@ -62,11 +63,11 @@ public class StorageServiceTest
     private static final Token elevenToken = new RandomPartitioner.BigIntegerToken("11");
     private static final Token oneToken = new RandomPartitioner.BigIntegerToken("1");
 
-    Range<Token> aRange = new Range(oneToken, threeToken);
-    Range<Token> bRange = new Range(threeToken, sixToken);
-    Range<Token> cRange = new Range(sixToken, nineToken);
-    Range<Token> dRange = new Range(nineToken, elevenToken);
-    Range<Token> eRange = new Range(elevenToken, oneToken);
+    Range<Token> aRange = new Range<>(oneToken, threeToken);
+    Range<Token> bRange = new Range<>(threeToken, sixToken);
+    Range<Token> cRange = new Range<>(sixToken, nineToken);
+    Range<Token> dRange = new Range<>(nineToken, elevenToken);
+    Range<Token> eRange = new Range<>(elevenToken, oneToken);
 
     @Before
     public void setUp()
@@ -102,21 +103,19 @@ public class StorageServiceTest
                                   com.google.common.collect.ImmutableMap.of("replication_factor", "3/1"));
     }
 
-    public static <K>  void assertMultimapEqualsIgnoreOrder(ReplicaMultimap<K, ReplicaSet> a, ReplicaMultimap<K, ReplicaSet> b)
+    public static <K, C extends ReplicaCollection<? extends C>>  void assertMultimapEqualsIgnoreOrder(ReplicaMultimap<K, C> a, ReplicaMultimap<K, C> b)
     {
         if (!a.keySet().equals(b.keySet()))
             assertEquals(a, b);
         for (K key : a.keySet())
         {
-            ReplicaSet aSet = a.get(key);
-            ReplicaSet bSet = b.get(key);
-            if (a == null && b == null)
-                return;
-            if (aSet.size() != bSet.size())
+            C ac = a.get(key);
+            C bc = b.get(key);
+            if (ac.size() != bc.size())
                 assertEquals(a, b);
-            for (Replica r : aSet)
+            for (Replica r : ac)
             {
-                if (!bSet.anyMatch(r::equals))
+                if (!bc.contains(r))
                     assertEquals(a, b);
             }
         }
@@ -136,14 +135,14 @@ public class StorageServiceTest
 
         AbstractReplicationStrategy strat = simpleStrategy(tmd);
 
-        ReplicaMultimap<Replica, ReplicaSet> result = StorageService.getChangedReplicasForLeaving("StorageServiceTest", aAddress, tmd, strat);
+        EndpointsByReplica result = StorageService.getChangedReplicasForLeaving("StorageServiceTest", aAddress, tmd, strat);
         System.out.println(result);
-        ReplicaMultimap<Replica, ReplicaSet> expectedResult = ReplicaMultimap.set();
+        EndpointsByReplica.Mutable expectedResult = new EndpointsByReplica.Mutable();
         expectedResult.put(new Replica(aAddress, aRange, true), new Replica(cAddress, new Range<>(oneToken, sixToken), true));
         expectedResult.put(new Replica(aAddress, aRange, true), new Replica(dAddress, new Range<>(oneToken, sixToken), false));
         expectedResult.put(new Replica(aAddress, eRange, true), new Replica(bAddress, eRange, true));
         expectedResult.put(new Replica(aAddress, eRange, true), new Replica(cAddress, eRange, false));
         expectedResult.put(new Replica(aAddress, dRange, false), new Replica(bAddress, dRange, false));
-        assertMultimapEqualsIgnoreOrder(result, expectedResult);
+        assertMultimapEqualsIgnoreOrder(result, expectedResult.asImmutableView());
     }
 }

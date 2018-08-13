@@ -39,7 +39,7 @@ public class WriteCallbackInfo extends CallbackInfo
                              ConsistencyLevel consistencyLevel,
                              boolean allowHints)
     {
-        super(replica.getEndpoint(), callback, serializer, true);
+        super(replica.endpoint(), callback, serializer, true);
         assert message != null;
         this.mutation = shouldHint(allowHints, message, consistencyLevel);
         //Local writes shouldn't go through messaging service (https://issues.apache.org/jira/browse/CASSANDRA-10477)

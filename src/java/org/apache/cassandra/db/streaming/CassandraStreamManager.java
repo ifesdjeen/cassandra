@@ -20,7 +20,6 @@ package org.apache.cassandra.db.streaming;
 
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -31,6 +30,7 @@ import com.google.common.base.Predicates;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Sets;
 import com.google.common.collect.Streams;
+import org.apache.cassandra.locator.RangesAtEndpoint;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -43,7 +43,6 @@ import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.apache.cassandra.locator.Replica;
-import org.apache.cassandra.locator.ReplicaList;
 import org.apache.cassandra.service.ActiveRepairService;
 import org.apache.cassandra.streaming.IncomingStream;
 import org.apache.cassandra.streaming.OutgoingStream;
@@ -101,14 +100,14 @@ public class CassandraStreamManager implements TableStreamManager
     }
 
     @Override
-    public Collection<OutgoingStream> createOutgoingStreams(StreamSession session, ReplicaList replicas, UUID pendingRepair, PreviewKind previewKind)
+    public Collection<OutgoingStream> createOutgoingStreams(StreamSession session, RangesAtEndpoint replicas, UUID pendingRepair, PreviewKind previewKind)
     {
         Refs<SSTableReader> refs = new Refs<>();
         try
         {
             final List<Range<PartitionPosition>> keyRanges = new ArrayList<>(replicas.size());
             for (Replica replica : replicas)
-                keyRanges.add(Range.makeRowRange(replica.getRange()));
+                keyRanges.add(Range.makeRowRange(replica.range()));
             refs.addAll(cfs.selectAndReference(view -> {
                 Set<SSTableReader> sstables = Sets.newHashSet();
                 SSTableIntervalTree intervalTree = SSTableIntervalTree.build(view.select(SSTableSet.CANONICAL));
@@ -149,11 +148,11 @@ public class CassandraStreamManager implements TableStreamManager
             List<OutgoingStream> streams = new ArrayList<>(refs.size());
             Set<Range<Token>> fullRanges = replicas.stream()
                                                    .filter(Replica::isFull)
-                                                   .map(Replica::getRange)
+                                                   .map(Replica::range)
                                                    .collect(Collectors.toSet());
             Set<Range<Token>> transientRanges = replicas.stream()
                                                         .filter(Replica::isTransient)
-                                                        .map(Replica::getRange)
+                                                        .map(Replica::range)
                                                         .collect(Collectors.toSet());
 
             //Create outgoing file streams for ranges possibly skipping repaired ranges in sstables

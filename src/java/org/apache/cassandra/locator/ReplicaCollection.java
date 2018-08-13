@@ -18,257 +18,134 @@
 
 package org.apache.cassandra.locator;
 
-import java.util.ArrayList;
-import java.util.Collection;
+import java.util.Comparator;
 import java.util.Iterator;
-import java.util.List;
-import java.util.Optional;
 import java.util.Set;
-import java.util.function.Supplier;
+import java.util.function.Predicate;
 import java.util.stream.Stream;
-
-import com.google.common.base.Preconditions;
-import com.google.common.base.Predicate;
-import com.google.common.collect.Collections2;
-import com.google.common.collect.Iterables;
-import com.google.common.collect.Sets;
 
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
 
 /**
- * A collection like class for Replica objects. Since the Replica class contains inetaddress, range, and
- * transient replication status, basic contains and remove methods can be ambiguous. Replicas forces you
- * to be explicit about what you're checking the container for, or removing from it.
+ * A collection like class for Replica objects. Represents both a well defined order on the contained Replica objects,
+ * and efficient methods for accessing the contained Replicas, directly and as a projection onto their endpoints and ranges.
  */
-public abstract class ReplicaCollection implements Iterable<Replica>
+public interface ReplicaCollection<C extends ReplicaCollection<? extends C>> extends Iterable<Replica>
 {
+    /**
+     * @return a Set of the endpoints of the contained Replicas.
+     * Iteration order is maintained where there is a 1:1 relationship between endpoint and Replica
+     * Typically this collection offers O(1) access methods, and this is true for all but ReplicaList.
+     */
+    public abstract Set<InetAddressAndPort> endpoints();
 
-    public abstract boolean add(Replica replica);
-    public abstract void addAll(Iterable<Replica> replicas);
-    public abstract void removeEndpoint(InetAddressAndPort endpoint);
-    public abstract void removeReplica(Replica replica);
+    /**
+     * @param i a value in the range [0..size())
+     * @return the i'th Replica, in our iteration order
+     */
+    public abstract Replica get(int i);
+
+    /**
+     * @return the number of Replica contained
+     */
     public abstract int size();
+
+    /**
+     * @return true iff size() == 0
+     */
+    public abstract boolean isEmpty();
+
+    /**
+     * @return true iff a Replica in this collection is equal to the provided Replica.
+     * Typically this method is expected to take O(1) time, and this is true for all but ReplicaList.
+     */
+    public abstract boolean contains(Replica replica);
+
+    /**
+     * @return a *eagerly constructed* copy of this collection containing the Replica that match the provided predicate.
+     * An effort will be made to either return ourself, or a subList, where possible.
+     * It is guaranteed that no changes to any upstream Mutable will affect the state of the result.
+     */
+    public abstract C filter(Predicate<Replica> predicate);
+
+    /**
+     * @return an *eagerly constructed* copy of this collection containing the Replica at positions [start..end);
+     * An effort will be made to either return ourself, or a subList, where possible.
+     * It is guaranteed that no changes to any upstream Mutable will affect the state of the result.
+     */
+    public abstract C subList(int start, int end);
+
+    /**
+     * @return an *eagerly constructed* copy of this collection containing the Replica re-ordered according to this comparator
+     * It is guaranteed that no changes to any upstream Mutable will affect the state of the result.
+     */
+    public abstract C sorted(Comparator<Replica> comparator);
+
+    public abstract Iterator<Replica> iterator();
     public abstract Stream<Replica> stream();
-    protected abstract Collection<Replica> getUnmodifiableCollection();
 
-    public Iterable<InetAddressAndPort> asEndpoints()
-    {
-        return Iterables.transform(this, Replica::getEndpoint);
-    }
+    public abstract boolean equals(Object o);
+    public abstract int hashCode();
+    public abstract String toString();
 
-    public Set<InetAddressAndPort> asEndpointSet()
+    /**
+     * A mutable extension of a ReplicaCollection.  This is append-only, so it is safe to select a subList,
+     * or at any time take an asImmutableView() snapshot.
+     */
+    public interface Mutable<C extends ReplicaCollection<? extends C>> extends ReplicaCollection<C>
     {
-        Set<InetAddressAndPort> result = Sets.newHashSetWithExpectedSize(size());
-        for (Replica replica: this)
+        /**
+         * @return an Immutable clone that mirrors any modifications to this Mutable instance.
+         */
+        C asImmutableView();
+
+        /**
+         * @return an Immutable clone that assumes this Mutable will never be modified again.
+         * If this is not true, behaviour is undefined.
+         */
+        C asSnapshot();
+
+        /**
+         * @param replica add this replica to the end of the collection
+         * @param ignoreConflict if false, fail on any conflicting additions (as defined by C's semantics)
+         */
+        void add(Replica replica, boolean ignoreConflict);
+
+        default public void add(Replica replica)
         {
-            result.add(replica.getEndpoint());
+            add(replica, false);
         }
-        return result;
-    }
 
-    public List<InetAddressAndPort> asEndpointList()
-    {
-        List<InetAddressAndPort> result = new ArrayList<>(size());
-        for (Replica replica: this)
+        default public void addAll(Iterable<Replica> replicas, boolean ignoreConflicts)
         {
-            result.add(replica.getEndpoint());
+            for (Replica replica : replicas)
+                add(replica, ignoreConflicts);
         }
-        return result;
-    }
 
-    public Collection<InetAddressAndPort> asUnmodifiableEndpointCollection()
-    {
-        return Collections2.transform(getUnmodifiableCollection(), Replica::getEndpoint);
-    }
-
-    public Iterable<Range<Token>> asRanges()
-    {
-        return Iterables.transform(this, Replica::getRange);
-    }
-
-    public Set<Range<Token>> asRangeSet()
-    {
-        Set<Range<Token>> result = Sets.newHashSetWithExpectedSize(size());
-        for (Replica replica: this)
+        default public void addAll(Iterable<Replica> replicas)
         {
-            result.add(replica.getRange());
-        }
-        return result;
-    }
-
-    public Collection<Range<Token>> asUnmodifiableRangeCollection()
-    {
-        return Collections2.transform(getUnmodifiableCollection(), Replica::getRange);
-    }
-
-    public Iterable<Range<Token>> fullRanges()
-    {
-        return Iterables.transform(Iterables.filter(this, Replica::isFull), Replica::getRange);
-    }
-
-    public Iterable<Range<Token>>  transientRanges()
-    {
-        return Iterables.transform(Iterables.filter(this, Replica::isTransient), Replica::getRange);
-    }
-
-    public boolean containsEndpoint(InetAddressAndPort endpoint)
-    {
-        Preconditions.checkNotNull(endpoint);
-        for (Replica replica: this)
-        {
-            if (replica.getEndpoint().equals(endpoint))
-                return true;
-        }
-        return false;
-    }
-
-    public boolean containsRange(Range<Token> range)
-    {
-        Preconditions.checkNotNull(range);
-        for (Replica replica : this)
-        {
-            if (replica.getRange().equals(range))
-                return true;
-        }
-        return false;
-    }
-
-    public void removeReplicas(ReplicaCollection toRemove)
-    {
-        Preconditions.checkNotNull(toRemove);
-        if (Iterables.all(this, Replica::isFull) && Iterables.all(toRemove, Replica::isFull))
-        {
-            for (Replica remove: toRemove)
-            {
-                removeReplica(remove);
-            }
-        }
-        else
-        {
-            // FIXME: add support for transient replicas
-            throw new UnsupportedOperationException("transient replicas are currently unsupported");
+            addAll(replicas, false);
         }
     }
 
-    public void removeRanges(ReplicaCollection toRemove)
+    public static class Builder<C extends ReplicaCollection<? extends C>, M extends Mutable<C>, B extends Builder<C, M, B>>
     {
-        Preconditions.checkNotNull(toRemove);
-        Iterator<Replica> replicaIterator = iterator();
-        while (replicaIterator.hasNext())
+        Mutable<C> mutable;
+        public Builder(Mutable<C> mutable) { this.mutable = mutable; }
+
+        public int size() { return mutable.size(); }
+        public B add(Replica replica) { mutable.add(replica); return (B) this; }
+        public B add(Replica replica, boolean ignoreDuplicate) { mutable.add(replica, ignoreDuplicate); return (B) this; }
+        public B addAll(Iterable<Replica> replica) { mutable.addAll(replica); return (B) this; }
+        public B addAll(Iterable<Replica> replica, boolean ignoreDuplicate) { mutable.addAll(replica, ignoreDuplicate); return (B) this; }
+
+        public C build()
         {
-            Replica replica = replicaIterator.next();
-            if (toRemove.containsRange(replica.getRange()))
-            {
-                replicaIterator.remove();
-            }
+            C result = mutable.asSnapshot();
+            mutable = null;
+            return result;
         }
-    }
-
-    public boolean isEmpty()
-    {
-        return size() == 0;
-    }
-
-    @Override
-    public String toString()
-    {
-        Iterator<Replica> i = iterator();
-        if (!i.hasNext())
-            return "[]";
-
-        StringBuilder sb = new StringBuilder();
-        sb.append('[');
-        while (true)
-        {
-            Replica replica = i.next();
-            sb.append(replica);
-            if (!i.hasNext())
-                return sb.append(']').toString();
-            sb.append(", ");
-        }
-    }
-
-    public boolean noneMatch(Predicate<Replica> predicate)
-    {
-        return !anyMatch(predicate);
-    }
-
-    public boolean anyMatch(Predicate<Replica> predicate)
-    {
-        Preconditions.checkNotNull(predicate);
-        for (Replica replica : this)
-        {
-            if (predicate.apply(replica))
-                return true;
-        }
-        return false;
-    }
-
-    public boolean allMatch(Predicate<Replica> predicate)
-    {
-        Preconditions.checkNotNull(predicate);
-        for (Replica replica : this)
-        {
-            if (!predicate.apply(replica))
-            {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    public <T extends ReplicaCollection> T filter(java.util.function.Predicate<Replica> predicates[], Supplier<T> collectorSupplier)
-    {
-        Preconditions.checkNotNull(predicates);
-        Preconditions.checkNotNull(collectorSupplier);
-        T newReplicas = collectorSupplier.get();
-        for (Replica replica : this)
-        {
-            boolean success = true;
-            for (java.util.function.Predicate<Replica> predicate : predicates)
-            {
-                if (!predicate.test(replica))
-                {
-                    success = false;
-                    break;
-                }
-            }
-
-            if (success)
-            {
-                newReplicas.add(replica);
-            }
-        }
-        return newReplicas;
-    }
-
-    public long count(Predicate<Replica> predicate)
-    {
-        Preconditions.checkNotNull(predicate);
-        long count = 0;
-        for (Replica replica : this)
-        {
-            if (predicate.apply(replica))
-            {
-                count++;
-            }
-        }
-        return count;
-    }
-
-    public Optional<Replica> findFirst(Predicate<Replica> predicate)
-    {
-        Preconditions.checkNotNull(predicate);
-        for (Replica replica : this)
-        {
-            if (predicate.apply(replica))
-            {
-                return Optional.of(replica);
-            }
-        }
-
-        return Optional.empty();
     }
 
 }

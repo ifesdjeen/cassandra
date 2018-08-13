@@ -20,29 +20,19 @@ package org.apache.cassandra.locator;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.stream.Collectors;
 
-import com.google.common.base.Predicates;
-import com.google.common.collect.ArrayListMultimap;
-import com.google.common.collect.HashMultimap;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Multimap;
 import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
 import org.apache.cassandra.config.DatabaseDescriptor;
-import org.apache.cassandra.dht.Murmur3Partitioner;
 import org.apache.cassandra.dht.RandomPartitioner.BigIntegerToken;
 import org.apache.cassandra.dht.Range;
-import org.apache.cassandra.dht.RangeStreamer;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.utils.Pair;
@@ -171,11 +161,11 @@ public class OldNetworkTopologyStrategyTest
     {
         for (Token keyToken : keyTokens)
         {
-            List<InetAddressAndPort> endpoints = strategy.getNaturalReplicas(keyToken).asEndpointList();
-            for (int j = 0; j < endpoints.size(); j++)
+            int j = 0;
+            for (InetAddressAndPort endpoint : strategy.getNaturalReplicasForToken(keyToken).endpoints())
             {
                 ArrayList<InetAddressAndPort> hostsExpected = expectedResults.get(keyToken.toString());
-                assertEquals(endpoints.get(j), hostsExpected.get(j));
+                assertEquals(endpoint, hostsExpected.get(j++));
             }
         }
     }
@@ -375,8 +365,8 @@ public class OldNetworkTopologyStrategyTest
         TokenMetadata tokenMetadataAfterMove = initTokenMetadata(tokensAfterMove);
         AbstractReplicationStrategy strategy = new OldNetworkTopologyStrategy("Keyspace1", tokenMetadataCurrent, endpointSnitch, optsWithRF(2));
 
-        ReplicaSet currentRanges = strategy.getAddressReplicas().get(movingNode);
-        ReplicaSet updatedRanges = strategy.getPendingAddressRanges(tokenMetadataAfterMove, tokensAfterMove[movingNodeIdx], movingNode);
+        RangesAtEndpoint currentRanges = strategy.getAddressReplicas().get(movingNode);
+        RangesAtEndpoint updatedRanges = strategy.getPendingAddressRanges(tokenMetadataAfterMove, tokensAfterMove[movingNodeIdx], movingNode);
 
         return asRanges(StorageService.calculateStreamAndFetchRanges(currentRanges, updatedRanges));
     }
@@ -386,10 +376,10 @@ public class OldNetworkTopologyStrategyTest
         return Collections.singletonMap("replication_factor", Integer.toString(rf));
     }
 
-    public static Pair<Set<Range<Token>>, Set<Range<Token>>> asRanges(Pair<ReplicaSet, ReplicaSet> replicas)
+    public static Pair<Set<Range<Token>>, Set<Range<Token>>> asRanges(Pair<RangesAtEndpoint, RangesAtEndpoint> replicas)
     {
-        Set<Range<Token>> leftRanges = replicas.left.asRangeSet();
-        Set<Range<Token>> rightRanges = replicas.right.asRangeSet();
+        Set<Range<Token>> leftRanges = replicas.left.ranges();
+        Set<Range<Token>> rightRanges = replicas.right.ranges();
         return Pair.create(leftRanges, rightRanges);
     }
 }

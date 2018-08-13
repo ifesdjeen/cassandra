@@ -19,14 +19,16 @@
 package org.apache.cassandra.db.view;
 
 import java.util.Optional;
+import java.util.function.Predicate;
 
+import com.google.common.collect.Iterables;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.Keyspace;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.locator.AbstractReplicationStrategy;
+import org.apache.cassandra.locator.EndpointsForToken;
 import org.apache.cassandra.locator.NetworkTopologyStrategy;
 import org.apache.cassandra.locator.Replica;
-import org.apache.cassandra.locator.ReplicaList;
 import org.apache.cassandra.utils.FBUtilities;
 
 public final class ViewUtils
@@ -62,30 +64,26 @@ public final class ViewUtils
         AbstractReplicationStrategy replicationStrategy = Keyspace.open(keyspaceName).getReplicationStrategy();
 
         String localDataCenter = DatabaseDescriptor.getEndpointSnitch().getDatacenter(FBUtilities.getBroadcastAddressAndPort());
-        ReplicaList baseReplicas = new ReplicaList();
-        ReplicaList viewReplicas = new ReplicaList();
-        for (Replica baseEndpoint : replicationStrategy.getNaturalReplicas(baseToken))
-        {
-            // An endpoint is local if we're not using Net
-            if (!(replicationStrategy instanceof NetworkTopologyStrategy) ||
-                DatabaseDescriptor.getEndpointSnitch().getDatacenter(baseEndpoint).equals(localDataCenter))
-                baseReplicas.add(baseEndpoint);
-        }
+        EndpointsForToken naturalBaseReplicas = replicationStrategy.getNaturalReplicasForToken(baseToken);
+        EndpointsForToken naturalViewReplicas = replicationStrategy.getNaturalReplicasForToken(viewToken);
 
-        for (Replica viewEndpoint : replicationStrategy.getNaturalReplicas(viewToken))
-        {
-            // If we are a base endpoint which is also a view replica, we use ourselves as our view replica
-            if (viewEndpoint.isLocal())
-                return Optional.of(viewEndpoint);
+        Optional<Replica> localReplica = Iterables.tryFind(naturalViewReplicas, Replica::isLocal).toJavaUtil();
+        if (localReplica.isPresent())
+            return localReplica;
 
-            // We have to remove any endpoint which is shared between the base and the view, as it will select itself
-            // and throw off the counts otherwise.
-            if (baseReplicas.containsEndpoint(viewEndpoint.getEndpoint()))
-                baseReplicas.removeEndpoint(viewEndpoint.getEndpoint());
-            else if (!(replicationStrategy instanceof NetworkTopologyStrategy) ||
-                     DatabaseDescriptor.getEndpointSnitch().getDatacenter(viewEndpoint).equals(localDataCenter))
-                viewReplicas.add(viewEndpoint);
-        }
+        // We only select replicas from our own DC
+        // TODO: this is poor encapsulation, leaking implementation details of replication strategy
+        Predicate<Replica> isLocalDC = r -> !(replicationStrategy instanceof NetworkTopologyStrategy)
+                || DatabaseDescriptor.getEndpointSnitch().getDatacenter(r).equals(localDataCenter);
+
+        // We have to remove any endpoint which is shared between the base and the view, as it will select itself
+        // and throw off the counts otherwise.
+        EndpointsForToken baseReplicas = naturalBaseReplicas.filter(
+                r -> !naturalViewReplicas.endpoints().contains(r.endpoint()) && isLocalDC.test(r)
+        );
+        EndpointsForToken viewReplicas = naturalViewReplicas.filter(
+                r -> !naturalBaseReplicas.endpoints().contains(r.endpoint()) && isLocalDC.test(r)
+        );
 
         // The replication strategy will be the same for the base and the view, as they must belong to the same keyspace.
         // Since the same replication strategy is used, the same placement should be used and we should get the same

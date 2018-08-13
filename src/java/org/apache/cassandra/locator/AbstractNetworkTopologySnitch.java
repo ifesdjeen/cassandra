@@ -40,8 +40,8 @@ public abstract class AbstractNetworkTopologySnitch extends AbstractEndpointSnit
     @Override
     public int compareEndpoints(InetAddressAndPort address, Replica r1, Replica r2)
     {
-        InetAddressAndPort a1 = r1.getEndpoint();
-        InetAddressAndPort a2 = r2.getEndpoint();
+        InetAddressAndPort a1 = r1.endpoint();
+        InetAddressAndPort a2 = r2.endpoint();
         if (address.equals(a1) && !address.equals(a2))
             return -1;
         if (address.equals(a2) && !address.equals(a1))

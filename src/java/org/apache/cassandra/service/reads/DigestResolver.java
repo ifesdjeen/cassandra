@@ -25,8 +25,6 @@ import java.util.function.Consumer;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
 
-import org.apache.cassandra.db.ConsistencyLevel;
-import org.apache.cassandra.db.Keyspace;
 import org.apache.cassandra.db.Mutation;
 import org.apache.cassandra.db.ReadCommand;
 import org.apache.cassandra.db.ReadResponse;
@@ -34,9 +32,9 @@ import org.apache.cassandra.db.SinglePartitionReadCommand;
 import org.apache.cassandra.db.partitions.PartitionIterator;
 import org.apache.cassandra.db.partitions.UnfilteredPartitionIterators;
 import org.apache.cassandra.exceptions.ReadTimeoutException;
+import org.apache.cassandra.locator.Endpoints;
 import org.apache.cassandra.locator.Replica;
-import org.apache.cassandra.locator.ReplicaList;
-import org.apache.cassandra.locator.ReplicaSet;
+import org.apache.cassandra.locator.ReplicaCollection;
 import org.apache.cassandra.net.MessageIn;
 import org.apache.cassandra.service.ReplicaPlan;
 import org.apache.cassandra.service.reads.repair.PartitionIteratorMergeListener;
@@ -82,12 +80,12 @@ public class DigestResolver extends ResponseResolver
         {
             // This path can be triggered only if we've got responses from full replicas and they match, but
             // transient replica response still contains data, which needs to be reconciled.
-            ReplicaSet forwardTo = new ReplicaSet();
+            ReplicaCollection.Mutable<? extends Endpoints<?>> forwardTo = replicaPlan.allReplicas().newMutable(responses.size());
 
             // Create data resolver that will forward data to
             DataResolver dataResolver = new DataResolver(command,
                                                          replicaPlan,
-                                                         new ForwardingReadRepair(replicaPlan.getReplicaFor(dataResponse.from), forwardTo),
+                                                         new ForwardingReadRepair(replicaPlan.getReplicaFor(dataResponse.from), forwardTo.asImmutableView()),
                                                          queryStartNanoTime);
 
             dataResolver.preprocess(dataResponse);
@@ -157,15 +155,15 @@ public class DigestResolver extends ResponseResolver
     private class ForwardingReadRepair implements ReadRepair
     {
         private final Replica from;
-        private final ReplicaSet forwardTo;
+        private final Endpoints<?> forwardTo;
 
-        public ForwardingReadRepair(Replica from, ReplicaSet forwardTo)
+        public ForwardingReadRepair(Replica from, Endpoints<?> forwardTo)
         {
             this.from = from;
             this.forwardTo = forwardTo;
         }
         @Override
-        public UnfilteredPartitionIterators.MergeListener getMergeListener(ReplicaList replicas)
+        public UnfilteredPartitionIterators.MergeListener getMergeListener(Endpoints<?> replicas)
         {
             return new PartitionIteratorMergeListener(replicas, command, replicaPlan.consistencyLevel(), this);
         }
@@ -201,7 +199,7 @@ public class DigestResolver extends ResponseResolver
         }
 
         @Override
-        public void repairPartition(Map<Replica, Mutation> mutations, ReplicaList replicas)
+        public void repairPartition(Map<Replica, Mutation> mutations, Endpoints<?> replicas)
         {
             Preconditions.checkArgument(mutations.containsKey(from));
 

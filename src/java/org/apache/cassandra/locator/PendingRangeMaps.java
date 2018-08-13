@@ -26,7 +26,7 @@ import org.apache.cassandra.dht.Token;
 
 import java.util.*;
 
-public class PendingRangeMaps implements Iterable<Map.Entry<Range<Token>, ReplicaList>>
+public class PendingRangeMaps implements Iterable<Map.Entry<Range<Token>, EndpointsForRange.Mutable>>
 {
     /**
      * We have for NavigableMap to be able to search for ranges containing a token efficiently.
@@ -34,7 +34,7 @@ public class PendingRangeMaps implements Iterable<Map.Entry<Range<Token>, Replic
      * First two are for non-wrap-around ranges, and the last two are for wrap-around ranges.
      */
     // ascendingMap will sort the ranges by the ascending order of right token
-    private final NavigableMap<Range<Token>, ReplicaList> ascendingMap;
+    private final NavigableMap<Range<Token>, EndpointsForRange.Mutable> ascendingMap;
 
     /**
      * sorting end ascending, if ends are same, sorting begin descending, so that token (end, end) will
@@ -49,7 +49,7 @@ public class PendingRangeMaps implements Iterable<Map.Entry<Range<Token>, Replic
     };
 
     // ascendingMap will sort the ranges by the descending order of left token
-    private final NavigableMap<Range<Token>, ReplicaList> descendingMap;
+    private final NavigableMap<Range<Token>, EndpointsForRange.Mutable> descendingMap;
 
     /**
      * sorting begin descending, if begins are same, sorting end descending, so that token (begin, begin) will
@@ -65,7 +65,7 @@ public class PendingRangeMaps implements Iterable<Map.Entry<Range<Token>, Replic
     };
 
     // these two maps are for warp around ranges.
-    private final NavigableMap<Range<Token>, ReplicaList> ascendingMapForWrapAround;
+    private final NavigableMap<Range<Token>, EndpointsForRange.Mutable> ascendingMapForWrapAround;
 
     /**
      * for wrap around range (begin, end], which begin > end.
@@ -81,7 +81,7 @@ public class PendingRangeMaps implements Iterable<Map.Entry<Range<Token>, Replic
         return o1.left.compareTo(o2.left);
     };
 
-    private final NavigableMap<Range<Token>, ReplicaList> descendingMapForWrapAround;
+    private final NavigableMap<Range<Token>, EndpointsForRange.Mutable> descendingMapForWrapAround;
 
     /**
      * for wrap around ranges, which begin > end.
@@ -105,13 +105,13 @@ public class PendingRangeMaps implements Iterable<Map.Entry<Range<Token>, Replic
 
     static final void addToMap(Range<Token> range,
                                Replica replica,
-                               NavigableMap<Range<Token>, ReplicaList> ascendingMap,
-                               NavigableMap<Range<Token>, ReplicaList> descendingMap)
+                               NavigableMap<Range<Token>, EndpointsForRange.Mutable> ascendingMap,
+                               NavigableMap<Range<Token>, EndpointsForRange.Mutable> descendingMap)
     {
-        ReplicaList replicas = ascendingMap.get(range);
+        EndpointsForRange.Mutable replicas = ascendingMap.get(range);
         if (replicas == null)
         {
-            replicas = new ReplicaList(1);
+            replicas = new EndpointsForRange.Mutable(range,1);
             ascendingMap.put(range, replicas);
             descendingMap.put(range, replicas);
         }
@@ -130,14 +130,14 @@ public class PendingRangeMaps implements Iterable<Map.Entry<Range<Token>, Replic
         }
     }
 
-    static final void addIntersections(ReplicaSet replicasToAdd,
-                                       NavigableMap<Range<Token>, ReplicaList> smallerMap,
-                                       NavigableMap<Range<Token>, ReplicaList> biggerMap)
+    static final void addIntersections(EndpointsForToken.Builder replicasToAdd,
+                                       NavigableMap<Range<Token>, EndpointsForRange.Mutable> smallerMap,
+                                       NavigableMap<Range<Token>, EndpointsForRange.Mutable> biggerMap)
     {
         // find the intersection of two sets
         for (Range<Token> range : smallerMap.keySet())
         {
-            ReplicaList replicas = biggerMap.get(range);
+            EndpointsForRange.Mutable replicas = biggerMap.get(range);
             if (replicas != null)
             {
                 replicasToAdd.addAll(replicas);
@@ -145,15 +145,15 @@ public class PendingRangeMaps implements Iterable<Map.Entry<Range<Token>, Replic
         }
     }
 
-    public ReplicaSet pendingEndpointsFor(Token token)
+    public EndpointsForToken pendingEndpointsFor(Token token)
     {
-        ReplicaSet replicas = new ReplicaSet();
+        EndpointsForToken.Builder replicas = EndpointsForToken.builder(token);
 
         Range<Token> searchRange = new Range<>(token, token);
 
         // search for non-wrap-around maps
-        NavigableMap<Range<Token>, ReplicaList> ascendingTailMap = ascendingMap.tailMap(searchRange, true);
-        NavigableMap<Range<Token>, ReplicaList> descendingTailMap = descendingMap.tailMap(searchRange, false);
+        NavigableMap<Range<Token>, EndpointsForRange.Mutable> ascendingTailMap = ascendingMap.tailMap(searchRange, true);
+        NavigableMap<Range<Token>, EndpointsForRange.Mutable> descendingTailMap = descendingMap.tailMap(searchRange, false);
 
         // add intersections of two maps
         if (ascendingTailMap.size() < descendingTailMap.size())
@@ -170,23 +170,23 @@ public class PendingRangeMaps implements Iterable<Map.Entry<Range<Token>, Replic
         descendingTailMap = descendingMapForWrapAround.tailMap(searchRange, false);
 
         // add them since they are all necessary.
-        for (Map.Entry<Range<Token>, ReplicaList> entry : ascendingTailMap.entrySet())
+        for (Map.Entry<Range<Token>, EndpointsForRange.Mutable> entry : ascendingTailMap.entrySet())
         {
             replicas.addAll(entry.getValue());
         }
-        for (Map.Entry<Range<Token>, ReplicaList> entry : descendingTailMap.entrySet())
+        for (Map.Entry<Range<Token>, EndpointsForRange.Mutable> entry : descendingTailMap.entrySet())
         {
             replicas.addAll(entry.getValue());
         }
 
-        return replicas;
+        return replicas.build();
     }
 
     public String printPendingRanges()
     {
         StringBuilder sb = new StringBuilder();
 
-        for (Map.Entry<Range<Token>, ReplicaList> entry : this)
+        for (Map.Entry<Range<Token>, EndpointsForRange.Mutable> entry : this)
         {
             Range<Token> range = entry.getKey();
 
@@ -201,7 +201,7 @@ public class PendingRangeMaps implements Iterable<Map.Entry<Range<Token>, Replic
     }
 
     @Override
-    public Iterator<Map.Entry<Range<Token>, ReplicaList>> iterator()
+    public Iterator<Map.Entry<Range<Token>, EndpointsForRange.Mutable>> iterator()
     {
         return Iterators.concat(ascendingMap.entrySet().iterator(), ascendingMapForWrapAround.entrySet().iterator());
     }

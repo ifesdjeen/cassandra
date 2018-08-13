@@ -21,13 +21,13 @@ import java.util.HashMap;
 import java.util.Map;
 
 import com.google.common.collect.Iterables;
+import org.apache.cassandra.locator.Endpoints;
+import org.apache.cassandra.locator.ReplicaCollection;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.locator.Replica;
-import org.apache.cassandra.locator.ReplicaCollection;
-import org.apache.cassandra.locator.ReplicaList;
 import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.exceptions.InvalidRequestException;
@@ -160,10 +160,10 @@ public enum ConsistencyLevel
 
     public boolean isLocal(Replica replica)
     {
-        return isLocal(replica.getEndpoint());
+        return isLocal(replica.endpoint());
     }
 
-    public int countLocalEndpoints(ReplicaCollection liveReplicas)
+    public int countLocalEndpoints(ReplicaCollection<?> liveReplicas)
     {
         int count = 0;
         for (Replica replica : liveReplicas)
@@ -188,7 +188,12 @@ public enum ConsistencyLevel
         return dcEndpoints;
     }
 
-    public ReplicaList filterForQuery(Keyspace keyspace, ReplicaList liveReplicas)
+    public <E extends Endpoints<? extends E>> E filterForQuery(Keyspace keyspace, E liveReplicas)
+    {
+        return filterForQuery(keyspace, liveReplicas, false);
+    }
+
+    public <E extends Endpoints<? extends E>> E filterForQuery(Keyspace keyspace, E liveReplicas, boolean alwaysSpeculate)
     {
         /*
          * If we are doing an each quorum query, we have to make sure that the endpoints we select
@@ -205,12 +210,12 @@ public enum ConsistencyLevel
          * the blockFor first ones).
          */
         if (isDCLocal)
-            liveReplicas.sort(DatabaseDescriptor.getLocalComparator());
+            liveReplicas = liveReplicas.sorted(DatabaseDescriptor.getLocalComparator());
 
-        return liveReplicas.subList(0, Math.min(liveReplicas.size(), blockFor(keyspace)));
+        return liveReplicas.subList(0, Math.min(liveReplicas.size(), blockFor(keyspace) + (alwaysSpeculate ? 1 : 0)));
     }
 
-    private ReplicaList filterForEachQuorum(Keyspace keyspace, ReplicaList liveReplicas)
+    private <C extends ReplicaCollection<? extends C>> C filterForEachQuorum(Keyspace keyspace, C liveReplicas)
     {
         NetworkTopologyStrategy strategy = (NetworkTopologyStrategy) keyspace.getReplicationStrategy();
         Map<String, Integer> dcsReplicas = new HashMap<>();
@@ -232,7 +237,7 @@ public enum ConsistencyLevel
         });
     }
 
-    public boolean isSufficientLiveNodes(Keyspace keyspace, ReplicaCollection liveReplicas)
+    public boolean isSufficientLiveNodes(Keyspace keyspace, ReplicaCollection<?> liveReplicas)
     {
         switch (this)
         {
@@ -259,7 +264,7 @@ public enum ConsistencyLevel
         }
     }
 
-    public void assureSufficientLiveNodes(Keyspace keyspace, ReplicaCollection liveReplicas) throws UnavailableException
+    public void assureSufficientLiveNodes(Keyspace keyspace, ReplicaCollection<?> liveReplicas) throws UnavailableException
     {
         int blockFor = blockFor(keyspace);
         switch (this)

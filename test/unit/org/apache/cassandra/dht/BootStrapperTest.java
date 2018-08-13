@@ -22,10 +22,7 @@ import static org.junit.Assert.fail;
 
 import java.net.UnknownHostException;
 import java.util.Collection;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 
 import com.google.common.base.Predicate;
@@ -33,6 +30,7 @@ import com.google.common.base.Predicates;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Multimap;
 
+import org.apache.cassandra.dht.RangeStreamer.FetchReplica;
 import org.apache.commons.math3.stat.descriptive.SummaryStatistics;
 
 import org.junit.AfterClass;
@@ -45,7 +43,6 @@ import org.apache.cassandra.SchemaLoader;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.locator.Replica;
-import org.apache.cassandra.locator.ReplicaSet;
 import org.apache.cassandra.schema.Schema;
 import org.apache.cassandra.db.Keyspace;
 import org.apache.cassandra.dht.tokenallocator.TokenAllocation;
@@ -59,7 +56,6 @@ import org.apache.cassandra.schema.KeyspaceParams;
 import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.streaming.StreamOperation;
 import org.apache.cassandra.utils.FBUtilities;
-import org.apache.cassandra.utils.Pair;
 
 @RunWith(OrderedJUnit4ClassRunner.class)
 public class BootStrapperTest
@@ -127,14 +123,14 @@ public class BootStrapperTest
         s.addRanges(keyspaceName, Keyspace.open(keyspaceName).getReplicationStrategy().getPendingAddressRanges(tmd, myToken, myEndpoint));
 
 
-        Collection<Multimap<InetAddressAndPort, Pair<Replica, Replica>>> toFetch = s.toFetch().get(keyspaceName);
+        Collection<Multimap<InetAddressAndPort, FetchReplica>> toFetch = s.toFetch().get(keyspaceName);
 
         // Check we get get RF new ranges in total
         long rangesCount = toFetch.stream()
                .map(Multimap::values)
                .flatMap(Collection::stream)
-               .map(Pair::left)
-               .map(Replica::getRange)
+               .map(f -> f.remote)
+               .map(Replica::range)
                .count();
         assertEquals(replicationFactor, rangesCount);
 

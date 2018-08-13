@@ -73,9 +73,9 @@ public abstract class AbstractReplicationStrategy
         // lazy-initialize keyspace itself since we don't create them until after the replication strategies
     }
 
-    private final Map<Token, ReplicaList> cachedReplicas = new NonBlockingHashMap<>();
+    private final Map<Token, EndpointsForRange> cachedReplicas = new NonBlockingHashMap<>();
 
-    public ReplicaList getCachedReplicas(Token t)
+    public EndpointsForRange getCachedReplicas(Token t)
     {
         long lastVersion = tokenMetadata.getRingVersion();
 
@@ -102,11 +102,16 @@ public abstract class AbstractReplicationStrategy
      * @param searchPosition the position the natural endpoints are requested for
      * @return a copy of the natural endpoints for the given token
      */
-    public ReplicaList getNaturalReplicas(RingPosition searchPosition)
+    public EndpointsForToken getNaturalReplicasForToken(RingPosition searchPosition)
+    {
+        return getNaturalReplicas(searchPosition).forToken(searchPosition.getToken());
+    }
+
+    public EndpointsForRange getNaturalReplicas(RingPosition searchPosition)
     {
         Token searchToken = searchPosition.getToken();
         Token keyToken = TokenMetadata.firstToken(tokenMetadata.sortedTokens(), searchToken);
-        ReplicaList endpoints = getCachedReplicas(keyToken);
+        EndpointsForRange endpoints = getCachedReplicas(keyToken);
         if (endpoints == null)
         {
             TokenMetadata tm = tokenMetadata.cachedOnlyTokenMap();
@@ -116,18 +121,18 @@ public abstract class AbstractReplicationStrategy
             cachedReplicas.put(keyToken, endpoints);
         }
 
-        return new ReplicaList(endpoints);
+        return endpoints;
     }
 
     /**
      * calculate the natural endpoints for the given token
      *
-     * @see #getNaturalReplicas(org.apache.cassandra.dht.RingPosition)
+     * @see #getNaturalReplicasForToken(org.apache.cassandra.dht.RingPosition)
      *
      * @param searchToken the token the natural endpoints are requested for
      * @return a copy of the natural endpoints for the given token
      */
-    public abstract ReplicaList calculateNaturalReplicas(Token searchToken, TokenMetadata tokenMetadata);
+    public abstract EndpointsForRange calculateNaturalReplicas(Token searchToken, TokenMetadata tokenMetadata);
 
     public <T> AbstractWriteResponseHandler<T> getWriteResponseHandler(WritePathReplicaPlan replicaPlan,
                                                                        ConsistencyLevel consistency_level,
@@ -212,9 +217,9 @@ public abstract class AbstractReplicationStrategy
      * (fixing this would probably require merging tokenmetadata into replicationstrategy,
      * so we could cache/invalidate cleanly.)
      */
-    public ReplicaMultimap<InetAddressAndPort, ReplicaSet> getAddressReplicas(TokenMetadata metadata)
+    public RangesByEndpoint getAddressReplicas(TokenMetadata metadata)
     {
-        ReplicaMultimap<InetAddressAndPort, ReplicaSet> map = ReplicaMultimap.set();
+        RangesByEndpoint.Mutable map = new RangesByEndpoint.Mutable();
 
         for (Token token : metadata.sortedTokens())
         {
@@ -222,37 +227,36 @@ public abstract class AbstractReplicationStrategy
             for (Replica replica : calculateNaturalReplicas(token, metadata))
             {
                 // LocalStrategy always returns (min, min] ranges for it's replicas, so we skip the check here
-                Preconditions.checkState(range.equals(replica.getRange()) || this instanceof LocalStrategy);
-                map.put(replica.getEndpoint(), replica);
+                Preconditions.checkState(range.equals(replica.range()) || this instanceof LocalStrategy);
+                map.put(replica.endpoint(), replica);
             }
         }
 
-        return map;
+        return map.asImmutableView();
     }
 
-    public ReplicaSet getAddressReplicas(TokenMetadata metadata, InetAddressAndPort endpoint)
+    public RangesAtEndpoint getAddressReplicas(TokenMetadata metadata, InetAddressAndPort endpoint)
     {
-        ReplicaSet replicaSet = new ReplicaSet();
+        RangesAtEndpoint.Builder builder = RangesAtEndpoint.builder();
         for (Token token : metadata.sortedTokens())
         {
             Range<Token> range = metadata.getPrimaryRangeFor(token);
-            for (Replica replica : calculateNaturalReplicas(token, metadata))
+            Replica replica = calculateNaturalReplicas(token, metadata)
+                    .byEndpoint().get(endpoint);
+            if (replica != null)
             {
-                if (!replica.getEndpoint().equals(endpoint))
-                    continue;
                 // LocalStrategy always returns (min, min] ranges for it's replicas, so we skip the check here
-                Preconditions.checkState(range.equals(replica.getRange()) || this instanceof LocalStrategy);
-                replicaSet.add(replica);
+                Preconditions.checkState(range.equals(replica.range()) || this instanceof LocalStrategy);
+                builder.add(replica);
             }
         }
-
-        return replicaSet;
+        return builder.build();
     }
 
 
-    public ReplicaMultimap<Range<Token>, ReplicaSet> getRangeAddresses(TokenMetadata metadata)
+    public EndpointsByRange getRangeAddresses(TokenMetadata metadata)
     {
-        ReplicaMultimap<Range<Token>, ReplicaSet> map = ReplicaMultimap.set();
+        EndpointsByRange.Mutable map = new EndpointsByRange.Mutable();
 
         for (Token token : metadata.sortedTokens())
         {
@@ -260,30 +264,30 @@ public abstract class AbstractReplicationStrategy
             for (Replica replica : calculateNaturalReplicas(token, metadata))
             {
                 // LocalStrategy always returns (min, min] ranges for it's replicas, so we skip the check here
-                Preconditions.checkState(range.equals(replica.getRange()) || this instanceof LocalStrategy);
+                Preconditions.checkState(range.equals(replica.range()) || this instanceof LocalStrategy);
                 map.put(range, replica);
             }
         }
 
-        return map;
+        return map.asImmutableView();
     }
 
-    public ReplicaMultimap<InetAddressAndPort, ReplicaSet> getAddressReplicas()
+    public RangesByEndpoint getAddressReplicas()
     {
         return getAddressReplicas(tokenMetadata.cloneOnlyTokenMap());
     }
 
-    public ReplicaSet getAddressReplicas(InetAddressAndPort endpoint)
+    public RangesAtEndpoint getAddressReplicas(InetAddressAndPort endpoint)
     {
         return getAddressReplicas(tokenMetadata.cloneOnlyTokenMap(), endpoint);
     }
 
-    public ReplicaSet getPendingAddressRanges(TokenMetadata metadata, Token pendingToken, InetAddressAndPort pendingAddress)
+    public RangesAtEndpoint getPendingAddressRanges(TokenMetadata metadata, Token pendingToken, InetAddressAndPort pendingAddress)
     {
         return getPendingAddressRanges(metadata, Collections.singleton(pendingToken), pendingAddress);
     }
 
-    public ReplicaSet getPendingAddressRanges(TokenMetadata metadata, Collection<Token> pendingTokens, InetAddressAndPort pendingAddress)
+    public RangesAtEndpoint getPendingAddressRanges(TokenMetadata metadata, Collection<Token> pendingTokens, InetAddressAndPort pendingAddress)
     {
         TokenMetadata temp = metadata.cloneOnlyTokenMap();
         temp.updateNormalTokens(pendingTokens, pendingAddress);

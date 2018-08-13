@@ -48,13 +48,13 @@ public class SystemReplicas
         return systemReplicas.computeIfAbsent(endpoint, SystemReplicas::createSystemReplica);
     }
 
-    public static ReplicaList getSystemReplicas(Collection<InetAddressAndPort> endpoints)
+    public static EndpointsForRange getSystemReplicas(Collection<InetAddressAndPort> endpoints)
     {
-        ReplicaList rlist = new ReplicaList(endpoints.size());
+        EndpointsForRange.Builder rlist = EndpointsForRange.builder(FULL_RANGE, endpoints.size());
         for (InetAddressAndPort endpoint: endpoints)
         {
             rlist.add(getSystemReplica(endpoint));
         }
-        return rlist;
+        return rlist.build();
     }
 }

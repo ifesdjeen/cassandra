@@ -20,40 +20,34 @@ package org.apache.cassandra.service;
 
 import java.util.Map;
 
-import com.google.common.collect.Maps;
-
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.db.Keyspace;
+import org.apache.cassandra.locator.Endpoints;
 import org.apache.cassandra.locator.IEndpointSnitch;
 import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.locator.NetworkTopologyStrategy;
 import org.apache.cassandra.locator.Replica;
-import org.apache.cassandra.locator.ReplicaCollection;
-import org.apache.cassandra.locator.ReplicaList;
-import org.apache.cassandra.locator.ReplicaSet;
-import org.apache.cassandra.service.reads.AbstractReadExecutor;
 
 public class ReplicaPlan
 {
-    protected final ReplicaList allReplicas;
+    // TODO: ideally these would be generified to either EndpointsByToken or EndpointsByRange, but currently we conflate
+    // the two in a couple of places (primarily Digest/DataResolver, which can be for a range or partition read)
+    protected final Endpoints<?> allReplicas;
     // Might be modified by speculative strategy
-    protected volatile ReplicaList targetReplicas;
+    protected volatile Endpoints<?> targetReplicas;
 
     protected final Keyspace keyspace;
     protected final ConsistencyLevel consistencyLevel;
     protected final Map<InetAddressAndPort, Replica> replicaMap;
 
-    public ReplicaPlan(Keyspace keyspace, ConsistencyLevel consistencyLevel, ReplicaList allReplicas, ReplicaList targetReplicas)
+    public ReplicaPlan(Keyspace keyspace, ConsistencyLevel consistencyLevel, Endpoints<?> allReplicas, Endpoints<?> targetReplicas)
     {
         this.keyspace = keyspace;
         this.consistencyLevel = consistencyLevel;
         this.allReplicas = allReplicas;
         this.targetReplicas = targetReplicas;
-        this.replicaMap = Maps.newHashMapWithExpectedSize(allReplicas.size());
-
-        for (Replica replica: allReplicas)
-            replicaMap.put(replica.getEndpoint(), replica);
+        this.replicaMap = allReplicas.byEndpoint();
     }
 
     public Replica getReplicaFor(InetAddressAndPort endpoint)
@@ -70,35 +64,33 @@ public class ReplicaPlan
      * Returns all of the endpoints that are replicas for the given key that were not contacted during this query.
      * If the consistency level is datacenter local, only the endpoints in the local dc will be returned.
      */
-    public ReplicaCollection additionalReplicas()
+    public Endpoints<?> additionalReplicas()
     {
-        ReplicaSet contacted = new ReplicaSet(targetReplicas);
-
         if (consistencyLevel.isDatacenterLocal() && keyspace.getReplicationStrategy() instanceof NetworkTopologyStrategy)
         {
             IEndpointSnitch snitch = keyspace.getReplicationStrategy().snitch;
             String localDC = DatabaseDescriptor.getLocalDataCenter();
 
-            return allReplicas.filter(replica -> !contacted.containsReplica(replica) &&
+            return allReplicas.filter(replica -> !targetReplicas.contains(replica) &&
                                                  snitch.getDatacenter(replica).equals(localDC));
         }
         else
         {
-            return allReplicas.filter(replica -> !contacted.containsReplica(replica));
+            return allReplicas.filter(replica -> !targetReplicas.contains(replica));
         }
     }
 
-    public ReplicaList allReplicas()
+    public Endpoints<?> allReplicas()
     {
         return allReplicas;
     }
 
-    public ReplicaList targetReplicas()
+    public Endpoints<?> targetReplicas()
     {
         return targetReplicas;
     }
 
-    public void resetTargetReplicas(ReplicaList targetReplicas)
+    public void resetTargetReplicas(Endpoints<?> targetReplicas)
     {
         this.targetReplicas = targetReplicas;
     }
@@ -113,9 +105,9 @@ public class ReplicaPlan
         return consistencyLevel;
     }
 
-    public ReplicaPlan with(ReplicaList targets)
+    public ReplicaPlan with(Endpoints<?> targetReplicas)
     {
-        return new ReplicaPlan(keyspace, consistencyLevel, allReplicas, targets);
+        return new ReplicaPlan(keyspace, consistencyLevel, allReplicas, targetReplicas);
     }
 
     public ReplicaPlan with(ConsistencyLevel consistencyLevel)

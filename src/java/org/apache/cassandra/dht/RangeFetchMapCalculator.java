@@ -30,10 +30,10 @@ import com.google.common.base.Predicates;
 import com.google.common.collect.HashMultimap;
 import com.google.common.collect.Multimap;
 
+import org.apache.cassandra.locator.EndpointsByRange;
+import org.apache.cassandra.locator.EndpointsForRange;
 import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.locator.Replica;
-import org.apache.cassandra.locator.ReplicaList;
-import org.apache.cassandra.locator.ReplicaMultimap;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -75,7 +75,7 @@ public class RangeFetchMapCalculator
 {
     private static final Logger logger = LoggerFactory.getLogger(RangeFetchMapCalculator.class);
     private static final long TRIVIAL_RANGE_LIMIT = 1000;
-    private final ReplicaMultimap<Range<Token>, ReplicaList> rangesWithSources;
+    private final EndpointsByRange rangesWithSources;
     private final Predicate<Replica> sourceFilters;
     private final String keyspace;
     //We need two Vertices to act as source and destination in the algorithm
@@ -83,7 +83,7 @@ public class RangeFetchMapCalculator
     private final Vertex destinationVertex = OuterVertex.getDestinationVertex();
     private final Set<Range<Token>> trivialRanges;
 
-    public RangeFetchMapCalculator(ReplicaMultimap<Range<Token>, ReplicaList> rangesWithSources,
+    public RangeFetchMapCalculator(EndpointsByRange rangesWithSources,
                                    Collection<Predicate<Replica>> sourceFilters,
                                    String keyspace)
     {
@@ -160,15 +160,15 @@ public class RangeFetchMapCalculator
             boolean localDCCheck = true;
             while (!added)
             {
-                ReplicaList replicas = new ReplicaList(rangesWithSources.get(trivialRange));
                 // sort with the endpoint having the least number of streams first:
-                replicas.sort(Comparator.comparingInt(o -> optimisedMap.get(o.getEndpoint()).size()));
+                EndpointsForRange replicas = rangesWithSources.get(trivialRange)
+                        .sorted(Comparator.comparingInt(o -> optimisedMap.get(o.endpoint()).size()));
                 Replicas.checkFull(replicas);
                 for (Replica replica : replicas)
                 {
                     if (passFilters(replica, localDCCheck))
                     {
-                        fetchMap.put(replica.getEndpoint(), trivialRange);
+                        fetchMap.put(replica.endpoint(), trivialRange);
                         added = true;
                         break;
                     }
@@ -359,7 +359,7 @@ public class RangeFetchMapCalculator
                 // if we pass filters, it means that we don't filter away localhost and we can count it as a source:
                 if (replica.isLocal())
                     continue; // but don't add localhost to the graph to avoid streaming locally
-                final Vertex endpointVertex = new EndpointVertex(replica.getEndpoint());
+                final Vertex endpointVertex = new EndpointVertex(replica.endpoint());
                 capacityGraph.insertVertex(rangeVertex);
                 capacityGraph.insertVertex(endpointVertex);
                 capacityGraph.addEdge(rangeVertex, endpointVertex, Integer.MAX_VALUE);

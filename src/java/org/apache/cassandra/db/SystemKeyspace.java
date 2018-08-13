@@ -37,6 +37,8 @@ import com.google.common.collect.SetMultimap;
 import com.google.common.collect.Sets;
 import com.google.common.io.ByteStreams;
 import com.google.common.util.concurrent.ListenableFuture;
+import org.apache.cassandra.locator.RangesAtEndpoint;
+import org.apache.cassandra.locator.Replica;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -1282,24 +1284,24 @@ public final class SystemKeyspace
                         keyspace);
     }
 
-    public static synchronized Pair<Set<Range<Token>>, Set<Range<Token>>> getAvailableRanges(String keyspace, IPartitioner partitioner)
+    public static synchronized RangesAtEndpoint getAvailableRanges(String keyspace, IPartitioner partitioner)
     {
-        Set<Range<Token>> fullRanges = new HashSet<>();
-        Set<Range<Token>> transientRanges = new HashSet<>();
+        RangesAtEndpoint.Builder builder = RangesAtEndpoint.builder();
         String query = "SELECT * FROM system.%s WHERE keyspace_name=?";
         UntypedResultSet rs = executeInternal(format(query, AVAILABLE_RANGES_V2), keyspace);
+        InetAddressAndPort endpoint = InetAddressAndPort.getLocalHost();
         for (UntypedResultSet.Row row : rs)
         {
             Optional.ofNullable(row.getSet("full_ranges", BytesType.instance))
                     .ifPresent(full_ranges -> full_ranges.stream()
-                                                         .map(buf -> byteBufferToRange(buf, partitioner))
-                                                         .forEach(fullRanges::add));
+                            .map(buf -> byteBufferToRange(buf, partitioner))
+                            .forEach(range -> builder.add(Replica.full(endpoint, range))));
             Optional.ofNullable(row.getSet("transient_ranges", BytesType.instance))
                     .ifPresent(transient_ranges -> transient_ranges.stream()
-                                                                   .map(buf -> byteBufferToRange(buf, partitioner))
-                                                                   .forEach(transientRanges::add));
+                            .map(buf -> byteBufferToRange(buf, partitioner))
+                            .forEach(range -> builder.add(Replica.trans(endpoint, range))));
         }
-        return Pair.create(ImmutableSet.copyOf(fullRanges), ImmutableSet.copyOf(transientRanges));
+        return builder.build();
     }
 
     public static void resetAvailableRanges()

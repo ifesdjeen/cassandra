@@ -116,12 +116,12 @@ public class SimpleStrategyTest
 
             for (int i = 0; i < keyTokens.length; i++)
             {
-                ReplicaList replicas = strategy.getNaturalReplicas(keyTokens[i]);
+                EndpointsForToken replicas = strategy.getNaturalReplicasForToken(keyTokens[i]);
                 assertEquals(strategy.getReplicationFactor().replicas, replicas.size());
                 List<InetAddressAndPort> correctEndpoints = new ArrayList<>();
                 for (int j = 0; j < replicas.size(); j++)
                     correctEndpoints.add(hosts.get((i + j + 1) % hosts.size()));
-                assertEquals(new HashSet<>(correctEndpoints), replicas.asEndpointSet());
+                assertEquals(new HashSet<>(correctEndpoints), replicas.endpoints());
             }
         }
     }
@@ -167,20 +167,20 @@ public class SimpleStrategyTest
 
             for (int i = 0; i < keyTokens.length; i++)
             {
-                ReplicaList replicas = tmd.getWriteEndpoints(keyTokens[i], keyspaceName, strategy.getNaturalReplicas(keyTokens[i]));
+                EndpointsForToken replicas = tmd.getWriteEndpoints(keyTokens[i], keyspaceName, strategy.getNaturalReplicasForToken(keyTokens[i]));
                 assertTrue(replicas.size() >= replicationFactor);
 
                 for (int j = 0; j < replicationFactor; j++)
                 {
                     //Check that the old nodes are definitely included
-                   assertTrue(replicas.containsEndpoint(hosts.get((i + j + 1) % hosts.size())));
+                   assertTrue(replicas.endpoints().contains(hosts.get((i + j + 1) % hosts.size())));
                 }
 
                 // bootstrapEndpoint should be in the endpoints for i in MAX-RF to MAX, but not in any earlier ep.
                 if (i < RING_SIZE - replicationFactor)
-                    assertFalse(replicas.containsEndpoint(bootstrapEndpoint));
+                    assertFalse(replicas.endpoints().contains(bootstrapEndpoint));
                 else
-                    assertTrue(replicas.containsEndpoint(bootstrapEndpoint));
+                    assertTrue(replicas.endpoints().contains(bootstrapEndpoint));
             }
         }
 
@@ -224,13 +224,13 @@ public class SimpleStrategyTest
         Assert.assertEquals(ReplicaList.of(ReplicaUtils.full(endpoints.get(0), range(400, 100)),
                                            ReplicaUtils.full(endpoints.get(1), range(400, 100)),
                                            ReplicaUtils.trans(endpoints.get(2), range(400, 100))),
-                            strategy.getNaturalReplicas(tk(99)));
+                            strategy.getNaturalReplicasForToken(tk(99)));
 
 
         Assert.assertEquals(ReplicaList.of(ReplicaUtils.full(endpoints.get(1), range(100, 200)),
                                            ReplicaUtils.full(endpoints.get(2), range(100, 200)),
                                            ReplicaUtils.trans(endpoints.get(3), range(100, 200))),
-                            strategy.getNaturalReplicas(tk(101)));
+                            strategy.getNaturalReplicasForToken(tk(101)));
     }
 
     private AbstractReplicationStrategy getStrategy(String keyspaceName, TokenMetadata tmd)

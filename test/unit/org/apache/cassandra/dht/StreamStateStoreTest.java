@@ -19,12 +19,12 @@ package org.apache.cassandra.dht;
 
 import java.util.Collections;
 
+import org.apache.cassandra.locator.RangesAtEndpoint;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.locator.InetAddressAndPort;
-import org.apache.cassandra.locator.ReplicaList;
 import org.apache.cassandra.streaming.DefaultConnectionFactory;
 import org.apache.cassandra.streaming.PreviewKind;
 import org.apache.cassandra.streaming.StreamEvent;
@@ -54,7 +54,7 @@ public class StreamStateStoreTest
 
         InetAddressAndPort local = FBUtilities.getBroadcastAddressAndPort();
         StreamSession session = new StreamSession(StreamOperation.BOOTSTRAP, local, new DefaultConnectionFactory(), 0, null, PreviewKind.NONE);
-        session.addStreamRequest("keyspace1", ReplicaList.toDummyList(Collections.singleton(range)), ReplicaList.empty(), Collections.singleton("cf"));
+        session.addStreamRequest("keyspace1", RangesAtEndpoint.toDummyList(Collections.singleton(range)), RangesAtEndpoint.empty(), Collections.singleton("cf"));
 
         StreamStateStore store = new StreamStateStore();
         // session complete event that is not completed makes data not available for keyspace/ranges
@@ -75,7 +75,7 @@ public class StreamStateStoreTest
         // add different range within the same keyspace
         Range<Token> range2 = new Range<>(factory.fromString("100"), factory.fromString("200"));
         session = new StreamSession(StreamOperation.BOOTSTRAP, local, new DefaultConnectionFactory(), 0, null, PreviewKind.NONE);
-        session.addStreamRequest("keyspace1", ReplicaList.toDummyList(Collections.singleton(range2)), ReplicaList.empty(), Collections.singleton("cf"));
+        session.addStreamRequest("keyspace1", RangesAtEndpoint.toDummyList(Collections.singleton(range2)), RangesAtEndpoint.empty(), Collections.singleton("cf"));
         session.state(StreamSession.State.COMPLETE);
         store.handleStreamEvent(new StreamEvent.SessionCompleteEvent(session));
 

@@ -25,13 +25,14 @@ import java.util.Collections;
 import java.util.List;
 
 import com.google.common.base.Predicate;
+import org.apache.cassandra.locator.EndpointsByReplica;
+import org.apache.cassandra.locator.RangesAtEndpoint;
 import org.junit.After;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.dht.OrderPreservingPartitioner;
-import org.apache.cassandra.dht.RandomPartitioner;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.RangeStreamer;
 import org.apache.cassandra.dht.Token;
@@ -41,12 +42,11 @@ import org.apache.cassandra.locator.IEndpointSnitch;
 import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.locator.Replica;
 import org.apache.cassandra.locator.ReplicaList;
-import org.apache.cassandra.locator.ReplicaMultimap;
-import org.apache.cassandra.locator.ReplicaSet;
 import org.apache.cassandra.locator.SimpleStrategy;
 import org.apache.cassandra.locator.TokenMetadata;
 import org.apache.cassandra.utils.Pair;
 
+import static org.apache.cassandra.service.StorageServiceTest.assertMultimapEqualsIgnoreOrder;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
@@ -71,11 +71,11 @@ public class BootstrapTransientTest
         dAddress = InetAddressAndPort.getByName("127.0.0.4");
     }
 
-    private final List<InetAddressAndPort> downNodes = new ArrayList();
-    Predicate<Replica> alivePredicate = replica -> !downNodes.contains(replica.getEndpoint());
+    private final List<InetAddressAndPort> downNodes = new ArrayList<>();
+    Predicate<Replica> alivePredicate = replica -> !downNodes.contains(replica.endpoint());
 
     private final List<InetAddressAndPort> sourceFilterDownNodes = new ArrayList<>();
-    private final Collection<Predicate<Replica>> sourceFilters = Collections.singleton(replica -> !sourceFilterDownNodes.contains(replica.getEndpoint()));
+    private final Collection<Predicate<Replica>> sourceFilters = Collections.singleton(replica -> !sourceFilterDownNodes.contains(replica.endpoint()));
 
     @After
     public void clearDownNode()
@@ -95,18 +95,18 @@ public class BootstrapTransientTest
     Token thirtyToken = new OrderPreservingPartitioner.StringToken("00030");
     Token fourtyToken = new OrderPreservingPartitioner.StringToken("00040");
 
-    Range<Token> aRange = new Range(thirtyToken, tenToken);
-    Range<Token> bRange = new Range(tenToken, twentyToken);
-    Range<Token> cRange = new Range(twentyToken, thirtyToken);
-    Range<Token> dRange = new Range(thirtyToken, fourtyToken);
-    Range<Token> aPrimeRange = new Range(fourtyToken, tenToken);
+    Range<Token> aRange = new Range<>(thirtyToken, tenToken);
+    Range<Token> bRange = new Range<>(tenToken, twentyToken);
+    Range<Token> cRange = new Range<>(twentyToken, thirtyToken);
+    Range<Token> dRange = new Range<>(thirtyToken, fourtyToken);
+    Range<Token> aPrimeRange = new Range<>(fourtyToken, tenToken);
 
 
-    ReplicaSet current = ReplicaSet.of(new Replica(aAddress, aRange, true),
+    RangesAtEndpoint current = RangesAtEndpoint.of(new Replica(aAddress, aRange, true),
                                        new Replica(aAddress, cRange, true),
                                        new Replica(aAddress, bRange, false));
 
-    ReplicaSet toFetch = ReplicaSet.of(new Replica(dAddress, dRange, true),
+    ReplicaList toFetch = ReplicaList.of(new Replica(dAddress, dRange, true),
                                        new Replica(cAddress, cRange, true),
                                        new Replica(bAddress, bRange, false));
 
@@ -130,13 +130,13 @@ public class BootstrapTransientTest
         return Pair.create(tmd, updated);
     }
 
-    private void invokeCalculateRangesToFetchWithPreferredEndpoints(ReplicaSet toFetch,
+    private void invokeCalculateRangesToFetchWithPreferredEndpoints(ReplicaList toFetch,
                                                                     Pair<TokenMetadata, TokenMetadata> tmds,
-                                                                    ReplicaMultimap<Replica, ReplicaList> expectedResult)
+                                                                    EndpointsByReplica expectedResult)
     {
         DatabaseDescriptor.setTransientReplicationEnabledUnsafe(true);
 
-        ReplicaMultimap<Replica, ReplicaList>  result = RangeStreamer.calculateRangesToFetchWithPreferredEndpoints((address, replicas) -> new ReplicaList(replicas),
+        EndpointsByReplica result = RangeStreamer.calculateRangesToFetchWithPreferredEndpoints((address, replicas) -> replicas,
                                                                                                                    simpleStrategy(tmds.left),
                                                                                                                    toFetch,
                                                                                                                    true,
@@ -176,23 +176,4 @@ public class BootstrapTransientTest
                                   com.google.common.collect.ImmutableMap.of("replication_factor", "3/1"));
     }
 
-    public static <K>  void assertMultimapEqualsIgnoreOrder(ReplicaMultimap<K, ReplicaList> a, ReplicaMultimap<K, ReplicaList> b)
-    {
-        if (!a.keySet().equals(b.keySet()))
-            assertEquals(a, b);
-        for (K key : a.keySet())
-        {
-            ReplicaList aList = a.get(key);
-            ReplicaList bList = b.get(key);
-            if (a == null && b == null)
-                return;
-            if (aList.size() != bList.size())
-                assertEquals(a, b);
-            for (Replica r : aList)
-            {
-                if (!bList.anyMatch(r::equals))
-                    assertEquals(a, b);
-            }
-        }
-    }
 }

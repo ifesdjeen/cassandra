@@ -29,6 +29,7 @@ import com.google.common.util.concurrent.Futures;
 
 import org.apache.cassandra.concurrent.ScheduledExecutors;
 import org.apache.cassandra.config.DatabaseDescriptor;
+import org.apache.cassandra.locator.RangesAtEndpoint;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -41,9 +42,6 @@ import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.gms.*;
 import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.locator.Replica;
-import org.apache.cassandra.locator.ReplicaCollection;
-import org.apache.cassandra.locator.ReplicaList;
-import org.apache.cassandra.locator.Replicas;
 import org.apache.cassandra.metrics.StreamingMetrics;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.net.async.OutboundConnectionIdentifier;
@@ -52,6 +50,8 @@ import org.apache.cassandra.streaming.async.NettyStreamingMessageSender;
 import org.apache.cassandra.streaming.messages.*;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.JVMStabilityInspector;
+
+import static com.google.common.collect.Iterables.all;
 
 /**
  * Handles the streaming a one or more streams to and from a specific remote node.
@@ -305,11 +305,11 @@ public class StreamSession implements IEndpointStateChangeSubscriber
      * @param transientRanges Ranges to retrieve data that will return transient data from the source
      * @param columnFamilies ColumnFamily names. Can be empty if requesting all CF under the keyspace.
      */
-    public void addStreamRequest(String keyspace, ReplicaCollection fullRanges, ReplicaCollection transientRanges, Collection<String> columnFamilies)
+    public void addStreamRequest(String keyspace, RangesAtEndpoint fullRanges, RangesAtEndpoint transientRanges, Collection<String> columnFamilies)
     {
         //It should either be a dummy address for repair or if it's a bootstrap/move/rebuild it should be this node
-        assert fullRanges.allMatch(Replica::isLocal) | fullRanges.allMatch(range -> range.getEndpoint().getHostAddress(true).equals("0.0.0.0:0")) : fullRanges.toString();
-        assert transientRanges.allMatch(Replica::isLocal) | transientRanges.allMatch(range -> range.getEndpoint().getHostAddress(true).equals("0.0.0.0:0")) : transientRanges.toString();
+        assert all(fullRanges, Replica::isLocal) || all(fullRanges, range -> range.endpoint().getHostAddress(true).equals("0.0.0.0:0")) : fullRanges.toString();
+        assert all(transientRanges, Replica::isLocal) || all(transientRanges, range -> range.endpoint().getHostAddress(true).equals("0.0.0.0:0")) : transientRanges.toString();
         requests.add(new StreamRequest(keyspace, fullRanges, transientRanges, columnFamilies));
     }
 
@@ -317,11 +317,11 @@ public class StreamSession implements IEndpointStateChangeSubscriber
      * Set up transfer for specific keyspace/ranges/CFs
      *
      * @param keyspace Transfer keyspace
-     * @param ranges Transfer ranges
+     * @param replicas Transfer ranges
      * @param columnFamilies Transfer ColumnFamilies
      * @param flushTables flush tables?
      */
-    synchronized void addTransferRanges(String keyspace, ReplicaCollection replicas, Collection<String> columnFamilies, boolean flushTables)
+    synchronized void addTransferRanges(String keyspace, RangesAtEndpoint replicas, Collection<String> columnFamilies, boolean flushTables)
     {
         failIfFinished();
         Collection<ColumnFamilyStore> stores = getColumnFamilyStores(keyspace, columnFamilies);
@@ -331,22 +331,22 @@ public class StreamSession implements IEndpointStateChangeSubscriber
         //Was it safe to remove this normalize, sorting seems not to matter, merging? Maybe we should have?
         //Do we need to unwrap here also or is that just making it worse?
         //Range and if it's transient
-        ReplicaList unwrappedRanges = new ReplicaList(replicas.size());
+        RangesAtEndpoint.Builder unwrappedRanges = RangesAtEndpoint.builder(replicas.size());
         for (Replica replica : replicas)
         {
-            for (Range<Token> unwrapped : replica.getRange().unwrap())
+            for (Range<Token> unwrapped : replica.range().unwrap())
             {
-                unwrappedRanges.add(new Replica(replica.getEndpoint(), unwrapped, replica.isFull()));
+                unwrappedRanges.add(new Replica(replica.endpoint(), unwrapped, replica.isFull()));
             }
         }
-        List<OutgoingStream> streams = getOutgoingStreamsForRanges(unwrappedRanges, stores, pendingRepair, previewKind);
+        List<OutgoingStream> streams = getOutgoingStreamsForRanges(unwrappedRanges.build(), stores, pendingRepair, previewKind);
         addTransferStreams(streams);
         Set<Range<Token>> toBeUpdated = transferredRangesPerKeyspace.get(keyspace);
         if (toBeUpdated == null)
         {
             toBeUpdated = new HashSet<>();
         }
-        toBeUpdated.addAll(replicas.asRangeSet());
+        toBeUpdated.addAll(replicas.ranges());
         transferredRangesPerKeyspace.put(keyspace, toBeUpdated);
     }
 
@@ -373,7 +373,7 @@ public class StreamSession implements IEndpointStateChangeSubscriber
     }
 
     @VisibleForTesting
-    public List<OutgoingStream> getOutgoingStreamsForRanges(ReplicaList replicas, Collection<ColumnFamilyStore> stores, UUID pendingRepair, PreviewKind previewKind)
+    public List<OutgoingStream> getOutgoingStreamsForRanges(RangesAtEndpoint replicas, Collection<ColumnFamilyStore> stores, UUID pendingRepair, PreviewKind previewKind)
     {
         List<OutgoingStream> streams = new ArrayList<>();
         try
@@ -579,7 +579,7 @@ public class StreamSession implements IEndpointStateChangeSubscriber
     {
 
         for (StreamRequest request : requests)
-            addTransferRanges(request.keyspace, Replicas.concat(ImmutableList.of(request.fullReplicas, request.transientReplicas)), request.columnFamilies, true); // always flush on stream request
+            addTransferRanges(request.keyspace, RangesAtEndpoint.builder().addAll(request.fullReplicas).addAll(request.transientReplicas).build(), request.columnFamilies, true); // always flush on stream request
         for (StreamSummary summary : summaries)
             prepareReceiving(summary);
 

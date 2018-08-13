@@ -20,6 +20,7 @@ package org.apache.cassandra.service.reads.repair;
 import java.util.Map;
 import java.util.function.Consumer;
 
+import org.apache.cassandra.locator.Endpoints;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -33,7 +34,6 @@ import org.apache.cassandra.db.partitions.PartitionUpdate;
 import org.apache.cassandra.db.partitions.UnfilteredPartitionIterators;
 import org.apache.cassandra.exceptions.ReadTimeoutException;
 import org.apache.cassandra.locator.Replica;
-import org.apache.cassandra.locator.ReplicaList;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.service.reads.DigestResolver;
@@ -48,7 +48,7 @@ public interface ReadRepair
     /**
      * Used by DataResolver to generate corrections as the partition iterator is consumed
      */
-    UnfilteredPartitionIterators.MergeListener getMergeListener(ReplicaList replicas);
+    UnfilteredPartitionIterators.MergeListener getMergeListener(Endpoints<?> replicas);
 
     /**
      * Called when the digests from the initial read don't match. Reads may block on the
@@ -87,7 +87,7 @@ public interface ReadRepair
      * Repairs a partition _after_ receiving data responses. This method receives replica list, since
      * we will block repair only on the replicas that have responded.
      */
-    void repairPartition(Map<Replica, Mutation> mutations, ReplicaList targets);
+    void repairPartition(Map<Replica, Mutation> mutations, Endpoints<?> targets);
 
     /**
      * Create a read repair mutation from the given update, if the mutation is not larger than the maximum
@@ -103,7 +103,7 @@ public interface ReadRepair
         Keyspace keyspace = Keyspace.open(mutation.getKeyspaceName());
         TableMetadata metadata = update.metadata();
 
-        int messagingVersion = MessagingService.instance().getVersion(destination.getEndpoint());
+        int messagingVersion = MessagingService.instance().getVersion(destination.endpoint());
 
         int    mutationSize = (int) Mutation.serializer.serializedSize(mutation, messagingVersion);
         int maxMutationSize = DatabaseDescriptor.getMaxMutationSize();

@@ -19,13 +19,13 @@ package org.apache.cassandra.service;
 
 import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
 
+import org.apache.cassandra.dht.Token;
+import org.apache.cassandra.locator.EndpointsForToken;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.db.Keyspace;
 import org.apache.cassandra.locator.Replica;
-import org.apache.cassandra.locator.ReplicaList;
-import org.apache.cassandra.locator.Replicas;
 import org.apache.cassandra.net.MessageIn;
 import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.db.WriteType;
@@ -52,14 +52,14 @@ public class WriteResponseHandler<T> extends AbstractWriteResponseHandler<T>
         responses = totalBlockFor();
     }
 
-    public WriteResponseHandler(Replica replica, WriteType writeType, Runnable callback, long queryStartNanoTime)
+    public WriteResponseHandler(Token token, Replica replica, WriteType writeType, Runnable callback, long queryStartNanoTime)
     {
-        this(WritePathReplicaPlan.createReplicaPlan(null, ConsistencyLevel.ONE, ReplicaList.of(replica), Replicas.empty()), ConsistencyLevel.ONE, null, callback, writeType, queryStartNanoTime);
+        this(WritePathReplicaPlan.createReplicaPlan(null, ConsistencyLevel.ONE, EndpointsForToken.of(token, replica), EndpointsForToken.empty(token)), ConsistencyLevel.ONE, null, callback, writeType, queryStartNanoTime);
     }
 
-    public WriteResponseHandler(Replica replica, WriteType writeType, long queryStartNanoTime)
+    public WriteResponseHandler(Token token, Replica replica, WriteType writeType, long queryStartNanoTime)
     {
-        this(replica, writeType, null, queryStartNanoTime);
+        this(token, replica, writeType, null, queryStartNanoTime);
     }
 
     public void response(MessageIn<T> m)

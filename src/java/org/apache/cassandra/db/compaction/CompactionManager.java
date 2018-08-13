@@ -33,6 +33,8 @@ import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.*;
 import com.google.common.util.concurrent.*;
+import org.apache.cassandra.locator.RangesAtEndpoint;
+import org.apache.cassandra.locator.Replica;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -42,7 +44,6 @@ import org.apache.cassandra.concurrent.DebuggableThreadPoolExecutor;
 import org.apache.cassandra.concurrent.JMXEnabledThreadPoolExecutor;
 import org.apache.cassandra.concurrent.NamedThreadFactory;
 import org.apache.cassandra.exceptions.ConfigurationException;
-import org.apache.cassandra.locator.ReplicaSet;
 import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.schema.Schema;
@@ -507,12 +508,10 @@ public class CompactionManager implements CompactionManagerMBean
             return AllSSTableOpStatus.ABORTED;
         }
         // if local ranges is empty, it means no data should remain
-        final ReplicaSet replicatedRanges = StorageService.instance.getLocalReplicas(keyspace.getName());
-        final Set<Range<Token>> allRanges = replicatedRanges.asRangeSet();
-        final Set<Range<Token>> transientRanges = new HashSet<>();
-        Iterables.addAll(transientRanges, replicatedRanges.transientRanges());
-        final Set<Range<Token>> fullRanges = new HashSet<>();
-        Iterables.addAll(fullRanges, replicatedRanges.fullRanges());
+        final RangesAtEndpoint allReplicas = StorageService.instance.getLocalReplicas(keyspace.getName());
+        final Set<Range<Token>> allRanges = allReplicas.ranges();
+        final Set<Range<Token>> transientRanges = allReplicas.filter(Replica::isTransient).ranges();
+        final Set<Range<Token>> fullRanges = allReplicas.filter(Replica::isFull).ranges();
         final boolean hasIndexes = cfStore.indexManager.hasIndexes();
 
         return parallelAllSSTableOperation(cfStore, new OneSSTableOperation()
@@ -529,7 +528,7 @@ public class CompactionManager implements CompactionManagerMBean
             public void execute(LifecycleTransaction txn) throws IOException
             {
                 CleanupStrategy cleanupStrategy = CleanupStrategy.get(cfStore, allRanges, transientRanges, txn.onlyOne().isRepaired(), FBUtilities.nowInSeconds());
-                doCleanupOne(cfStore, txn, cleanupStrategy, allRanges, fullRanges, transientRanges, hasIndexes);
+                doCleanupOne(cfStore, txn, cleanupStrategy, allReplicas.ranges(), fullRanges, transientRanges, hasIndexes);
             }
         }, jobs, OperationType.CLEANUP);
     }
@@ -916,12 +915,10 @@ public class CompactionManager implements CompactionManagerMBean
         {
             ColumnFamilyStore cfs = entry.getKey();
             Keyspace keyspace = cfs.keyspace;
-            final ReplicaSet replicatedRanges = StorageService.instance.getLocalReplicas(keyspace.getName());
-            final Set<Range<Token>> allRanges = replicatedRanges.asRangeSet();
-            final Set<Range<Token>> transientRanges = new HashSet<>();
-            Iterables.addAll(transientRanges, replicatedRanges.transientRanges());
-            final Set<Range<Token>> fullRanges = new HashSet<>();
-            Iterables.addAll(fullRanges, replicatedRanges.fullRanges());
+            final RangesAtEndpoint allReplicas = StorageService.instance.getLocalReplicas(keyspace.getName());
+            final Set<Range<Token>> allRanges = allReplicas.ranges();
+            final Set<Range<Token>> transientRanges = allReplicas.filter(Replica::isTransient).ranges();
+            final Set<Range<Token>> fullRanges = allReplicas.filter(Replica::isFull).ranges();
             boolean hasIndexes = cfs.indexManager.hasIndexes();
             SSTableReader sstable = lookupSSTable(cfs, entry.getValue());
 

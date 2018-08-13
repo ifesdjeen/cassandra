@@ -25,8 +25,8 @@ import org.apache.cassandra.db.Mutation;
 import org.apache.cassandra.db.partitions.PartitionIterator;
 import org.apache.cassandra.db.partitions.UnfilteredPartitionIterators;
 import org.apache.cassandra.exceptions.ReadTimeoutException;
+import org.apache.cassandra.locator.Endpoints;
 import org.apache.cassandra.locator.Replica;
-import org.apache.cassandra.locator.ReplicaList;
 import org.apache.cassandra.service.reads.DigestResolver;
 
 public class NoopReadRepair implements ReadRepair
@@ -35,7 +35,7 @@ public class NoopReadRepair implements ReadRepair
 
     private NoopReadRepair() {}
 
-    public UnfilteredPartitionIterators.MergeListener getMergeListener(ReplicaList replicas)
+    public UnfilteredPartitionIterators.MergeListener getMergeListener(Endpoints<?> replicas)
     {
         return UnfilteredPartitionIterators.MergeListener.NOOP;
     }
@@ -69,7 +69,7 @@ public class NoopReadRepair implements ReadRepair
     }
 
     @Override
-    public void repairPartition(Map<Replica, Mutation> mutations, ReplicaList destinations)
+    public void repairPartition(Map<Replica, Mutation> mutations, Endpoints<?> destinations)
     {
 
     }

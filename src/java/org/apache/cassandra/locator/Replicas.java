@@ -19,268 +19,40 @@
 package org.apache.cassandra.locator;
 
 import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.Iterator;
 import java.util.List;
-import java.util.stream.Stream;
-import java.util.stream.StreamSupport;
+import java.util.Set;
 
-import com.google.common.base.Preconditions;
 import com.google.common.base.Predicate;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Iterables;
-import com.google.common.collect.Iterators;
 
 import org.apache.cassandra.utils.FBUtilities;
 
+import static com.google.common.collect.Iterables.all;
+
 public class Replicas
 {
-    private static abstract class ImmutableReplicaContainer extends ReplicaCollection
+
+    public static <C extends ReplicaCollection<? extends C>> C filterOnEndpoints(C source, Predicate<InetAddressAndPort> predicate)
     {
-        @Override
-        public boolean add(Replica replica)
-        {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public void addAll(Iterable<Replica> replicas)
-        {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public void removeEndpoint(InetAddressAndPort endpoint)
-        {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public void removeReplica(Replica replica)
-        {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public void removeReplicas(ReplicaCollection replicas)
-        {
-            throw new UnsupportedOperationException();
-        }
+        return source.filter(r -> predicate.apply(r.endpoint()));
     }
 
-    public static ReplicaCollection filter(ReplicaCollection source, Predicate<Replica> predicate)
-    {
-        Iterable<Replica> iterable = Iterables.filter(source, predicate);
-        return new ImmutableReplicaContainer()
-        {
-            public int size()
-            {
-                return Iterables.size(iterable);
-            }
-
-            public Iterator<Replica> iterator()
-            {
-                return iterable.iterator();
-            }
-
-            @Override
-            protected Collection<Replica> getUnmodifiableCollection()
-            {
-                return ImmutableList.copyOf(iterable);
-            }
-
-            @Override
-            public Stream<Replica> stream()
-            {
-                return StreamSupport.stream(iterable.spliterator(), false);
-            }
-        };
-    }
-
-    public static ReplicaCollection filterOnEndpoints(ReplicaCollection source, Predicate<InetAddressAndPort> predicate)
-    {
-        Preconditions.checkNotNull(predicate);
-        Iterable<Replica> iterable = Iterables.filter(source, r -> predicate.apply(r.getEndpoint()));
-        return new ImmutableReplicaContainer()
-        {
-            public int size()
-            {
-                return Iterables.size(iterable);
-            }
-
-            public Iterator<Replica> iterator()
-            {
-                return iterable.iterator();
-            }
-
-            @Override
-            protected Collection<Replica> getUnmodifiableCollection()
-            {
-                return ImmutableList.copyOf(iterable);
-            }
-
-            @Override
-            public Stream<Replica> stream()
-            {
-                return StreamSupport.stream(iterable.spliterator(), false);
-            }
-        };
-    }
-
-    public static ReplicaCollection filterOutLocalEndpoint(ReplicaCollection replicas)
+    public static <C extends ReplicaCollection<? extends C>> C filterOutLocalEndpoint(C replicas)
     {
         InetAddressAndPort local = FBUtilities.getBroadcastAddressAndPort();
         return filterOnEndpoints(replicas, e -> !e.equals(local));
     }
 
-    public static ReplicaCollection concatNaturalAndPending(ReplicaCollection natural, ReplicaCollection pending)
+
+    public static <C extends ReplicaCollection<? extends C>> C subtractEndpoints(C subtractFrom, Set<InetAddressAndPort> subtract)
     {
-        Preconditions.checkNotNull(natural);
-        Preconditions.checkNotNull(pending);
-        Iterable<Replica> iterable = Iterables.concat(natural, pending);
-
-        return new ImmutableReplicaContainer()
-        {
-            public int size()
-            {
-                return natural.size() + pending.size();
-            }
-
-            public Iterator<Replica> iterator()
-            {
-                return iterable.iterator();
-            }
-
-            @Override
-            protected Collection<Replica> getUnmodifiableCollection()
-            {
-                throw new UnsupportedOperationException();
-            }
-
-            @Override
-            public Stream<Replica> stream()
-            {
-                return StreamSupport.stream(iterable.spliterator(), false);
-            }
-        };
+        return Replicas.filterOnEndpoints(subtractFrom, e -> !subtract.contains(e));
     }
 
-    public static ReplicaCollection concat(Iterable<ReplicaCollection> replicasIterable)
+    public static <C extends ReplicaCollection<? extends C>> C keepEndpoints(C keepIn, Set<InetAddressAndPort> keep)
     {
-        Preconditions.checkNotNull(replicasIterable);
-        Iterable<Replica> iterable = Iterables.concat(replicasIterable);
-        return new ImmutableReplicaContainer()
-        {
-            public int size()
-            {
-                return Iterables.size(iterable);
-            }
-
-            public Iterator<Replica> iterator()
-            {
-                return iterable.iterator();
-            }
-
-            @Override
-            protected Collection<Replica> getUnmodifiableCollection()
-            {
-                throw new UnsupportedOperationException();
-            }
-
-            @Override
-            public Stream<Replica> stream()
-            {
-                return StreamSupport.stream(iterable.spliterator(), false);
-            }
-        };
+        return Replicas.filterOnEndpoints(keepIn, keep::contains);
     }
 
-    public static ReplicaCollection of(Replica replica)
-    {
-        Preconditions.checkNotNull(replica);
-        return new ImmutableReplicaContainer()
-        {
-            public int size()
-            {
-                return 1;
-            }
-
-            protected Collection<Replica> getUnmodifiableCollection()
-            {
-                return Collections.singleton(replica);
-            }
-
-            public Iterator<Replica> iterator()
-            {
-                return Iterators.singletonIterator(replica);
-            }
-
-            @Override
-            public Stream<Replica> stream()
-            {
-                return Stream.of(replica);
-            }
-        };
-    }
-
-    public static ReplicaCollection of(Collection<Replica> replicas)
-    {
-        Preconditions.checkNotNull(replicas);
-        return new ImmutableReplicaContainer()
-        {
-            public int size()
-            {
-                return replicas.size();
-            }
-
-            public Iterator<Replica> iterator()
-            {
-                return replicas.iterator();
-            }
-
-            @Override
-            protected Collection<Replica> getUnmodifiableCollection()
-            {
-                return Collections.unmodifiableCollection(replicas);
-            }
-
-            @Override
-            public Stream<Replica> stream()
-            {
-                return StreamSupport.stream(replicas.spliterator(), false);
-            }
-        };
-    }
-
-    private static ReplicaCollection EMPTY = new ImmutableReplicaContainer()
-    {
-        public int size()
-        {
-            return 0;
-        }
-
-        protected Collection<Replica> getUnmodifiableCollection()
-        {
-            return Collections.emptyList();
-        }
-
-        public Iterator<Replica> iterator()
-        {
-            return Collections.emptyIterator();
-        }
-
-        @Override
-        public Stream<Replica> stream()
-        {
-            return Stream.empty();
-        }
-    };
-
-    public static ReplicaCollection empty()
-    {
-        return EMPTY;
-    }
 
     /**
      * Basically a placeholder for places new logic for transient replicas should go
@@ -299,20 +71,21 @@ public class Replicas
      */
     public static void checkFull(Iterable<Replica> replicas)
     {
-        if (!Iterables.all(replicas, Replica::isFull))
+        if (!all(replicas, Replica::isFull))
         {
             // FIXME: add support for transient replicas
             throw new UnsupportedOperationException("transient replicas are currently unsupported");
         }
     }
 
-    public static List<String> stringify(ReplicaCollection replicas, boolean withPort)
+    public static List<String> stringify(ReplicaCollection<?> replicas, boolean withPort)
     {
         List<String> stringEndpoints = new ArrayList<>(replicas.size());
         for (Replica replica: replicas)
         {
-            stringEndpoints.add(replica.getEndpoint().getHostAddress(withPort));
+            stringEndpoints.add(replica.endpoint().getHostAddress(withPort));
         }
         return stringEndpoints;
     }
+
 }

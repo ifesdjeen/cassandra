@@ -25,6 +25,9 @@ import java.util.Collections;
 import java.util.List;
 
 import com.google.common.base.Predicate;
+import org.apache.cassandra.locator.EndpointsByReplica;
+import org.apache.cassandra.locator.RangesAtEndpoint;
+import org.apache.cassandra.locator.RangesByEndpoint;
 import org.junit.After;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -39,13 +42,11 @@ import org.apache.cassandra.locator.AbstractReplicationStrategy;
 import org.apache.cassandra.locator.IEndpointSnitch;
 import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.locator.Replica;
-import org.apache.cassandra.locator.ReplicaList;
-import org.apache.cassandra.locator.ReplicaMultimap;
-import org.apache.cassandra.locator.ReplicaSet;
 import org.apache.cassandra.locator.SimpleStrategy;
 import org.apache.cassandra.locator.TokenMetadata;
 import org.apache.cassandra.utils.Pair;
 
+import static org.apache.cassandra.service.StorageServiceTest.assertMultimapEqualsIgnoreOrder;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
@@ -73,10 +74,10 @@ public class MoveTransientTest
     }
 
     private final List<InetAddressAndPort> downNodes = new ArrayList();
-    Predicate<Replica> alivePredicate = replica -> !downNodes.contains(replica.getEndpoint());
+    Predicate<Replica> alivePredicate = replica -> !downNodes.contains(replica.endpoint());
 
     private final List<InetAddressAndPort> sourceFilterDownNodes = new ArrayList<>();
-    private final Collection<Predicate<Replica>> sourceFilters = Collections.singleton(replica -> !sourceFilterDownNodes.contains(replica.getEndpoint()));
+    private final Collection<Predicate<Replica>> sourceFilters = Collections.singleton(replica -> !sourceFilterDownNodes.contains(replica.endpoint()));
 
     @After
     public void clearDownNode()
@@ -108,7 +109,7 @@ public class MoveTransientTest
     Range<Token> eRange = new Range(elevenToken, oneToken);
 
 
-    ReplicaSet current = ReplicaSet.of(new Replica(aAddress, aRange, true),
+    RangesAtEndpoint current = RangesAtEndpoint.of(new Replica(aAddress, aRange, true),
                                        new Replica(aAddress, eRange, true),
                                        new Replica(aAddress, dRange, false));
 
@@ -127,24 +128,24 @@ public class MoveTransientTest
         calculateStreamAndFetchRangesMoveForward();
     }
 
-    private Pair<ReplicaSet, ReplicaSet> calculateStreamAndFetchRangesMoveForward() throws Exception
+    private Pair<RangesAtEndpoint, RangesAtEndpoint> calculateStreamAndFetchRangesMoveForward() throws Exception
     {
-        Range aPrimeRange = new Range(oneToken, fourToken);
+        Range<Token> aPrimeRange = new Range<>(oneToken, fourToken);
 
-        ReplicaSet updated = new ReplicaSet();
+        RangesAtEndpoint.Builder updated = RangesAtEndpoint.builder(3);
         updated.add(new Replica(aAddress, aPrimeRange, true));
         updated.add(new Replica(aAddress, eRange, true));
         updated.add(new Replica(aAddress, dRange, false));
 
 
-        Pair<ReplicaSet, ReplicaSet> result = StorageService.instance.calculateStreamAndFetchRanges(current, updated);
+        Pair<RangesAtEndpoint, RangesAtEndpoint> result = StorageService.calculateStreamAndFetchRanges(current, updated.build());
         System.out.println("To stream");
         System.out.println(result.left);
         System.out.println("To fetch");
         System.out.println(result.right);
 
-        assertEquals(ReplicaSet.empty(), result.left);
-        assertEquals(ReplicaSet.of(new Replica(aAddress, new Range(threeToken, fourToken), true)), result.right);
+        assertContentsIgnoreOrder(result.left);
+        assertContentsIgnoreOrder(result.right, Replica.full(aAddress, threeToken, fourToken));
         return result;
     }
 
@@ -162,24 +163,25 @@ public class MoveTransientTest
         calculateStreamAndFetchRangesMoveBackwardBetween();
     }
 
-    public Pair<ReplicaSet, ReplicaSet> calculateStreamAndFetchRangesMoveBackwardBetween() throws Exception
+    public Pair<RangesAtEndpoint, RangesAtEndpoint> calculateStreamAndFetchRangesMoveBackwardBetween() throws Exception
     {
-        Range aPrimeRange = new Range(elevenToken, fourteenToken);
+        Range<Token> aPrimeRange = new Range<>(elevenToken, fourteenToken);
 
-        ReplicaSet updated = new ReplicaSet();
-        updated.add(new Replica(aAddress, aPrimeRange, true));
-        updated.add(new Replica(aAddress, dRange, true));
-        updated.add(new Replica(aAddress, cRange, false));
+        RangesAtEndpoint updated = RangesAtEndpoint.of(
+            new Replica(aAddress, aPrimeRange, true),
+            new Replica(aAddress, dRange, true),
+            new Replica(aAddress, cRange, false)
+        );
 
 
-        Pair<ReplicaSet, ReplicaSet> result = StorageService.instance.calculateStreamAndFetchRanges(current, updated);
+        Pair<RangesAtEndpoint, RangesAtEndpoint> result = StorageService.calculateStreamAndFetchRanges(current, updated);
         System.out.println("To stream");
         System.out.println(result.left);
         System.out.println("To fetch");
         System.out.println(result.right);
 
-        assertEquals(ReplicaSet.of(new Replica(aAddress, new Range(fourteenToken, oneToken), true), new Replica(aAddress, new Range(oneToken, threeToken), true)), result.left);
-        assertEquals(ReplicaSet.of(new Replica(aAddress, new Range(sixToken, nineToken), false), new Replica(aAddress, new Range(nineToken, elevenToken), true)), result.right);
+        assertContentsIgnoreOrder(result.left, Replica.full(aAddress, oneToken, threeToken), Replica.full(aAddress, fourteenToken, oneToken));
+        assertContentsIgnoreOrder(result.right, Replica.trans(aAddress, sixToken, nineToken), Replica.full(aAddress, nineToken, elevenToken));
         return result;
     }
 
@@ -196,17 +198,17 @@ public class MoveTransientTest
         calculateStreamAndFetchRangesMoveBackward();
     }
 
-    private Pair<ReplicaSet, ReplicaSet> calculateStreamAndFetchRangesMoveBackward() throws Exception
+    private Pair<RangesAtEndpoint, RangesAtEndpoint> calculateStreamAndFetchRangesMoveBackward() throws Exception
     {
-        Range aPrimeRange = new Range(oneToken, twoToken);
+        Range<Token> aPrimeRange = new Range<>(oneToken, twoToken);
 
-        ReplicaSet updated = new ReplicaSet();
-        updated.add(new Replica(aAddress, aPrimeRange, true));
-        updated.add(new Replica(aAddress, eRange, true));
-        updated.add(new Replica(aAddress, dRange, false));
+        RangesAtEndpoint updated = RangesAtEndpoint.of(
+            new Replica(aAddress, aPrimeRange, true),
+            new Replica(aAddress, eRange, true),
+            new Replica(aAddress, dRange, false)
+        );
 
-
-        Pair<ReplicaSet, ReplicaSet> result = StorageService.instance.calculateStreamAndFetchRanges(current, updated);
+        Pair<RangesAtEndpoint, RangesAtEndpoint> result = StorageService.calculateStreamAndFetchRanges(current, updated);
         System.out.println("To stream");
         System.out.println(result.left);
         System.out.println("To fetch");
@@ -214,8 +216,8 @@ public class MoveTransientTest
 
         //Moving backwards has no impact on any replica. We already fully replicate counter clockwise
         //The transient replica does transiently replicate slightly more, but that is addressed by cleanup
-        assertEquals(ReplicaSet.of(new Replica(aAddress, new Range(twoToken, threeToken), true)), result.left);
-        assertEquals(ReplicaSet.of(), result.right);
+        assertContentsIgnoreOrder(result.left, Replica.full(aAddress, twoToken, threeToken));
+        assertContentsIgnoreOrder(result.right);
 
         return result;
     }
@@ -226,26 +228,26 @@ public class MoveTransientTest
      *
      * @throws Exception
      */
-    private Pair<ReplicaSet, ReplicaSet> calculateStreamAndFetchRangesMoveForwardBetween() throws Exception
+    private Pair<RangesAtEndpoint, RangesAtEndpoint> calculateStreamAndFetchRangesMoveForwardBetween() throws Exception
     {
-        Range aPrimeRange = new Range(sixToken, sevenToken);
-        Range bPrimeRange = new Range(oneToken, sixToken);
+        Range<Token> aPrimeRange = new Range<>(sixToken, sevenToken);
+        Range<Token> bPrimeRange = new Range<>(oneToken, sixToken);
 
 
-        ReplicaSet updated = new ReplicaSet();
-        updated.add(new Replica(aAddress, aPrimeRange, true));
-        updated.add(new Replica(aAddress, bPrimeRange, true));
-        updated.add(new Replica(aAddress, eRange, false));
+        RangesAtEndpoint updated = RangesAtEndpoint.of(
+            new Replica(aAddress, aPrimeRange, true),
+            new Replica(aAddress, bPrimeRange, true),
+            new Replica(aAddress, eRange, false)
+        );
 
-
-        Pair<ReplicaSet, ReplicaSet> result = StorageService.instance.calculateStreamAndFetchRanges(current, updated);
+        Pair<RangesAtEndpoint, RangesAtEndpoint> result = StorageService.calculateStreamAndFetchRanges(current, updated);
         System.out.println("To stream");
         System.out.println(result.left);
         System.out.println("To fetch");
         System.out.println(result.right);
 
-        assertEquals(ReplicaSet.of(new Replica(aAddress, new Range(nineToken, elevenToken), false), new Replica(aAddress, new Range(elevenToken, oneToken), true)), result.left);
-        assertEquals(ReplicaSet.of(new Replica(aAddress, new Range(threeToken, sixToken), true), new Replica(aAddress, new Range(sixToken, sevenToken), true)), result.right);
+        assertContentsIgnoreOrder(result.left, Replica.full(aAddress, elevenToken, oneToken), Replica.trans(aAddress, nineToken, elevenToken));
+        assertContentsIgnoreOrder(result.right, Replica.full(aAddress, threeToken, sixToken), Replica.full(aAddress, sixToken, sevenToken));
         return result;
     }
 
@@ -332,21 +334,21 @@ public class MoveTransientTest
     @Test
     public void testMoveForwardBetweenCalculateRangesToFetchWithPreferredEndpoints() throws Exception
     {
-        ReplicaMultimap<Replica, ReplicaList> expectedResult = ReplicaMultimap.list();
+        EndpointsByReplica.Mutable expectedResult = new EndpointsByReplica.Mutable();
 
         InetAddressAndPort cOrB = (downNodes.contains(cAddress) || sourceFilterDownNodes.contains(cAddress)) ? bAddress : cAddress;
 
         //Need to pull the full replica and the transient replica that is losing the range
-        expectedResult.put(new Replica(aAddress, new Range(sixToken, sevenToken), true),  new Replica(dAddress, new Range(sixToken, nineToken), true));
-        expectedResult.put(new Replica(aAddress, new Range(sixToken, sevenToken), true), new Replica(eAddress, new Range(sixToken, nineToken), false));
+        expectedResult.put(Replica.full(aAddress, sixToken, sevenToken),  Replica.full(dAddress, sixToken, nineToken));
+        expectedResult.put(Replica.full(aAddress, sixToken, sevenToken), Replica.trans(eAddress, sixToken, nineToken));
 
         //Same need both here as well
-        expectedResult.put(new Replica(aAddress, new Range(threeToken, sixToken), true), new Replica(cOrB, new Range(threeToken, sixToken), true));
-        expectedResult.put(new Replica(aAddress, new Range(threeToken, sixToken), true), new Replica(dAddress, new Range(threeToken, sixToken), false));
+        expectedResult.put(Replica.full(aAddress, threeToken, sixToken), Replica.full(cOrB, threeToken, sixToken));
+        expectedResult.put(Replica.full(aAddress, threeToken, sixToken), Replica.trans(dAddress, threeToken, sixToken));
 
         invokeCalculateRangesToFetchWithPreferredEndpoints(calculateStreamAndFetchRangesMoveForwardBetween().right,
                                                            constructTMDsMoveForwardBetween(),
-                                                           expectedResult);
+                                                           expectedResult.asImmutableView());
     }
 
     @Test
@@ -418,15 +420,15 @@ public class MoveTransientTest
     @Test
     public void testMoveBackwardBetweenCalculateRangesToFetchWithPreferredEndpoints() throws Exception
     {
-        ReplicaMultimap<Replica, ReplicaList> expectedResult = ReplicaMultimap.list();
+        EndpointsByReplica.Mutable expectedResult = new EndpointsByReplica.Mutable();
 
         //Need to pull the full replica and the transient replica that is losing the range
-        expectedResult.put(new Replica(aAddress, new Range(nineToken, elevenToken), true), new Replica(eAddress, new Range(nineToken, elevenToken), true));
-        expectedResult.put(new Replica(aAddress, new Range(sixToken, nineToken), false), new Replica(eAddress, new Range(sixToken, nineToken), false));
+        expectedResult.put(Replica.full(aAddress, nineToken, elevenToken), Replica.full(eAddress, nineToken, elevenToken));
+        expectedResult.put(Replica.trans(aAddress, sixToken, nineToken), Replica.trans(eAddress, sixToken, nineToken));
 
         invokeCalculateRangesToFetchWithPreferredEndpoints(calculateStreamAndFetchRangesMoveBackwardBetween().right,
                                                            constructTMDsMoveBackwardBetween(),
-                                                           expectedResult);
+                                                           expectedResult.asImmutableView());
 
     }
 
@@ -452,28 +454,28 @@ public class MoveTransientTest
     public void testMoveBackwardCalculateRangesToFetchWithPreferredEndpoints() throws Exception
     {
         //Moving backwards should fetch nothing and fetch ranges is emptys so this doesn't test a ton
-        ReplicaMultimap<Replica, ReplicaList> expectedResult = ReplicaMultimap.list();
+        EndpointsByReplica.Mutable expectedResult = new EndpointsByReplica.Mutable();
 
         invokeCalculateRangesToFetchWithPreferredEndpoints(calculateStreamAndFetchRangesMoveBackward().right,
                                                            constructTMDsMoveBackward(),
-                                                           expectedResult);
+                                                           expectedResult.asImmutableView());
 
     }
 
     @Test
     public void testMoveForwardCalculateRangesToFetchWithPreferredEndpoints() throws Exception
     {
-        ReplicaMultimap<Replica, ReplicaList> expectedResult = ReplicaMultimap.list();
+        EndpointsByReplica.Mutable expectedResult = new EndpointsByReplica.Mutable();
 
         InetAddressAndPort cOrBAddress = (downNodes.contains(cAddress) || sourceFilterDownNodes.contains(cAddress)) ? bAddress : cAddress;
 
         //Need to pull the full replica and the transient replica that is losing the range
-        expectedResult.put(new Replica(aAddress, new Range(threeToken, fourToken), true), new Replica(cOrBAddress, new Range(threeToken, sixToken), true));
-        expectedResult.put(new Replica(aAddress, new Range(threeToken, fourToken), true), new Replica(dAddress, new Range(threeToken, sixToken), false));
+        expectedResult.put(Replica.full(aAddress, threeToken, fourToken), Replica.full(cOrBAddress, threeToken, sixToken));
+        expectedResult.put(Replica.full(aAddress, threeToken, fourToken), Replica.trans(dAddress, threeToken, sixToken));
 
         invokeCalculateRangesToFetchWithPreferredEndpoints(calculateStreamAndFetchRangesMoveForward().right,
                                                            constructTMDsMoveForward(),
-                                                           expectedResult);
+                                                           expectedResult.asImmutableView());
 
     }
 
@@ -535,13 +537,13 @@ public class MoveTransientTest
         testMoveForwardBetweenCalculateRangesToFetchWithPreferredEndpoints();
     }
 
-    private void invokeCalculateRangesToFetchWithPreferredEndpoints(ReplicaSet toFetch,
+    private void invokeCalculateRangesToFetchWithPreferredEndpoints(RangesAtEndpoint toFetch,
                                                                     Pair<TokenMetadata, TokenMetadata> tmds,
-                                                                    ReplicaMultimap<Replica, ReplicaList> expectedResult)
+                                                                    EndpointsByReplica expectedResult)
     {
         DatabaseDescriptor.setTransientReplicationEnabledUnsafe(true);
 
-        ReplicaMultimap<Replica, ReplicaList>  result = RangeStreamer.calculateRangesToFetchWithPreferredEndpoints((address, replicas) -> new ReplicaList(replicas),
+        EndpointsByReplica result = RangeStreamer.calculateRangesToFetchWithPreferredEndpoints((address, replicas) -> replicas.sorted((a, b) -> b.endpoint().compareTo(a.endpoint())),
                                                                                                                    simpleStrategy(tmds.left),
                                                                                                                    toFetch,
                                                                                                                    true,
@@ -585,90 +587,77 @@ public class MoveTransientTest
     public void testMoveForwardBetweenCalculateRangesToStreamWithPreferredEndpoints() throws Exception
     {
         DatabaseDescriptor.setTransientReplicationEnabledUnsafe(true);
-        ReplicaMultimap<InetAddressAndPort, ReplicaList> expectedResult = ReplicaMultimap.list();
+        RangesByEndpoint.Mutable expectedResult = new RangesByEndpoint.Mutable();
 
         //Need to pull the full replica and the transient replica that is losing the range
-        expectedResult.put(bAddress, new Replica(bAddress, new Range(nineToken, elevenToken), false));
-        expectedResult.put(bAddress, new Replica(bAddress, new Range(elevenToken, oneToken), true));
+        expectedResult.put(bAddress, Replica.trans(bAddress, nineToken, elevenToken));
+        expectedResult.put(bAddress, Replica.full(bAddress, elevenToken, oneToken));
 
         invokeCalculateRangesToStreamWithPreferredEndpoints(calculateStreamAndFetchRangesMoveForwardBetween().left,
                                                             constructTMDsMoveForwardBetween(),
-                                                            expectedResult);
+                                                            expectedResult.asImmutableView());
     }
 
     @Test
     public void testMoveBackwardBetweenCalculateRangesToStreamWithPreferredEndpoints() throws Exception
     {
-        ReplicaMultimap<InetAddressAndPort, ReplicaList> expectedResult = ReplicaMultimap.list();
+        RangesByEndpoint.Mutable expectedResult = new RangesByEndpoint.Mutable();
 
-        expectedResult.put(bAddress, new Replica(bAddress, new Range(fourteenToken, oneToken), true));
+        expectedResult.put(bAddress, Replica.full(bAddress, fourteenToken, oneToken));
 
-        expectedResult.put(dAddress, new Replica(dAddress, new Range(oneToken, threeToken), false));
+        expectedResult.put(dAddress, Replica.trans(dAddress, oneToken, threeToken));
 
-        expectedResult.put(cAddress, new Replica(cAddress, new Range(oneToken, threeToken), true));
-        expectedResult.put(cAddress, new Replica(cAddress, new Range(fourteenToken, oneToken), false));
+        expectedResult.put(cAddress, Replica.full(cAddress, oneToken, threeToken));
+        expectedResult.put(cAddress, Replica.trans(cAddress, fourteenToken, oneToken));
 
         invokeCalculateRangesToStreamWithPreferredEndpoints(calculateStreamAndFetchRangesMoveBackwardBetween().left,
                                                             constructTMDsMoveBackwardBetween(),
-                                                            expectedResult);
+                                                            expectedResult.asImmutableView());
     }
 
     @Test
     public void testMoveBackwardCalculateRangesToStreamWithPreferredEndpoints() throws Exception
     {
-        ReplicaMultimap<InetAddressAndPort, ReplicaList> expectedResult = ReplicaMultimap.list();
-
-        expectedResult.put(cAddress, new Replica(cAddress, new Range(twoToken, threeToken), true));
-
-        expectedResult.put(dAddress, new Replica(dAddress, new Range(twoToken, threeToken), false));
+        RangesByEndpoint.Mutable expectedResult = new RangesByEndpoint.Mutable();
+        expectedResult.put(cAddress, Replica.full(cAddress, twoToken, threeToken));
+        expectedResult.put(dAddress, Replica.trans(dAddress, twoToken, threeToken));
 
         invokeCalculateRangesToStreamWithPreferredEndpoints(calculateStreamAndFetchRangesMoveBackward().left,
                                                             constructTMDsMoveBackward(),
-                                                            expectedResult);
+                                                            expectedResult.asImmutableView());
     }
 
     @Test
     public void testMoveForwardCalculateRangesToStreamWithPreferredEndpoints() throws Exception
     {
         //Nothing to stream moving forward because we are acquiring more range not losing range
-        ReplicaMultimap<InetAddressAndPort, ReplicaList> expectedResult = ReplicaMultimap.list();
+        RangesByEndpoint.Mutable expectedResult = new RangesByEndpoint.Mutable();
 
         invokeCalculateRangesToStreamWithPreferredEndpoints(calculateStreamAndFetchRangesMoveForward().left,
                                                             constructTMDsMoveForward(),
-                                                            expectedResult);
+                                                            expectedResult.asImmutableView());
     }
 
-    private void invokeCalculateRangesToStreamWithPreferredEndpoints(ReplicaSet toStream,
+    private void invokeCalculateRangesToStreamWithPreferredEndpoints(RangesAtEndpoint toStream,
                                                                      Pair<TokenMetadata, TokenMetadata> tmds,
-                                                                     ReplicaMultimap<InetAddressAndPort, ReplicaList> expectedResult)
+                                                                     RangesByEndpoint expectedResult)
     {
         DatabaseDescriptor.setTransientReplicationEnabledUnsafe(true);
         StorageService.RangeRelocator relocator = new StorageService.RangeRelocator();
-        ReplicaMultimap<InetAddressAndPort, ReplicaList> result = relocator.calculateRangesToStreamWithPreferredEndpoints(toStream,
-                                                                                                                          simpleStrategy(tmds.left),
-                                                                                                                          tmds.left,
-                                                                                                                          tmds.right);
+        RangesByEndpoint result = relocator.calculateRangesToStreamWithPreferredEndpoints(toStream,
+                simpleStrategy(tmds.left),
+                tmds.left,
+                tmds.right);
         System.out.println(result);
         assertMultimapEqualsIgnoreOrder(expectedResult, result);
     }
 
-    public static <K>  void assertMultimapEqualsIgnoreOrder(ReplicaMultimap<K, ReplicaList> a, ReplicaMultimap<K, ReplicaList> b)
+    private static void assertContentsIgnoreOrder(RangesAtEndpoint ranges, Replica ... replicas)
     {
-        if (!a.keySet().equals(b.keySet()))
-            assertEquals(a, b);
-        for (K key : a.keySet())
-        {
-            ReplicaList aList = a.get(key);
-            ReplicaList bList = b.get(key);
-            if (a == null && b == null)
-                return;
-            if (aList.size() != bList.size())
-                assertEquals(a, b);
-            for (Replica r : aList)
-            {
-                if (!bList.anyMatch(r::equals))
-                    assertEquals(a, b);
-            }
-        }
+        assertEquals(ranges.size(), replicas.length);
+        for (Replica replica : replicas)
+            if (!ranges.contains(replica))
+                assertEquals(RangesAtEndpoint.of(replicas), ranges);
     }
+
 }

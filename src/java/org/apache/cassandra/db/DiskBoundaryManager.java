@@ -80,14 +80,14 @@ public class DiskBoundaryManager
                 && !StorageService.isReplacingSameAddress()) // When replacing same address, the node marks itself as UN locally
             {
                 PendingRangeCalculatorService.instance.blockUntilFinished();
-                localRanges = tmd.getPendingRanges(cfs.keyspace.getName(), FBUtilities.getBroadcastAddressAndPort()).asRangeSet();
+                localRanges = tmd.getPendingRanges(cfs.keyspace.getName(), FBUtilities.getBroadcastAddressAndPort()).ranges();
             }
             else
             {
                 // Reason we use use the future settled TMD is that if we decommission a node, we want to stream
                 // from that node to the correct location on disk, if we didn't, we would put new files in the wrong places.
                 // We do this to minimize the amount of data we need to move in rebalancedisks once everything settled
-                localRanges = cfs.keyspace.getReplicationStrategy().getAddressReplicas(tmd.cloneAfterAllSettled(), FBUtilities.getBroadcastAddressAndPort()).asRangeSet();
+                localRanges = cfs.keyspace.getReplicationStrategy().getAddressReplicas(tmd.cloneAfterAllSettled(), FBUtilities.getBroadcastAddressAndPort()).ranges();
             }
             logger.debug("Got local ranges {} (ringVersion = {})", localRanges, ringVersion);
         }

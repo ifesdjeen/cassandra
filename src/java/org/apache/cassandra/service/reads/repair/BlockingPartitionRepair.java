@@ -68,7 +68,7 @@ public class BlockingPartitionRepair extends AbstractFuture<Object> implements I
         {
             // remote dcs can sometimes get involved in dc-local reads. We want to repair
             // them if they do, but they shouldn't interfere with blocking the client read.
-            if (!repairs.containsKey(participant) && shouldBlockOn(participant.getEndpoint()))
+            if (!repairs.containsKey(participant) && shouldBlockOn(participant.endpoint()))
                 blockFor--;
         }
 
@@ -154,10 +154,10 @@ public class BlockingPartitionRepair extends AbstractFuture<Object> implements I
 
             Tracing.trace("Sending read-repair-mutation to {}", destination);
             // use a separate verb here to avoid writing hints on timeouts
-            sendRR(mutation.createMessage(MessagingService.Verb.READ_REPAIR), destination.getEndpoint());
+            sendRR(mutation.createMessage(MessagingService.Verb.READ_REPAIR), destination.endpoint());
             ColumnFamilyStore.metricsFor(tableId).readRepairRequests.mark();
 
-            if (!shouldBlockOn(destination.getEndpoint()))
+            if (!shouldBlockOn(destination.endpoint()))
                 pendingRepairs.remove(destination);
         }
     }
@@ -189,7 +189,7 @@ public class BlockingPartitionRepair extends AbstractFuture<Object> implements I
         if (awaitRepairs(timeout, timeoutUnit))
             return;
 
-        ReplicaCollection newCandidates = replicaPlan.additionalReplicas();
+        ReplicaCollection<?> newCandidates = replicaPlan.additionalReplicas();
         if (newCandidates.isEmpty())
             return;
 
@@ -212,7 +212,7 @@ public class BlockingPartitionRepair extends AbstractFuture<Object> implements I
             }
 
             Tracing.trace("Sending speculative read-repair-mutation to {}", replica);
-            sendRR(mutation.createMessage(MessagingService.Verb.READ_REPAIR), replica.getEndpoint());
+            sendRR(mutation.createMessage(MessagingService.Verb.READ_REPAIR), replica.endpoint());
         }
     }
 }
