@@ -48,13 +48,14 @@ import com.google.common.primitives.Ints;
 import com.google.common.util.concurrent.FutureCallback;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
+import org.apache.cassandra.locator.EndpointsForRange;
+import org.apache.cassandra.locator.RangesAtEndpoint;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.locator.Replica;
-import org.apache.cassandra.locator.ReplicaSet;
 import org.apache.cassandra.repair.KeyspaceRepairManager;
 import org.apache.cassandra.schema.Schema;
 import org.apache.cassandra.db.marshal.UTF8Type;
@@ -562,12 +563,12 @@ public class LocalSessions
         List<Range<Token>> fullRanges = new ArrayList<>();
         List<Range<Token>> transRanges = new ArrayList<>();
 
-        ReplicaSet localReplicas = StorageService.instance.getLocalReplicas(keyspace);
+        RangesAtEndpoint localReplicas = StorageService.instance.getLocalReplicas(keyspace);
         for (Range<Token> range: ranges)
         {
             for (Replica replica: localReplicas)
             {
-                if (replica.getRange().contains(range))
+                if (replica.range().contains(range))
                 {
                     if (replica.isFull())
                     {
@@ -582,7 +583,7 @@ public class LocalSessions
                 {
                     // sanity check that the ranges we're suppose to split match
                     // up with the ranges replicated by this node
-                    Preconditions.checkState(!replica.getRange().intersects(range));
+                    Preconditions.checkState(!replica.range().intersects(range));
                 }
             }
         }

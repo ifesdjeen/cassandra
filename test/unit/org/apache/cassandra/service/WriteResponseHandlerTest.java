@@ -24,6 +24,7 @@ import java.net.UnknownHostException;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
+import org.apache.cassandra.locator.EndpointsForRange;
 import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -38,7 +39,6 @@ import org.apache.cassandra.locator.IEndpointSnitch;
 import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.locator.Replica;
 import org.apache.cassandra.locator.ReplicaCollection;
-import org.apache.cassandra.locator.ReplicaList;
 import org.apache.cassandra.locator.ReplicaUtils;
 import org.apache.cassandra.locator.TokenMetadata;
 import org.apache.cassandra.net.MessageIn;
@@ -51,7 +51,7 @@ public class WriteResponseHandlerTest
 {
     static Keyspace ks;
     static ColumnFamilyStore cfs;
-    static ReplicaList targets;
+    static EndpointsForRange targets;
 
     private static Replica full(String name)
     {
@@ -91,14 +91,9 @@ public class WriteResponseHandlerTest
                     return "datacenter2";
             }
 
-            public ReplicaList getSortedListByProximity(InetAddressAndPort address, ReplicaCollection unsortedAddress)
+            public <C extends ReplicaCollection<? extends C>> C sortedByProximity(InetAddressAndPort address, C replicas)
             {
-                return null;
-            }
-
-            public void sortByProximity(InetAddressAndPort address, ReplicaList replicas)
-            {
-
+                return replicas;
             }
 
             public int compareEndpoints(InetAddressAndPort target, Replica a1, Replica a2)
@@ -111,7 +106,7 @@ public class WriteResponseHandlerTest
 
             }
 
-            public boolean isWorthMergingForRangeQuery(ReplicaList merged, ReplicaList l1, ReplicaList l2)
+            public boolean isWorthMergingForRangeQuery(ReplicaCollection<?> merged, ReplicaCollection<?> l1, ReplicaCollection<?> l2)
             {
                 return false;
             }
@@ -120,8 +115,8 @@ public class WriteResponseHandlerTest
         SchemaLoader.createKeyspace("Foo", KeyspaceParams.nts("datacenter1", 3, "datacenter2", 3), SchemaLoader.standardCFMD("Foo", "Bar"));
         ks = Keyspace.open("Foo");
         cfs = ks.getColumnFamilyStore("Bar");
-        targets = ReplicaList.immutableCopyOf(full("127.1.0.255"), full("127.1.0.254"), full("127.1.0.253"),
-                                              full("127.2.0.255"), full("127.2.0.254"), full("127.2.0.253"));
+        targets = EndpointsForRange.of(full("127.1.0.255"), full("127.1.0.254"), full("127.1.0.253"),
+                full("127.2.0.255"), full("127.2.0.254"), full("127.2.0.253"));
     }
 
     @Before
@@ -234,12 +229,12 @@ public class WriteResponseHandlerTest
 
     private static AbstractWriteResponseHandler createWriteResponseHandler(ConsistencyLevel cl, ConsistencyLevel ideal, long queryStartTime)
     {
-        return ks.getReplicationStrategy().getWriteResponseHandler(WritePathReplicaPlan.createReplicaPlan(ks, cl, targets, ReplicaList.of()), cl, () -> {},
+        return ks.getReplicationStrategy().getWriteResponseHandler(WritePathReplicaPlan.createReplicaPlan(ks, cl, targets, EndpointsForRange.empty(targets.range())), cl, () -> {},
                                                                    WriteType.SIMPLE, queryStartTime, ideal);
     }
 
     private static MessageIn createDummyMessage(int target)
     {
-        return MessageIn.create(targets.get(target).getEndpoint(), null, null,  null, 0, 0L);
+        return MessageIn.create(targets.get(target).endpoint(), null, null,  null, 0, 0L);
     }
 }

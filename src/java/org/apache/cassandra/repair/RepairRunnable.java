@@ -35,6 +35,8 @@ import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
 import com.google.common.util.concurrent.*;
+import org.apache.cassandra.locator.EndpointsForRange;
+import org.apache.cassandra.locator.Replica;
 import org.apache.commons.lang3.time.DurationFormatUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -44,7 +46,6 @@ import org.apache.cassandra.concurrent.JMXConfigurableThreadPoolExecutor;
 import org.apache.cassandra.concurrent.NamedThreadFactory;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.gms.FailureDetector;
-import org.apache.cassandra.locator.ReplicaSet;
 import org.apache.cassandra.repair.consistent.SyncStatSummary;
 import org.apache.cassandra.schema.SchemaConstants;
 import org.apache.cassandra.db.Keyspace;
@@ -244,21 +245,20 @@ public class RepairRunnable extends WrappedRunnable implements ProgressEventNoti
         Set<InetAddressAndPort> allNeighbors = new HashSet<>();
         List<CommonRange> commonRanges = new ArrayList<>();
 
-        // pre-calculate output of getLocalReplicas and pass it to getNeighbors
-        // to increase performance and prevent calculation multiple times
-        // we don't coordinate repairs for transient ranges
-        Iterable<Range<Token>> keyspaceLocalRanges = storageService.getLocalReplicas(keyspace).fullRanges();
+        //pre-calculate output of getLocalReplicas and pass it to getNeighbors to increase performance and prevent
+        //calculation multiple times
+        Iterable<Range<Token>> keyspaceLocalRanges = storageService.getLocalReplicas(keyspace).filter(Replica::isFull).ranges();
 
         try
         {
             for (Range<Token> range : options.getRanges())
             {
-                ReplicaSet neighbors = ActiveRepairService.getNeighbors(keyspace, keyspaceLocalRanges, range,
+                EndpointsForRange neighbors = ActiveRepairService.getNeighbors(keyspace, keyspaceLocalRanges, range,
                                                                         options.getDataCenters(),
                                                                         options.getHosts());
 
                 addRangeToNeighbors(commonRanges, range, neighbors);
-                allNeighbors.addAll(neighbors.asEndpointSet());
+                allNeighbors.addAll(neighbors.endpoints());
             }
 
             progress.incrementAndGet();
@@ -694,10 +694,10 @@ public class RepairRunnable extends WrappedRunnable implements ProgressEventNoti
                                                ImmutableList.of(failureMessage, completionMessage));
     }
 
-    private void addRangeToNeighbors(List<CommonRange> neighborRangeList, Range<Token> range, ReplicaSet neighbors)
+    private void addRangeToNeighbors(List<CommonRange> neighborRangeList, Range<Token> range, EndpointsForRange neighbors)
     {
-        Set<InetAddressAndPort> endpoints = Sets.newHashSet(neighbors.asEndpoints());
-        Set<InetAddressAndPort> transEndpoints = Sets.newHashSet(neighbors.transientEndpoints());
+        Set<InetAddressAndPort> endpoints = neighbors.endpoints();
+        Set<InetAddressAndPort> transEndpoints = neighbors.filter(Replica::isTransient).endpoints();
         for (int i = 0; i < neighborRangeList.size(); i++)
         {
             CommonRange cr = neighborRangeList.get(i);

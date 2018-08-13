@@ -22,10 +22,11 @@ import java.util.*;
 import com.google.common.annotations.VisibleForTesting;
 
 import org.apache.cassandra.locator.InetAddressAndPort;
+import org.apache.cassandra.locator.RangesAtEndpoint;
 import org.apache.cassandra.locator.Replica;
-import org.apache.cassandra.locator.ReplicaCollection;
 import org.apache.cassandra.utils.UUIDGen;
 
+import static com.google.common.collect.Iterables.all;
 import static org.apache.cassandra.service.ActiveRepairService.NO_PENDING_REPAIR;
 
 /**
@@ -75,7 +76,7 @@ public class StreamPlan
      * @param transientRanges ranges to fetch that from provides only transient data of
      * @return this object for chaining
      */
-    public StreamPlan requestRanges(InetAddressAndPort from, String keyspace, ReplicaCollection fullRanges, ReplicaCollection transientRanges)
+    public StreamPlan requestRanges(InetAddressAndPort from, String keyspace, RangesAtEndpoint fullRanges, RangesAtEndpoint transientRanges)
     {
         return requestRanges(from, keyspace, fullRanges, transientRanges, EMPTY_COLUMN_FAMILIES);
     }
@@ -90,12 +91,12 @@ public class StreamPlan
      * @param columnFamilies specific column families
      * @return this object for chaining
      */
-    public StreamPlan requestRanges(InetAddressAndPort from, String keyspace, ReplicaCollection fullRanges, ReplicaCollection transientRanges, String... columnFamilies)
+    public StreamPlan requestRanges(InetAddressAndPort from, String keyspace, RangesAtEndpoint fullRanges, RangesAtEndpoint transientRanges, String... columnFamilies)
     {
         //It should either be a dummy address for repair or if it's a bootstrap/move/rebuild it should be this node
-        assert fullRanges.allMatch(Replica::isLocal) | fullRanges.allMatch(range -> range.getEndpoint().getHostAddress(true).equals("0.0.0.0:0")) :
+        assert all(fullRanges, Replica::isLocal) || all(fullRanges, range -> range.endpoint().getHostAddress(true).equals("0.0.0.0:0")) :
              fullRanges.toString();
-        assert transientRanges.allMatch(Replica::isLocal) | transientRanges.allMatch(range -> range.getEndpoint().getHostAddress(true).equals("0.0.0.0:0")) :
+        assert all(transientRanges, Replica::isLocal) || all(transientRanges, range -> range.endpoint().getHostAddress(true).equals("0.0.0.0:0")) :
         transientRanges.toString();
         StreamSession session = coordinator.getOrCreateNextSession(from);
         session.addStreamRequest(keyspace, fullRanges, transientRanges, Arrays.asList(columnFamilies));
@@ -111,7 +112,7 @@ public class StreamPlan
      * @param columnFamilies specific column families
      * @return this object for chaining
      */
-    public StreamPlan transferRanges(InetAddressAndPort to, String keyspace, ReplicaCollection replicas, String... columnFamilies)
+    public StreamPlan transferRanges(InetAddressAndPort to, String keyspace, RangesAtEndpoint replicas, String... columnFamilies)
     {
         StreamSession session = coordinator.getOrCreateNextSession(to);
         session.addTransferRanges(keyspace, replicas, Arrays.asList(columnFamilies), flushBeforeTransfer);

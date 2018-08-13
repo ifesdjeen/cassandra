@@ -33,7 +33,7 @@ public interface IAsyncCallback<T>
 {
     final Predicate<InetAddressAndPort> isAlive = FailureDetector.instance::isAlive;
 
-    final Predicate<Replica> isReplicaAlive = replica -> isAlive.apply(replica.getEndpoint());
+    final Predicate<Replica> isReplicaAlive = replica -> isAlive.apply(replica.endpoint());
 
     /**
      * @param msg response received.

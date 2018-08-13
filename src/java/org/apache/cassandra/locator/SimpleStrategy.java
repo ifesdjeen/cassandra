@@ -45,19 +45,20 @@ public class SimpleStrategy extends AbstractReplicationStrategy
         this.rf = ReplicationFactor.fromString(this.configOptions.get("replication_factor"));
     }
 
-    public ReplicaList calculateNaturalReplicas(Token token, TokenMetadata metadata)
+    public EndpointsForRange calculateNaturalReplicas(Token token, TokenMetadata metadata)
     {
-        ArrayList<Token> tokens = metadata.sortedTokens();
-        ReplicaList replicas = new ReplicaList(rf.replicas);
+        ArrayList<Token> ring = metadata.sortedTokens();
+        if (ring.isEmpty())
+            return EndpointsForRange.empty(new Range<>(metadata.partitioner.getMinimumToken(), metadata.partitioner.getMinimumToken()));
 
-        if (tokens.isEmpty())
-            return replicas;
-
-        // Add the token at the index by default
-        Token replicaEnd = TokenMetadata.firstToken(tokens, token);
+        Token replicaEnd = TokenMetadata.firstToken(ring, token);
         Token replicaStart = metadata.getPredecessor(replicaEnd);
         Range<Token> replicaRange = new Range<>(replicaStart, replicaEnd);
-        Iterator<Token> iter = TokenMetadata.ringIterator(tokens, token, false);
+        Iterator<Token> iter = TokenMetadata.ringIterator(ring, token, false);
+
+        EndpointsForRange.Builder replicas = EndpointsForRange.builder(replicaRange, rf.replicas);
+
+        // Add the token at the index by default
         while (replicas.size() < rf.replicas && iter.hasNext())
         {
             Token tk = iter.next();
@@ -65,7 +66,7 @@ public class SimpleStrategy extends AbstractReplicationStrategy
             if (!replicas.containsEndpoint(ep))
                 replicas.add(new Replica(ep, replicaRange, replicas.size() < rf.full));
         }
-        return replicas;
+        return replicas.build();
     }
 
     public ReplicationFactor getReplicationFactor()

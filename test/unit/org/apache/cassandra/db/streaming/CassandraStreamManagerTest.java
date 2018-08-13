@@ -33,6 +33,8 @@ import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
 import com.google.common.util.concurrent.Uninterruptibles;
+import org.apache.cassandra.locator.EndpointsForRange;
+import org.apache.cassandra.locator.RangesAtEndpoint;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.BeforeClass;
@@ -50,7 +52,6 @@ import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.io.sstable.Descriptor;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.apache.cassandra.locator.InetAddressAndPort;
-import org.apache.cassandra.locator.ReplicaList;
 import org.apache.cassandra.schema.KeyspaceParams;
 import org.apache.cassandra.schema.Schema;
 import org.apache.cassandra.schema.TableMetadata;
@@ -142,7 +143,7 @@ public class CassandraStreamManagerTest
     private Set<SSTableReader> getReadersForRange(Range<Token> range)
     {
         Collection<OutgoingStream> streams = cfs.getStreamManager().createOutgoingStreams(session(NO_PENDING_REPAIR),
-                                                                                          ReplicaList.toDummyList(Collections.singleton(range)),
+                                                                                          RangesAtEndpoint.toDummyList(Collections.singleton(range)),
                                                                                           NO_PENDING_REPAIR,
                                                                                           PreviewKind.NONE);
         return sstablesFromStreams(streams);
@@ -152,7 +153,7 @@ public class CassandraStreamManagerTest
     {
         IPartitioner partitioner = DatabaseDescriptor.getPartitioner();
         Collection<Range<Token>> ranges = Lists.newArrayList(new Range<Token>(partitioner.getMinimumToken(), partitioner.getMinimumToken()));
-        Collection<OutgoingStream> streams = cfs.getStreamManager().createOutgoingStreams(session(pendingRepair), ReplicaList.toDummyList(ranges), pendingRepair, PreviewKind.NONE);
+        Collection<OutgoingStream> streams = cfs.getStreamManager().createOutgoingStreams(session(pendingRepair), RangesAtEndpoint.toDummyList(ranges), pendingRepair, PreviewKind.NONE);
         return sstablesFromStreams(streams);
     }
 

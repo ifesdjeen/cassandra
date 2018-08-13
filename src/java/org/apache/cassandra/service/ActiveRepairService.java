@@ -38,6 +38,8 @@ import com.google.common.util.concurrent.AbstractFuture;
 
 import com.google.common.util.concurrent.ListeningExecutorService;
 import com.google.common.util.concurrent.MoreExecutors;
+import org.apache.cassandra.locator.EndpointsByRange;
+import org.apache.cassandra.locator.EndpointsForRange;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -60,8 +62,7 @@ import org.apache.cassandra.gms.IEndpointStateChangeSubscriber;
 import org.apache.cassandra.gms.IFailureDetectionEventListener;
 import org.apache.cassandra.gms.VersionedValue;
 import org.apache.cassandra.locator.InetAddressAndPort;
-import org.apache.cassandra.locator.ReplicaList;
-import org.apache.cassandra.locator.ReplicaSet;
+import org.apache.cassandra.locator.Replicas;
 import org.apache.cassandra.locator.TokenMetadata;
 import org.apache.cassandra.net.IAsyncCallbackWithFailure;
 import org.apache.cassandra.net.MessageIn;
@@ -301,12 +302,12 @@ public class ActiveRepairService implements IEndpointStateChangeSubscriber, IFai
      *
      * @return neighbors with whom we share the provided range
      */
-    public static ReplicaSet getNeighbors(String keyspaceName, Iterable<Range<Token>> keyspaceLocalRanges,
+    public static EndpointsForRange getNeighbors(String keyspaceName, Iterable<Range<Token>> keyspaceLocalRanges,
                                           Range<Token> toRepair, Collection<String> dataCenters,
                                           Collection<String> hosts)
     {
         StorageService ss = StorageService.instance;
-        Map<Range<Token>, ReplicaList> replicaSets = ss.getRangeToAddressMap(keyspaceName);
+        EndpointsByRange replicaSets = ss.getRangeToAddressMap(keyspaceName);
         Range<Token> rangeSuperSet = null;
         for (Range<Token> range : keyspaceLocalRanges)
         {
@@ -324,11 +325,10 @@ public class ActiveRepairService implements IEndpointStateChangeSubscriber, IFai
             }
         }
         if (rangeSuperSet == null || !replicaSets.containsKey(rangeSuperSet))
-            return ReplicaSet.empty();
+            return EndpointsForRange.empty(toRepair);
 
-        ReplicaSet neighbors = new ReplicaSet(replicaSets.get(rangeSuperSet));
-
-        neighbors.removeEndpoint(FBUtilities.getBroadcastAddressAndPort());
+        EndpointsForRange neighbors = Replicas.filterOutLocalEndpoint(replicaSets.get(rangeSuperSet));
+        Replicas.checkFull(replicaSets.get(rangeSuperSet));
 
         if (dataCenters != null && !dataCenters.isEmpty())
         {
@@ -341,7 +341,7 @@ public class ActiveRepairService implements IEndpointStateChangeSubscriber, IFai
                 if (c != null)
                     dcEndpoints.addAll(c);
             }
-            return neighbors.intersectOnEndpoints(dcEndpoints);
+            return Replicas.keepEndpoints(neighbors, dcEndpoints);
         }
         else if (hosts != null && !hosts.isEmpty())
         {
@@ -351,7 +351,7 @@ public class ActiveRepairService implements IEndpointStateChangeSubscriber, IFai
                 try
                 {
                     final InetAddressAndPort endpoint = InetAddressAndPort.getByName(host.trim());
-                    if (endpoint.equals(FBUtilities.getBroadcastAddressAndPort()) || neighbors.containsEndpoint(endpoint))
+                    if (endpoint.equals(FBUtilities.getBroadcastAddressAndPort()) || neighbors.endpoints().contains(endpoint))
                         specifiedHost.add(endpoint);
                 }
                 catch (UnknownHostException e)
@@ -372,7 +372,7 @@ public class ActiveRepairService implements IEndpointStateChangeSubscriber, IFai
             }
 
             specifiedHost.remove(FBUtilities.getBroadcastAddressAndPort());
-            return neighbors.intersectOnEndpoints(specifiedHost);
+            return Replicas.keepEndpoints(neighbors, specifiedHost);
         }
 
         return neighbors;

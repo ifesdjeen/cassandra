@@ -121,7 +121,7 @@ public class LongStreamingTest
             public void init(String keyspace)
             {
                 for (Replica range : StorageService.instance.getLocalReplicas(KS))
-                    addRangeForEndpoint(range.getRange(), FBUtilities.getBroadcastAddressAndPort());
+                    addRangeForEndpoint(range.range(), FBUtilities.getBroadcastAddressAndPort());
 
                 this.ks = keyspace;
             }
@@ -148,7 +148,7 @@ public class LongStreamingTest
             public void init(String keyspace)
             {
                 for (Replica range : StorageService.instance.getLocalReplicas(KS))
-                    addRangeForEndpoint(range.getRange(), FBUtilities.getBroadcastAddressAndPort());
+                    addRangeForEndpoint(range.range(), FBUtilities.getBroadcastAddressAndPort());
 
                 this.ks = keyspace;
             }

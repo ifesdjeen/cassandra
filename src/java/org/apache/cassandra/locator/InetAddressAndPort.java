@@ -192,7 +192,7 @@ public final class InetAddressAndPort implements Comparable<InetAddressAndPort>,
         return InetAddressAndPort.getByAddress(InetAddress.getLoopbackAddress());
     }
 
-    public static InetAddressAndPort getLocalHost() throws UnknownHostException
+    public static InetAddressAndPort getLocalHost()
     {
         return FBUtilities.getLocalAddressAndPort();
     }

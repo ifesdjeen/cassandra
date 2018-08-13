@@ -44,8 +44,8 @@ import org.apache.cassandra.db.rows.Row;
 import org.apache.cassandra.db.rows.RowDiffListener;
 import org.apache.cassandra.db.rows.Rows;
 import org.apache.cassandra.db.rows.UnfilteredRowIterators;
+import org.apache.cassandra.locator.Endpoints;
 import org.apache.cassandra.locator.Replica;
-import org.apache.cassandra.locator.ReplicaList;
 import org.apache.cassandra.schema.ColumnMetadata;
 
 import static org.apache.cassandra.service.reads.repair.ReadRepair.createRepairMutation;
@@ -62,7 +62,7 @@ public class RowIteratorMergeListener implements UnfilteredRowIterators.MergeLis
     private final Replica[] sources;
     private final Row.Builder[] currentRows;
     private final RowDiffListener diffListener;
-    private final ReplicaList sourcesList;
+    private final Endpoints<?> sourcesList;
 
     // The partition level deletion for the merge row.
     private DeletionTime partitionLevelDeletion;
@@ -75,7 +75,7 @@ public class RowIteratorMergeListener implements UnfilteredRowIterators.MergeLis
 
     private final ReadRepair readRepair;
 
-    public RowIteratorMergeListener(DecoratedKey partitionKey, RegularAndStaticColumns columns, boolean isReversed, ReplicaList sources, ReadCommand command, ConsistencyLevel consistency, ReadRepair readRepair)
+    public RowIteratorMergeListener(DecoratedKey partitionKey, RegularAndStaticColumns columns, boolean isReversed, Endpoints<?> sources, ReadCommand command, ConsistencyLevel consistency, ReadRepair readRepair)
     {
         this.partitionKey = partitionKey;
         this.columns = columns;

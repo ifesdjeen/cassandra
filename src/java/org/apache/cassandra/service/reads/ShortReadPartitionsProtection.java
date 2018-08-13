@@ -37,8 +37,8 @@ import org.apache.cassandra.db.transform.Transformation;
 import org.apache.cassandra.dht.AbstractBounds;
 import org.apache.cassandra.dht.ExcludingBounds;
 import org.apache.cassandra.dht.Range;
+import org.apache.cassandra.locator.EndpointsForRange;
 import org.apache.cassandra.locator.Replica;
-import org.apache.cassandra.locator.ReplicaList;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.service.ReplicaPlan;
 import org.apache.cassandra.service.reads.repair.NoopReadRepair;
@@ -171,7 +171,7 @@ public class ShortReadPartitionsProtection extends Transformation<UnfilteredRowI
     private UnfilteredPartitionIterator executeReadCommand(ReadCommand cmd)
     {
         Keyspace keyspace = Keyspace.open(command.metadata().keyspace);
-        ReplicaList singleReplica = ReplicaList.of(source);
+        EndpointsForRange singleReplica = EndpointsForRange.of(source);
         ReplicaPlan plan = new ReplicaPlan(keyspace, ConsistencyLevel.ONE, singleReplica, singleReplica);
         DataResolver resolver = new DataResolver(cmd, plan, NoopReadRepair.instance, queryStartNanoTime);
         ReadCallback handler = ReadCallback.create(resolver, cmd, plan, queryStartNanoTime);
@@ -179,7 +179,7 @@ public class ShortReadPartitionsProtection extends Transformation<UnfilteredRowI
         if (source.isLocal())
             StageManager.getStage(Stage.READ).maybeExecuteImmediately(new StorageProxy.LocalReadRunnable(cmd, handler));
         else
-            MessagingService.instance().sendRRWithFailure(cmd.createMessage(), source.getEndpoint(), handler);
+            MessagingService.instance().sendRRWithFailure(cmd.createMessage(), source.endpoint(), handler);
 
         // We don't call handler.get() because we want to preserve tombstones since we're still in the middle of merging node results.
         handler.awaitResults();

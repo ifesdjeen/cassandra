@@ -24,7 +24,7 @@ import org.apache.cassandra.dht.Token;
 
 public class ReplicaUtils
 {
-    private static final Range<Token> FULL_RANGE = new Range<>(Murmur3Partitioner.MINIMUM, Murmur3Partitioner.MINIMUM);
+    public static final Range<Token> FULL_RANGE = new Range<>(Murmur3Partitioner.MINIMUM, Murmur3Partitioner.MINIMUM);
 
     public static Replica full(InetAddressAndPort endpoint, Range<Token> range)
     {

@@ -18,15 +18,10 @@
 
 package org.apache.cassandra.locator;
 
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 
 import com.google.common.base.Preconditions;
-import com.google.common.collect.Iterables;
-import com.google.common.collect.Lists;
 
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
@@ -80,11 +75,11 @@ public class Replica implements Comparable<Replica>
     {
         StringBuilder sb = new StringBuilder();
         sb.append(full ? "Full" : "Transient");
-        sb.append('(').append(getEndpoint()).append(',').append(range).append(')');
+        sb.append('(').append(endpoint()).append(',').append(range).append(')');
         return sb.toString();
     }
 
-    public final InetAddressAndPort getEndpoint()
+    public final InetAddressAndPort endpoint()
     {
         return endpoint;
     }
@@ -94,7 +89,7 @@ public class Replica implements Comparable<Replica>
         return endpoint.equals(FBUtilities.getBroadcastAddressAndPort());
     }
 
-    public Range<Token> getRange()
+    public Range<Token> range()
     {
         return range;
     }
@@ -109,59 +104,52 @@ public class Replica implements Comparable<Replica>
         return !isFull();
     }
 
-    public ReplicaSet subtract(Replica that)
-    {
-        assert isFull() && that.isFull();  // FIXME: this
-        Set<Range<Token>> ranges = range.subtract(that.range);
-        ReplicaSet replicatedRanges = new ReplicaSet(ranges.size());
-        for (Range<Token> range : ranges)
-        {
-            replicatedRanges.add(new Replica(getEndpoint(), range, isFull()));
-        }
-        return replicatedRanges;
-    }
-
     /**
      * Subtract the ranges of the given replicas from the range of this replica,
      * returning a set of replicas with the endpoint and transient information of
      * this replica, and the ranges resulting from the subtraction.
      */
-    public ReplicaSet subtractByRange(ReplicaCollection toSubtract)
+    public RangesAtEndpoint subtractByRange(RangesAtEndpoint toSubtract)
     {
-        Set<Range<Token>> subtractedRanges = getRange().subtractAll(toSubtract.asRangeSet());
-        ReplicaSet replicaSet = new ReplicaSet(subtractedRanges.size());
+        // TODO: is it OK to ignore transient status here?
+        Set<Range<Token>> subtractedRanges = range().subtractAll(toSubtract.ranges());
+        RangesAtEndpoint.Builder result = RangesAtEndpoint.builder(subtractedRanges.size());
         for (Range<Token> range : subtractedRanges)
         {
-            replicaSet.add(decorateSubrange(range));
+            result.add(decorateSubrange(range));
         }
-        return replicaSet;
+        return result.build();
     }
 
-    public ReplicaSet subtractIgnoreTransientStatus(Replica that)
+    public RangesAtEndpoint subtract(Replica that)
     {
-        Set<Range<Token>> ranges = range.subtract(that.range);
-        ReplicaSet replicatedRanges = new ReplicaSet(ranges.size());
+        assert isFull() && that.isFull();  // FIXME: this
+        return subtractIgnoreTransientStatus(that.range);
+    }
+
+    public RangesAtEndpoint subtractIgnoreTransientStatus(Range<Token> subtract)
+    {
+        Set<Range<Token>> ranges = this.range.subtract(subtract);
+        RangesAtEndpoint.Builder result = RangesAtEndpoint.builder(ranges.size());
         for (Range<Token> subrange : ranges)
-        {
-            replicatedRanges.add(decorateSubrange(subrange));
-        }
-        return replicatedRanges;
+            result.add(decorateSubrange(subrange));
+        return result.build();
     }
 
     public boolean contains(Range<Token> that)
     {
-        return getRange().contains(that);
+        return range().contains(that);
     }
 
     public boolean intersectsOnRange(Replica replica)
     {
-        return getRange().intersects(replica.getRange());
+        return range().intersects(replica.range());
     }
 
     public Replica decorateSubrange(Range<Token> subrange)
     {
         Preconditions.checkArgument(range.contains(subrange));
-        return new Replica(getEndpoint(), subrange, isFull());
+        return new Replica(endpoint(), subrange, isFull());
     }
 
     public static Replica full(InetAddressAndPort endpoint, Range<Token> range)

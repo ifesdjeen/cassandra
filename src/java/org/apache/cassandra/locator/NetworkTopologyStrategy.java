@@ -86,7 +86,7 @@ public class NetworkTopologyStrategy extends AbstractReplicationStrategy
     private static final class DatacenterEndpoints
     {
         /** List accepted endpoints get pushed into. */
-        ReplicaSet replicas;
+        EndpointsForRange.Mutable replicas;
 
         /**
          * Racks encountered so far. Replicas are put into separate racks while possible.
@@ -100,7 +100,7 @@ public class NetworkTopologyStrategy extends AbstractReplicationStrategy
         int acceptableRackRepeats;
         int transients;
 
-        DatacenterEndpoints(ReplicationFactor rf, int rackCount, int nodeCount, ReplicaSet replicas, Set<Pair<String, String>> racks)
+        DatacenterEndpoints(ReplicationFactor rf, int rackCount, int nodeCount, EndpointsForRange.Mutable replicas, Set<Pair<String, String>> racks)
         {
             this.replicas = replicas;
             this.racks = racks;
@@ -125,7 +125,7 @@ public class NetworkTopologyStrategy extends AbstractReplicationStrategy
             if (done())
                 return false;
 
-            if (replicas.containsEndpoint(ep))
+            if (replicas.endpoints().contains(ep))
                 // Cannot repeat a node.
                 return false;
 
@@ -135,16 +135,14 @@ public class NetworkTopologyStrategy extends AbstractReplicationStrategy
             {
                 // New rack.
                 --rfLeft;
-                boolean added = replicas.add(replica);
-                assert added;
+                replicas.add(replica, false);
                 return done();
             }
             if (acceptableRackRepeats <= 0)
                 // There must be rfLeft distinct racks left, do not add any more rack repeats.
                 return false;
 
-            boolean added = replicas.add(replica);
-            assert added;
+            replicas.add(replica, false);
             // Added a node that is from an already met rack to match RF when there aren't enough racks.
             --acceptableRackRepeats;
             --rfLeft;
@@ -161,10 +159,15 @@ public class NetworkTopologyStrategy extends AbstractReplicationStrategy
     /**
      * calculate endpoints in one pass through the tokens by tracking our progress in each DC.
      */
-    public ReplicaList calculateNaturalReplicas(Token searchToken, TokenMetadata tokenMetadata)
+    public EndpointsForRange calculateNaturalReplicas(Token searchToken, TokenMetadata tokenMetadata)
     {
         // we want to preserve insertion order so that the first added endpoint becomes primary
-        ReplicaSet replicas = ReplicaSet.orderPreserving();
+        ArrayList<Token> sortedTokens = tokenMetadata.sortedTokens();
+        Token replicaEnd = TokenMetadata.firstToken(sortedTokens, searchToken);
+        Token replicaStart = tokenMetadata.getPredecessor(replicaEnd);
+        Range<Token> replicatedRange = new Range<>(replicaStart, replicaEnd);
+
+        EndpointsForRange.Mutable builder = new EndpointsForRange.Mutable(replicatedRange);
         Set<Pair<String, String>> seenRacks = new HashSet<>();
 
         Topology topology = tokenMetadata.getTopology();
@@ -187,15 +190,11 @@ public class NetworkTopologyStrategy extends AbstractReplicationStrategy
             if (rf.replicas <= 0 || nodeCount <= 0)
                 continue;
 
-            DatacenterEndpoints dcEndpoints = new DatacenterEndpoints(rf, sizeOrZero(racks.get(dc)), nodeCount, replicas, seenRacks);
+            DatacenterEndpoints dcEndpoints = new DatacenterEndpoints(rf, sizeOrZero(racks.get(dc)), nodeCount, builder, seenRacks);
             dcs.put(dc, dcEndpoints);
             ++dcsToFill;
         }
 
-        ArrayList<Token> sortedTokens = tokenMetadata.sortedTokens();
-        Token replicaEnd = TokenMetadata.firstToken(sortedTokens, searchToken);
-        Token replicaStart = tokenMetadata.getPredecessor(replicaEnd);
-        Range<Token> replicatedRange = new Range<>(replicaStart, replicaEnd);
         Iterator<Token> tokenIter = TokenMetadata.ringIterator(sortedTokens, searchToken, false);
         while (dcsToFill > 0 && tokenIter.hasNext())
         {
@@ -206,7 +205,7 @@ public class NetworkTopologyStrategy extends AbstractReplicationStrategy
             if (dcEndpoints != null && dcEndpoints.addEndpointAndCheckIfDone(ep, location, replicatedRange))
                 --dcsToFill;
         }
-        return new ReplicaList(replicas);
+        return builder.asImmutableView();
     }
 
     private int sizeOrZero(Multimap<?, ?> collection)

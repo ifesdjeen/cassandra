@@ -21,9 +21,9 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Collection;
 import java.util.Iterator;
-import java.util.List;
 import java.util.Map;
 
+import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.dht.Token;
 
@@ -43,17 +43,19 @@ public class OldNetworkTopologyStrategy extends AbstractReplicationStrategy
         this.rf = ReplicationFactor.fromString(this.configOptions.get("replication_factor"));
     }
 
-    public ReplicaList calculateNaturalReplicas(Token token, TokenMetadata metadata)
+    public EndpointsForRange calculateNaturalReplicas(Token token, TokenMetadata metadata)
     {
-        ReplicaList replicas = new ReplicaList(rf.replicas);
         ArrayList<Token> tokens = metadata.sortedTokens();
-
         if (tokens.isEmpty())
-            return replicas;
+            return EndpointsForRange.empty(new Range<>(metadata.partitioner.getMinimumToken(), metadata.partitioner.getMinimumToken()));
 
         Iterator<Token> iter = TokenMetadata.ringIterator(tokens, token, false);
         Token primaryToken = iter.next();
         Token previousToken = metadata.getPredecessor(primaryToken);
+        Range<Token> tokenRange = new Range<>(previousToken, primaryToken);
+
+        EndpointsForRange.Builder replicas = EndpointsForRange.builder(tokenRange, rf.replicas);
+
         assert rf.trans == 0: "support transient replicas";
         replicas.add(new Replica(metadata.getEndpoint(primaryToken), previousToken, primaryToken, true));
 
@@ -96,12 +98,12 @@ public class OldNetworkTopologyStrategy extends AbstractReplicationStrategy
             {
                 Token t = iter.next();
                 Replica replica = new Replica(metadata.getEndpoint(t), previousToken, primaryToken, true);
-                if (!replicas.containsEndpoint(replica.getEndpoint()))
+                if (!replicas.containsEndpoint(replica.endpoint()))
                     replicas.add(replica);
             }
         }
 
-        return replicas;
+        return replicas.build();
     }
 
     public ReplicationFactor getReplicationFactor()

@@ -19,7 +19,7 @@
 package org.apache.cassandra.service.reads;
 
 import com.google.common.collect.Iterables;
-import com.google.common.collect.Lists;
+import org.apache.cassandra.locator.EndpointsForRange;
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -28,7 +28,6 @@ import org.apache.cassandra.db.SimpleBuilders;
 import org.apache.cassandra.db.SinglePartitionReadCommand;
 import org.apache.cassandra.db.partitions.PartitionUpdate;
 import org.apache.cassandra.db.rows.Row;
-import org.apache.cassandra.locator.ReplicaList;
 import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.service.ReplicaPlan;
 import org.apache.cassandra.service.reads.repair.NoopReadRepair;
@@ -65,7 +64,7 @@ public class DigestResolverTest extends AbstractReadResponseTest
     public void noRepairNeeded()
     {
         SinglePartitionReadCommand command = SinglePartitionReadCommand.fullPartitionRead(cfm, nowInSec, dk(5));
-        ReplicaList targetReplicas = new ReplicaList(Lists.newArrayList(full(EP1), full(EP2)));
+        EndpointsForRange targetReplicas = EndpointsForRange.of(full(EP1), full(EP2));
         TestableReadRepair readRepair = new TestableReadRepair(command, ConsistencyLevel.QUORUM);
         DigestResolver resolver = new DigestResolver(command, plan(ConsistencyLevel.QUORUM, targetReplicas), readRepair, 0);
 
@@ -84,7 +83,7 @@ public class DigestResolverTest extends AbstractReadResponseTest
     public void digestMismatch()
     {
         SinglePartitionReadCommand command = SinglePartitionReadCommand.fullPartitionRead(cfm, nowInSec, dk(5));
-        ReplicaList targetReplicas = new ReplicaList(Lists.newArrayList(full(EP1), full(EP2)));
+        EndpointsForRange targetReplicas = EndpointsForRange.of(full(EP1), full(EP2));
         DigestResolver resolver = new DigestResolver(command, plan(ConsistencyLevel.QUORUM, targetReplicas), NoopReadRepair.instance,0);
 
         PartitionUpdate response1 = update(row(1000, 4, 4), row(1000, 5, 5)).build();
@@ -105,7 +104,7 @@ public class DigestResolverTest extends AbstractReadResponseTest
     public void agreeingTransient()
     {
         SinglePartitionReadCommand command = SinglePartitionReadCommand.fullPartitionRead(cfm, nowInSec, dk(5));
-        ReplicaList targetReplicas = new ReplicaList(Lists.newArrayList(full(EP1), trans(EP2)));
+        EndpointsForRange targetReplicas = EndpointsForRange.of(full(EP1), trans(EP2));
         TestableReadRepair readRepair = new TestableReadRepair(command, ConsistencyLevel.QUORUM);
         DigestResolver resolver = new DigestResolver(command, plan(ConsistencyLevel.QUORUM, targetReplicas), readRepair, 0);
 
@@ -128,7 +127,7 @@ public class DigestResolverTest extends AbstractReadResponseTest
     public void transientResponse()
     {
         SinglePartitionReadCommand command = SinglePartitionReadCommand.fullPartitionRead(cfm, nowInSec, dk(5));
-        ReplicaList targetReplicas = new ReplicaList(Lists.newArrayList(full(EP1), trans(EP2)));
+        EndpointsForRange targetReplicas = EndpointsForRange.of(full(EP1), trans(EP2));
         DigestResolver resolver = new DigestResolver(command, plan(ConsistencyLevel.QUORUM, targetReplicas), NoopReadRepair.instance, 0);
 
         PartitionUpdate response2 = update(row(1000, 5, 5)).build();
@@ -148,7 +147,7 @@ public class DigestResolverTest extends AbstractReadResponseTest
     public void transientRepairsForwarding()
     {
         SinglePartitionReadCommand command = SinglePartitionReadCommand.fullPartitionRead(cfm, nowInSec, dk(5));
-        ReplicaList targetReplicas = new ReplicaList(Lists.newArrayList(full(EP1), full(EP2), trans(EP3)));
+        EndpointsForRange targetReplicas = EndpointsForRange.of(full(EP1), full(EP2), trans(EP3));
         TestableReadRepair readRepair = new TestableReadRepair(command, ConsistencyLevel.QUORUM);
         DigestResolver resolver = new DigestResolver(command, plan(ConsistencyLevel.QUORUM, targetReplicas), readRepair, 0);
 
@@ -169,7 +168,7 @@ public class DigestResolverTest extends AbstractReadResponseTest
         Assert.assertFalse(readRepair.sent.containsKey(EP3));
     }
 
-    private ReplicaPlan plan(ConsistencyLevel consistencyLevel, ReplicaList replicas)
+    private ReplicaPlan plan(ConsistencyLevel consistencyLevel, EndpointsForRange replicas)
     {
         return new ReplicaPlan(ks, consistencyLevel, replicas, replicas);
     }

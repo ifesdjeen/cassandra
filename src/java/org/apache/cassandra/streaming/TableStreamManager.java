@@ -21,10 +21,7 @@ package org.apache.cassandra.streaming;
 import java.util.Collection;
 import java.util.UUID;
 
-import org.apache.cassandra.dht.Range;
-import org.apache.cassandra.dht.Token;
-import org.apache.cassandra.locator.ReplicaList;
-import org.apache.cassandra.locator.Replicas;
+import org.apache.cassandra.locator.RangesAtEndpoint;
 import org.apache.cassandra.streaming.messages.StreamMessageHeader;
 
 /**
@@ -53,7 +50,7 @@ public interface TableStreamManager
      * There aren't any requirements on how data is divided between the outgoing streams
      */
     Collection<OutgoingStream> createOutgoingStreams(StreamSession session,
-                                                     ReplicaList replicas,
+                                                     RangesAtEndpoint replicas,
                                                      UUID pendingRepair,
                                                      PreviewKind previewKind);
 }

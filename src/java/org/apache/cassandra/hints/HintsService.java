@@ -20,11 +20,14 @@ package org.apache.cassandra.hints;
 import java.io.File;
 import java.lang.management.ManagementFactory;
 import java.net.UnknownHostException;
+import java.util.Collection;
 import java.util.Collections;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Supplier;
+import java.util.stream.Collectors;
 
 import javax.management.MBeanServer;
 import javax.management.ObjectName;
@@ -49,7 +52,6 @@ import org.apache.cassandra.service.StorageProxy;
 import org.apache.cassandra.service.StorageService;
 
 import static com.google.common.collect.Iterables.transform;
-import static com.google.common.collect.Iterables.size;
 
 /**
  * A singleton-ish wrapper over various hints components:
@@ -152,7 +154,7 @@ public final class HintsService implements HintsServiceMBean
      * @param hostIds host ids of the hint's target nodes
      * @param hint the hint to store
      */
-    public void write(Iterable<UUID> hostIds, Hint hint)
+    public void write(Collection<UUID> hostIds, Hint hint)
     {
         if (isShutDown)
             throw new IllegalStateException("HintsService is shut down and can't accept new hints");
@@ -162,7 +164,7 @@ public final class HintsService implements HintsServiceMBean
 
         bufferPool.write(hostIds, hint);
 
-        StorageMetrics.totalHints.inc(size(hostIds));
+        StorageMetrics.totalHints.inc(hostIds.size());
     }
 
     /**
@@ -184,10 +186,15 @@ public final class HintsService implements HintsServiceMBean
         String keyspaceName = hint.mutation.getKeyspaceName();
         Token token = hint.mutation.key().getToken();
 
-        ReplicaCollection replicas = StorageService.instance.getNaturalAndPendingReplicas(keyspaceName, token);
+        ReplicaCollection<?> replicas = StorageService.instance.getNaturalAndPendingReplicasForToken(keyspaceName, token);
         Replicas.checkFull(replicas);
-        Iterable<InetAddressAndPort> endpoints = Replicas.filter(replicas, StorageProxy::shouldHint).asEndpoints();
-        Iterable<UUID> hostIds = transform(endpoints, StorageService.instance::getHostIdForEndpoint);
+
+        // judicious use of streams: eagerly materializing probably cheaper
+        // than performing filters / translations 2x extra via Iterables.filter/transform
+        List<UUID> hostIds = replicas.stream()
+                .filter(StorageProxy::shouldHint)
+                .map(replica -> StorageService.instance.getHostIdForEndpoint(replica.endpoint()))
+                .collect(Collectors.toList());
 
         write(hostIds, hint);
     }

@@ -20,6 +20,7 @@ package org.apache.cassandra.dht;
 import java.util.Set;
 
 import com.google.common.annotations.VisibleForTesting;
+import org.apache.cassandra.locator.RangesAtEndpoint;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -37,7 +38,7 @@ public class StreamStateStore implements StreamEventHandler
 {
     private static final Logger logger = LoggerFactory.getLogger(StreamStateStore.class);
 
-    public Pair<Set<Range<Token>>, Set<Range<Token>>> getAvailableRanges(String keyspace, IPartitioner partitioner)
+    public RangesAtEndpoint getAvailableRanges(String keyspace, IPartitioner partitioner)
     {
         return SystemKeyspace.getAvailableRanges(keyspace, partitioner);
     }
@@ -53,9 +54,8 @@ public class StreamStateStore implements StreamEventHandler
     @VisibleForTesting
     public boolean isDataAvailable(String keyspace, Token token)
     {
-        Pair<Set<Range<Token>>, Set<Range<Token>>> availableRanges = getAvailableRanges(keyspace, token.getPartitioner());
-        return availableRanges.left.stream().anyMatch(range -> range.contains(token))
-               || availableRanges.right.stream().anyMatch(range -> range.contains(token));
+        RangesAtEndpoint availableRanges = getAvailableRanges(keyspace, token.getPartitioner());
+        return availableRanges.ranges().stream().anyMatch(range -> range.contains(token));
     }
 
     /**
@@ -78,7 +78,7 @@ public class StreamStateStore implements StreamEventHandler
                 }
                 for (StreamRequest request : se.requests)
                 {
-                    SystemKeyspace.updateAvailableRanges(request.keyspace, request.fullReplicas.asRangeSet(), request.transientReplicas.asRangeSet());
+                    SystemKeyspace.updateAvailableRanges(request.keyspace, request.fullReplicas.ranges(), request.transientReplicas.ranges());
                 }
             }
         }

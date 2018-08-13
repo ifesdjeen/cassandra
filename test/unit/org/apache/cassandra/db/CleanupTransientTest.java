@@ -23,6 +23,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.UUID;
 
+import org.apache.cassandra.locator.RangesAtEndpoint;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
@@ -38,7 +39,6 @@ import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.apache.cassandra.locator.AbstractNetworkTopologySnitch;
 import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.locator.Replica;
-import org.apache.cassandra.locator.ReplicaSet;
 import org.apache.cassandra.locator.TokenMetadata;
 import org.apache.cassandra.schema.KeyspaceParams;
 import org.apache.cassandra.service.PendingRangeCalculatorService;
@@ -142,13 +142,13 @@ public class CleanupTransientTest
         //Get an exact count of how many partitions are in the fully replicated range and should
         //be retained
         int fullCount = 0;
-        ReplicaSet localRanges = StorageService.instance.getLocalReplicas(keyspace.getName()).filter(Replica::isFull);
+        RangesAtEndpoint localRanges = StorageService.instance.getLocalReplicas(keyspace.getName()).filter(Replica::isFull);
         for (FilteredPartition partition : Util.getAll(Util.cmd(cfs).build()))
         {
             Token token = partition.partitionKey().getToken();
             for (Replica r : localRanges)
             {
-                if (r.getRange().contains(token))
+                if (r.range().contains(token))
                     fullCount++;
             }
         }

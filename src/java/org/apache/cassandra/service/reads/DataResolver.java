@@ -22,8 +22,10 @@ import java.util.*;
 import com.google.common.base.Joiner;
 import com.google.common.collect.Iterables;
 
+import org.apache.cassandra.locator.Endpoints;
+import org.apache.cassandra.locator.EndpointsForToken;
 import org.apache.cassandra.locator.Replica;
-import org.apache.cassandra.locator.ReplicaList;
+import org.apache.cassandra.locator.ReplicaCollection;
 import org.apache.cassandra.service.ReplicaPlan;
 import org.apache.cassandra.service.reads.repair.ReadRepair;
 import org.apache.cassandra.db.*;
@@ -65,7 +67,7 @@ public class DataResolver extends ResponseResolver
         // at the beginning of this method), so grab the response count once and use that through the method.
         int count = responses.size();
         List<UnfilteredPartitionIterator> iters = new ArrayList<>(count);
-        ReplicaList sources = new ReplicaList(count);
+        ReplicaCollection.Mutable<? extends Endpoints<?>> sources = replicaPlan.allReplicas().newMutable(count);
         for (int i = 0; i < count; i++)
         {
             MessageIn<ReadResponse> msg = responses.get(i);
@@ -96,14 +98,14 @@ public class DataResolver extends ResponseResolver
         DataLimits.Counter mergedResultCounter =
             command.limits().newCounter(command.nowInSec(), true, command.selectsFullPartition(), enforceStrictLiveness);
 
-        UnfilteredPartitionIterator merged = mergeWithShortReadProtection(iters, sources, mergedResultCounter);
+        UnfilteredPartitionIterator merged = mergeWithShortReadProtection(iters, sources.asImmutableView(), mergedResultCounter);
         FilteredPartitions filtered = FilteredPartitions.filter(merged, new Filter(command.nowInSec(), command.metadata().enforceStrictLiveness()));
         PartitionIterator counted = Transformation.apply(filtered, mergedResultCounter);
         return Transformation.apply(counted, new EmptyPartitionsDiscarder());
     }
 
     private UnfilteredPartitionIterator mergeWithShortReadProtection(List<UnfilteredPartitionIterator> results,
-                                                                     ReplicaList sources,
+                                                                     Endpoints<?> sources,
                                                                      DataLimits.Counter mergedResultCounter)
     {
         // If we have only one results, there is no read repair to do and we can't get short reads
@@ -126,7 +128,7 @@ public class DataResolver extends ResponseResolver
         return Joiner.on(",\n").join(Iterables.transform(getMessages(), m -> m.from + " => " + m.payload.toDebugString(command, partitionKey)));
     }
 
-    private UnfilteredPartitionIterators.MergeListener wrapMergeListener(UnfilteredPartitionIterators.MergeListener partitionListener, ReplicaList sources)
+    private UnfilteredPartitionIterators.MergeListener wrapMergeListener(UnfilteredPartitionIterators.MergeListener partitionListener, Endpoints<?> sources)
     {
         return new UnfilteredPartitionIterators.MergeListener()
         {
