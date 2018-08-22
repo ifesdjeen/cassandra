@@ -19,11 +19,12 @@ package org.apache.cassandra.dht;
 
 import java.util.*;
 import java.util.function.BiFunction;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Predicate;
-import com.google.common.base.Predicates;
 import com.google.common.collect.HashMultimap;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Iterators;
@@ -312,13 +313,14 @@ public class RangeStreamer
     {
         EndpointsByRange rangeAddresses = strat.getRangeAddresses(tmdBefore);
 
-        Predicate<Replica> isNotAlive = Predicates.not(isAlive);
         InetAddressAndPort localAddress = FBUtilities.getBroadcastAddressAndPort();
         logger.debug ("Keyspace: {}", keyspace);
         logger.debug("To fetch RN: {}", fetchRanges);
         logger.debug("Fetch ranges: {}", rangeAddresses);
 
-        Predicate<Replica> sourceFiltersPredicate = Predicates.and(sourceFilters);
+        Predicate<Replica> testSourceFilters = and(sourceFilters);
+        Function<EndpointsForRange, EndpointsForRange> sorted =
+                endpoints -> snitchGetSortedListByProximity.apply(localAddress, endpoints);
 
         //This list of replicas is just candidates. With strict consistency it's going to be a narrow list.
         EndpointsByReplica.Mutable rangesToFetchWithPreferredEndpoints = new EndpointsByReplica.Mutable();
@@ -327,22 +329,27 @@ public class RangeStreamer
             //Replica that is sufficient to provide the data we need
             //With strict consistency and transient replication we may end up with multiple types
             //so this isn't used with strict consistency
-            Predicate<Replica> replicaIsSufficientFilter = toFetch.isFull() ? Replica::isFull : Predicates.alwaysTrue();
+            Predicate<Replica> isSufficient = r -> (toFetch.isTransient() || r.isFull());
+            Predicate<Replica> accept = r ->
+                       isSufficient.test(r)                 // is sufficient
+                    && !r.endpoint().equals(localAddress)   // is not self
+                    && isAlive.test(r);                     // is alive
+
             logger.debug("To fetch {}", toFetch);
             for (Range<Token> range : rangeAddresses.keySet())
             {
                 if (range.contains(toFetch.range()))
                 {
+                    EndpointsForRange oldEndpoints = rangeAddresses.get(range);
+
                     //Ultimately we populate this with whatever is going to be fetched from to satisfy toFetch
                     //It could be multiple endpoints and we must fetch from all of them if they are there
                     //With transient replication and strict consistency this is to get the full data from a full replica and
                     //transient data from the transient replica losing data
-                    EndpointsForRange endpoints;
-                    Predicate<Replica> notSelf = replica -> !replica.endpoint().equals(localAddress);
+                    EndpointsForRange sources;
                     if (useStrictConsistency)
                     {
                         //Start with two sets of who replicates the range before and who replicates it after
-                        EndpointsForRange oldEndpoints = rangeAddresses.get(range);
                         EndpointsForRange newEndpoints = strat.calculateNaturalReplicas(toFetch.range().right, tmdAfter);
                         logger.debug("Old endpoints {}", oldEndpoints);
                         logger.debug("New endpoints {}", newEndpoints);
@@ -351,13 +358,13 @@ public class RangeStreamer
                         //So we need to be careful to only be strict when endpoints == RF
                         if (oldEndpoints.size() == strat.getReplicationFactor().replicas)
                         {
-                            Predicate<Replica> endpointNotReplicatedAnymore = replica -> !any(newEndpoints, newReplica -> newReplica.endpoint().equals(replica.endpoint()));
-                            //Remove new endpoints from old endpoints based on address
-                            oldEndpoints = oldEndpoints.filter(endpointNotReplicatedAnymore);
+                            Set<InetAddressAndPort> endpointsStillReplicated = newEndpoints.endpoints();
+                            // Remove new endpoints from old endpoints based on address
+                            oldEndpoints = oldEndpoints.filter(r -> !endpointsStillReplicated.contains(r.endpoint()));
 
-                            if (any(oldEndpoints, isNotAlive))
+                            if (!all(oldEndpoints, isAlive))
                                 throw new IllegalStateException("A node required to move the data consistently is down: "
-                                                                + oldEndpoints.filter(isNotAlive));
+                                                                + oldEndpoints.filter(not(isAlive)));
 
                             if (oldEndpoints.size() > 1)
                                 throw new AssertionError("Expected <= 1 endpoint but found " + oldEndpoints);
@@ -372,45 +379,44 @@ public class RangeStreamer
                                 throw new AssertionError("If there are no endpoints to fetch from then we must be transitioning from transient to full for range " + toFetch);
                             }
 
-                            //Need an additional full replica
-                            if (toFetch.isFull() && !any(oldEndpoints, Replica::isFull))
+                            if (!any(oldEndpoints, isSufficient))
                             {
-                                Optional<Replica> fullReplica = Iterables.<Replica>tryFind(rangeAddresses.get(range), Predicates.and(Replica::isFull, notSelf, isAlive, sourceFiltersPredicate)).toJavaUtil();
+                                // need an additional replica
+                                EndpointsForRange endpointsForRange = sorted.apply(rangeAddresses.get(range));
+                                // include all our filters, to ensure we include a matching node
+                                Optional<Replica> fullReplica = Iterables.<Replica>tryFind(endpointsForRange, and(accept, testSourceFilters)).toJavaUtil();
                                 if (fullReplica.isPresent())
                                     oldEndpoints = Endpoints.concat(oldEndpoints, EndpointsForRange.of(fullReplica.get()), false);
                                 else
-                                    throw new IllegalStateException("Couldn't find an alive full replica");
+                                    throw new IllegalStateException("Couldn't find any matching sufficient replica out of " + endpointsForRange);
                             }
+
+                            //We have to check the source filters here to see if they will remove any replicas
+                            //required for strict consistency
+                            if (!all(oldEndpoints, testSourceFilters))
+                                throw new IllegalStateException("Necessary replicas for strict consistency were removed by source filters: " + oldEndpoints.filter(not(testSourceFilters)));
                         }
                         else
                         {
-                            oldEndpoints = oldEndpoints.filter(Predicates.and(notSelf, isAlive, replicaIsSufficientFilter));
+                            oldEndpoints = sorted.apply(oldEndpoints.filter(accept));
                         }
 
-                        endpoints = oldEndpoints;
-
-                        //We have to check the source filters here to see if they will remove any replicas
-                        //required for strict consistency
-                        if (!all(endpoints, Predicates.not(sourceFiltersPredicate)))
-                        {
-                            throw new IllegalStateException("Necessary replicas for strict consistency were removed by source filters: " + endpoints.filter(Predicates.not(sourceFiltersPredicate)));
-                        }
+                        sources = oldEndpoints;
                     }
                     else
                     {
                         //Without strict consistency we have given up on correctness so no point in fetching from
                         //a random full + transient replica since it's also likely to lose data
                         //TODO this is returning multiple replicas and we need to reduce it to just one
-                        endpoints = snitchGetSortedListByProximity.apply(localAddress, rangeAddresses.get(range))
-                                                                  .filter(Predicates.and(replicaIsSufficientFilter, notSelf, isAlive));
+                        sources = sorted.apply(rangeAddresses.get(range).filter(accept));
                     }
 
                     //Apply additional policy filters that were given to us, and establish everything remaining is alive for the strict case
-                    endpoints = endpoints.filter(sourceFiltersPredicate);
+                    sources = sources.filter(testSourceFilters);
 
                     // storing range and preferred endpoint set
-                    rangesToFetchWithPreferredEndpoints.putAll(toFetch, endpoints, false);
-                    logger.debug("Endpoints to fetch for {} are {}", toFetch, endpoints);
+                    rangesToFetchWithPreferredEndpoints.putAll(toFetch, sources, false);
+                    logger.debug("Endpoints to fetch for {} are {}", toFetch, sources);
                 }
             }
 

@@ -63,13 +63,13 @@ public class StreamRequest
         {
             out.writeUTF(request.keyspace);
             out.writeInt(request.columnFamilies.size());
-            serializeReplicaCollection(request.fullReplicas, out, version);
-            serializeReplicaCollection(request.transientReplicas, out, version);
+            serializeReplicas(request.fullReplicas, out, version);
+            serializeReplicas(request.transientReplicas, out, version);
             for (String cf : request.columnFamilies)
                 out.writeUTF(cf);
         }
 
-        private void serializeReplicaCollection(RangesAtEndpoint replicas, DataOutputPlus out, int version) throws IOException
+        private void serializeReplicas(RangesAtEndpoint replicas, DataOutputPlus out, int version) throws IOException
         {
             out.writeInt(replicas.size());
             for (Replica replica : replicas)

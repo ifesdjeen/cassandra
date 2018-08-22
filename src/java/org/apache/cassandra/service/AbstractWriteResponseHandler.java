@@ -287,6 +287,9 @@ public abstract class AbstractWriteResponseHandler<T> implements IAsyncCallbackW
         }
     }
 
+    /**
+     * Cheap Quorum backup.  If we failed to reach quorum with our initial (full) nodes, reach out to other nodes.
+     */
     public void maybeTryAdditionalReplicas(IMutation mutation, StorageProxy.WritePerformer writePerformer, String localDC)
     {
         if (replicaPlan.allReplicas.size() == replicaPlan.targetReplicas.size())

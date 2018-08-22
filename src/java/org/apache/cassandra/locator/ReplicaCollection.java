@@ -24,14 +24,11 @@ import java.util.Set;
 import java.util.function.Predicate;
 import java.util.stream.Stream;
 
-import org.apache.cassandra.dht.Range;
-import org.apache.cassandra.dht.Token;
-
 /**
  * A collection like class for Replica objects. Represents both a well defined order on the contained Replica objects,
  * and efficient methods for accessing the contained Replicas, directly and as a projection onto their endpoints and ranges.
  */
-public interface ReplicaCollection<C extends ReplicaCollection<? extends C>> extends Iterable<Replica>
+public interface ReplicaCollection<C extends ReplicaCollection<C>> extends Iterable<Replica>
 {
     /**
      * @return a Set of the endpoints of the contained Replicas.
@@ -93,7 +90,7 @@ public interface ReplicaCollection<C extends ReplicaCollection<? extends C>> ext
      * A mutable extension of a ReplicaCollection.  This is append-only, so it is safe to select a subList,
      * or at any time take an asImmutableView() snapshot.
      */
-    public interface Mutable<C extends ReplicaCollection<? extends C>> extends ReplicaCollection<C>
+    public interface Mutable<C extends ReplicaCollection<C>> extends ReplicaCollection<C>
     {
         /**
          * @return an Immutable clone that mirrors any modifications to this Mutable instance.
@@ -129,7 +126,7 @@ public interface ReplicaCollection<C extends ReplicaCollection<? extends C>> ext
         }
     }
 
-    public static class Builder<C extends ReplicaCollection<? extends C>, M extends Mutable<C>, B extends Builder<C, M, B>>
+    public static class Builder<C extends ReplicaCollection<C>, M extends Mutable<C>, B extends Builder<C, M, B>>
     {
         Mutable<C> mutable;
         public Builder(Mutable<C> mutable) { this.mutable = mutable; }
