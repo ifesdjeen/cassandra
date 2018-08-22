@@ -29,17 +29,18 @@ import org.apache.cassandra.db.partitions.UnfilteredPartitionIterators;
 import org.apache.cassandra.db.rows.UnfilteredRowIterator;
 import org.apache.cassandra.db.rows.UnfilteredRowIterators;
 import org.apache.cassandra.locator.Endpoints;
+import org.apache.cassandra.locator.ReplicaLayout;
 
 public class PartitionIteratorMergeListener implements UnfilteredPartitionIterators.MergeListener
 {
-    private final Endpoints<?> sources;
+    private final ReplicaLayout layout;
     private final ReadCommand command;
     private final ConsistencyLevel consistency;
     private final ReadRepair readRepair;
 
-    public PartitionIteratorMergeListener(Endpoints<?> sources, ReadCommand command, ConsistencyLevel consistency, ReadRepair readRepair)
+    public PartitionIteratorMergeListener(ReplicaLayout layout, ReadCommand command, ConsistencyLevel consistency, ReadRepair readRepair)
     {
-        this.sources = sources;
+        this.layout = layout;
         this.command = command;
         this.consistency = consistency;
         this.readRepair = readRepair;
@@ -47,7 +48,7 @@ public class PartitionIteratorMergeListener implements UnfilteredPartitionIterat
 
     public UnfilteredRowIterators.MergeListener getRowMergeListener(DecoratedKey partitionKey, List<UnfilteredRowIterator> versions)
     {
-        return new RowIteratorMergeListener(partitionKey, columns(versions), isReversed(versions), sources, command, consistency, readRepair);
+        return new RowIteratorMergeListener(partitionKey, columns(versions), isReversed(versions), layout, command, consistency, readRepair);
     }
 
     protected RegularAndStaticColumns columns(List<UnfilteredRowIterator> versions)

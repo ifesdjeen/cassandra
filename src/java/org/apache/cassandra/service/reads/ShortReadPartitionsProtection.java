@@ -21,7 +21,6 @@ package org.apache.cassandra.service.reads;
 import org.apache.cassandra.concurrent.Stage;
 import org.apache.cassandra.concurrent.StageManager;
 import org.apache.cassandra.db.ColumnFamilyStore;
-import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.db.DataRange;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.Keyspace;
@@ -37,10 +36,9 @@ import org.apache.cassandra.db.transform.Transformation;
 import org.apache.cassandra.dht.AbstractBounds;
 import org.apache.cassandra.dht.ExcludingBounds;
 import org.apache.cassandra.dht.Range;
-import org.apache.cassandra.locator.EndpointsForRange;
+import org.apache.cassandra.locator.ReplicaLayout;
 import org.apache.cassandra.locator.Replica;
 import org.apache.cassandra.net.MessagingService;
-import org.apache.cassandra.service.ReplicaPlan;
 import org.apache.cassandra.service.reads.repair.NoopReadRepair;
 import org.apache.cassandra.service.StorageProxy;
 import org.apache.cassandra.tracing.Tracing;
@@ -84,9 +82,10 @@ public class ShortReadPartitionsProtection extends Transformation<UnfilteredRowI
          * If we don't apply the transformation *after* extending the partition with MoreRows,
          * applyToRow() method of protection will not be called on the first row of the new extension iterator.
          */
+        ReplicaLayout.ForToken replicaLayout = ReplicaLayout.forSRP(Keyspace.open(command.metadata().keyspace), partition.partitionKey().getToken(), source);
         ShortReadRowsProtection protection = new ShortReadRowsProtection(partition.partitionKey(),
                                                                          command, source,
-                                                                         this::executeReadCommand,
+                                                                         (cmd) -> executeReadCommand(cmd, replicaLayout),
                                                                          singleResultCounter,
                                                                          mergedResultCounter);
         return Transformation.apply(MoreRows.extend(partition, protection), protection);
@@ -141,8 +140,13 @@ public class ShortReadPartitionsProtection extends Transformation<UnfilteredRowI
         ColumnFamilyStore.metricsFor(command.metadata().id).shortReadProtectionRequests.mark();
         Tracing.trace("Requesting {} extra rows from {} for short read protection", toQuery, source);
 
-        PartitionRangeReadCommand cmd = makeFetchAdditionalPartitionReadCommand(toQuery);
-        return executeReadCommand(cmd);
+        AbstractBounds<PartitionPosition> newBounds = calculateNewBounds();
+        PartitionRangeReadCommand oldCommand = (PartitionRangeReadCommand) command;
+        DataRange newDataRange = oldCommand.dataRange().forSubRange(newBounds);
+        PartitionRangeReadCommand cmd = oldCommand.withUpdatedLimitsAndDataRange(oldCommand.limits().forShortReadRetry(toQuery), newDataRange);
+        ReplicaLayout.ForRange replicaLayout = ReplicaLayout.forSRP(Keyspace.open(command.metadata().keyspace), cmd.dataRange().keyRange(), source);
+
+        return executeReadCommand(cmd, replicaLayout);
     }
 
     // Counts the number of rows for regular queries and the number of groups for GROUP BY queries
@@ -153,28 +157,20 @@ public class ShortReadPartitionsProtection extends Transformation<UnfilteredRowI
                : counter.counted();
     }
 
-    private PartitionRangeReadCommand makeFetchAdditionalPartitionReadCommand(int toQuery)
+    private AbstractBounds<PartitionPosition> calculateNewBounds()
     {
         PartitionRangeReadCommand cmd = (PartitionRangeReadCommand) command;
 
-        DataLimits newLimits = cmd.limits().forShortReadRetry(toQuery);
-
         AbstractBounds<PartitionPosition> bounds = cmd.dataRange().keyRange();
-        AbstractBounds<PartitionPosition> newBounds = bounds.inclusiveRight()
-                                                      ? new Range<>(lastPartitionKey, bounds.right)
-                                                      : new ExcludingBounds<>(lastPartitionKey, bounds.right);
-        DataRange newDataRange = cmd.dataRange().forSubRange(newBounds);
-
-        return cmd.withUpdatedLimitsAndDataRange(newLimits, newDataRange);
+        return bounds.inclusiveRight()
+               ? new Range<>(lastPartitionKey, bounds.right)
+               : new ExcludingBounds<>(lastPartitionKey, bounds.right);
     }
 
-    private UnfilteredPartitionIterator executeReadCommand(ReadCommand cmd)
+    private UnfilteredPartitionIterator executeReadCommand(ReadCommand cmd, ReplicaLayout<?, ?> plan)
     {
-        Keyspace keyspace = Keyspace.open(command.metadata().keyspace);
-        EndpointsForRange singleReplica = EndpointsForRange.of(source);
-        ReplicaPlan plan = new ReplicaPlan(keyspace, ConsistencyLevel.ONE, singleReplica, singleReplica);
-        DataResolver resolver = new DataResolver(cmd, plan, NoopReadRepair.instance, queryStartNanoTime);
-        ReadCallback handler = ReadCallback.create(resolver, cmd, plan, queryStartNanoTime);
+        DataResolver<?, ?> resolver = new DataResolver(cmd, plan, NoopReadRepair.instance, queryStartNanoTime);
+        ReadCallback<?, ?> handler = new ReadCallback(resolver, plan.blockFor(), cmd, plan, queryStartNanoTime);
 
         if (source.isLocal())
             StageManager.getStage(Stage.READ).maybeExecuteImmediately(new StorageProxy.LocalReadRunnable(cmd, handler));

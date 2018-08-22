@@ -41,14 +41,12 @@ import org.apache.cassandra.locator.AbstractReplicationStrategy;
 import org.apache.cassandra.locator.IEndpointSnitch;
 import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.locator.Replica;
-import org.apache.cassandra.locator.ReplicaList;
+import org.apache.cassandra.locator.ReplicaCollection;
 import org.apache.cassandra.locator.SimpleStrategy;
 import org.apache.cassandra.locator.TokenMetadata;
 import org.apache.cassandra.utils.Pair;
 
 import static org.apache.cassandra.service.StorageServiceTest.assertMultimapEqualsIgnoreOrder;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
 
 /**
  * This is also fairly effectively testing source retrieval for bootstrap as well since RangeStreamer
@@ -99,23 +97,18 @@ public class BootstrapTransientTest
     Range<Token> bRange = new Range<>(tenToken, twentyToken);
     Range<Token> cRange = new Range<>(twentyToken, thirtyToken);
     Range<Token> dRange = new Range<>(thirtyToken, fourtyToken);
-    Range<Token> aPrimeRange = new Range<>(fourtyToken, tenToken);
 
-
+    // Pending address ranges
     RangesAtEndpoint current = RangesAtEndpoint.of(new Replica(aAddress, aRange, true),
                                        new Replica(aAddress, cRange, true),
                                        new Replica(aAddress, bRange, false));
-
-    ReplicaList toFetch = ReplicaList.of(new Replica(dAddress, dRange, true),
-                                       new Replica(cAddress, cRange, true),
-                                       new Replica(bAddress, bRange, false));
 
 
 
     @Test
     public void testRangeStreamerRangesToFetch() throws Exception
     {
-        invokeCalculateRangesToFetchWithPreferredEndpoints(toFetch, constructTMDs(), null);
+        invokeCalculateRangesToFetchWithPreferredEndpoints(current, constructTMDs(), null);
     }
 
     private Pair<TokenMetadata, TokenMetadata> constructTMDs()
@@ -130,7 +123,7 @@ public class BootstrapTransientTest
         return Pair.create(tmd, updated);
     }
 
-    private void invokeCalculateRangesToFetchWithPreferredEndpoints(ReplicaList toFetch,
+    private void invokeCalculateRangesToFetchWithPreferredEndpoints(ReplicaCollection<?> toFetch,
                                                                     Pair<TokenMetadata, TokenMetadata> tmds,
                                                                     EndpointsByReplica expectedResult)
     {
@@ -145,7 +138,6 @@ public class BootstrapTransientTest
                                                                                                                    alivePredicate,
                                                                                                                    "OldNetworkTopologyStrategyTest",
                                                                                                                    sourceFilters);
-        result.asMap().forEach((replica, list) -> System.out.printf("Replica %s, sources %s%n", replica, list));
         assertMultimapEqualsIgnoreOrder(expectedResult, result);
 
     }

@@ -25,6 +25,11 @@ import java.util.UUID;
 import java.util.function.Predicate;
 
 import com.google.common.collect.Sets;
+
+import org.apache.cassandra.dht.Murmur3Partitioner;
+import org.apache.cassandra.dht.Token;
+import org.apache.cassandra.locator.EndpointsForToken;
+import org.apache.cassandra.locator.ReplicaLayout;
 import org.apache.cassandra.locator.EndpointsForRange;
 import org.junit.Assert;
 import org.junit.BeforeClass;
@@ -42,6 +47,7 @@ import org.apache.cassandra.locator.Replica;
 import org.apache.cassandra.locator.ReplicaCollection;
 import org.apache.cassandra.locator.TokenMetadata;
 import org.apache.cassandra.schema.KeyspaceParams;
+import org.apache.cassandra.utils.ByteBufferUtil;
 
 import static org.apache.cassandra.locator.ReplicaUtils.full;
 import static org.apache.cassandra.locator.ReplicaUtils.trans;
@@ -60,7 +66,7 @@ public class WriteResponseHandlerTransientTest
 
     static final String DC1 = "datacenter1";
     static final String DC2 = "datacenter2";
-
+    static Token dummy;
     static
     {
         try
@@ -83,6 +89,7 @@ public class WriteResponseHandlerTransientTest
     {
         SchemaLoader.loadSchema();
         DatabaseDescriptor.setTransientReplicationEnabledUnsafe(true);
+        DatabaseDescriptor.setPartitionerUnsafe(Murmur3Partitioner.instance);
 
         // Register peers with expected DC for NetworkTopologyStrategy.
         TokenMetadata metadata = StorageService.instance.getTokenMetadata();
@@ -131,33 +138,34 @@ public class WriteResponseHandlerTransientTest
         SchemaLoader.createKeyspace("ks", KeyspaceParams.nts(DC1, "3/1", DC2, "3/1"), SchemaLoader.standardCFMD("ks", "tbl"));
         ks = Keyspace.open("ks");
         cfs = ks.getColumnFamilyStore("tbl");
+        dummy = DatabaseDescriptor.getPartitioner().getToken(ByteBufferUtil.bytes(0));
     }
 
     @Test
-    public void checkPendingReplicasAreFiltered()
+    public void checkPendingReplicasAreNotFiltered()
     {
-        EndpointsForRange natural = EndpointsForRange.of(full(EP1), full(EP2), trans(EP3));
-        EndpointsForRange pending = EndpointsForRange.of(full(EP4), full(EP5), trans(EP6));
-        WritePathReplicaPlan replicaPlan = WritePathReplicaPlan.createReplicaPlan(ks, ConsistencyLevel.QUORUM, natural, pending, (a) -> true);
+        EndpointsForToken natural = EndpointsForToken.of(dummy.getToken(), full(EP1), full(EP2), trans(EP3));
+        EndpointsForToken pending = EndpointsForToken.of(dummy.getToken(),full(EP4), full(EP5), trans(EP6));
+        ReplicaLayout.ForToken replicaPlan = ReplicaLayout.forWrite(ks, ConsistencyLevel.QUORUM, dummy.getToken(), natural, natural, pending);
 
-        Assert.assertEquals(EndpointsForRange.of(full(EP4), full(EP5)), replicaPlan.pendingReplicas());
+        Assert.assertEquals(EndpointsForRange.of(full(EP4), full(EP5), trans(EP6)), replicaPlan.pendingReplicas());
     }
 
-    private static WritePathReplicaPlan expected(EndpointsForRange all, EndpointsForRange initial)
+    private static ReplicaLayout.ForToken expected(EndpointsForToken all, EndpointsForToken selected)
     {
-        return new WritePathReplicaPlan(ks, null, all, initial, EndpointsForRange.empty(all.range()));
+        return new ReplicaLayout.ForToken(ks, ConsistencyLevel.QUORUM, dummy.getToken(), all, EndpointsForToken.empty(dummy.getToken()), selected);
     }
 
-    private static WritePathReplicaPlan getSpeculationContext(EndpointsForRange replicas, int blockFor, Predicate<InetAddressAndPort> livePredicate)
+    private static ReplicaLayout.ForToken getSpeculationContext(EndpointsForToken replicas, int blockFor, Predicate<InetAddressAndPort> livePredicate)
     {
-        return WritePathReplicaPlan.createReplicaPlan(ks, ConsistencyLevel.QUORUM, blockFor, replicas, EndpointsForRange.empty(replicas.range()), livePredicate);
+        return ReplicaLayout.forWrite(ks, ConsistencyLevel.QUORUM, dummy.getToken(), blockFor, replicas, EndpointsForToken.empty(dummy.getToken()), livePredicate);
     }
 
-    private static void assertSpeculationReplicas(WritePathReplicaPlan expected, EndpointsForRange replicas, int blockFor, Predicate<InetAddressAndPort> livePredicate)
+    private static void assertSpeculationReplicas(ReplicaLayout.ForToken expected, EndpointsForToken replicas, int blockFor, Predicate<InetAddressAndPort> livePredicate)
     {
-        WritePathReplicaPlan actual = getSpeculationContext(replicas, blockFor, livePredicate);
-        Assert.assertEquals(expected.allReplicas, actual.allReplicas);
-        Assert.assertEquals(expected.targetReplicas, actual.targetReplicas);
+        ReplicaLayout.ForToken actual = getSpeculationContext(replicas, blockFor, livePredicate);
+        Assert.assertEquals(expected.natrualReplicas(), actual.natrualReplicas());
+        Assert.assertEquals(expected.selectedReplicas(), actual.selectedReplicas());
     }
 
     private static Predicate<InetAddressAndPort> dead(InetAddressAndPort... endpoints)
@@ -166,15 +174,15 @@ public class WriteResponseHandlerTransientTest
         return ep -> !deadSet.contains(ep);
     }
 
-    private static EndpointsForRange replicas(Replica... rr)
+    private static EndpointsForToken replicas(Replica... rr)
     {
-        return EndpointsForRange.of(rr);
+        return EndpointsForToken.of(dummy.getToken(), rr);
     }
 
     @Test
     public void checkSpeculationContext()
     {
-        EndpointsForRange all = replicas(full(EP1), full(EP2), trans(EP3));
+        EndpointsForToken all = replicas(full(EP1), full(EP2), trans(EP3));
         // in happy path, transient replica should be classified as a backup
         assertSpeculationReplicas(expected(all,
                                            replicas(full(EP1), full(EP2))),

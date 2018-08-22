@@ -20,10 +20,12 @@ package org.apache.cassandra.service.reads;
 
 import java.util.concurrent.TimeUnit;
 
-import com.google.common.collect.Lists;
 import com.google.common.primitives.Ints;
-import org.apache.cassandra.locator.EndpointsForRange;
+
+import org.apache.cassandra.Util;
+import org.apache.cassandra.db.DecoratedKey;
 import org.junit.Assert;
+import org.junit.Before;
 import org.junit.Test;
 
 import org.apache.cassandra.db.Clustering;
@@ -37,8 +39,9 @@ import org.apache.cassandra.db.Slice;
 import org.apache.cassandra.db.partitions.PartitionUpdate;
 import org.apache.cassandra.db.rows.BTreeRow;
 import org.apache.cassandra.db.rows.Row;
+import org.apache.cassandra.locator.EndpointsForToken;
+import org.apache.cassandra.locator.ReplicaLayout;
 import org.apache.cassandra.schema.TableMetadata;
-import org.apache.cassandra.service.ReplicaPlan;
 import org.apache.cassandra.service.reads.repair.TestableReadRepair;
 import org.apache.cassandra.utils.ByteBufferUtil;
 
@@ -51,6 +54,14 @@ import static org.apache.cassandra.locator.ReplicaUtils.trans;
  */
 public class DataResolverTransientTest extends AbstractReadResponseTest
 {
+    private static DecoratedKey key;
+
+    @Before
+    public void setUp()
+    {
+        key = Util.dk("key1");
+    }
+
     private static PartitionUpdate.Builder update(TableMetadata metadata, String key, Row... rows)
     {
         PartitionUpdate.Builder builder = new PartitionUpdate.Builder(metadata, dk(key), metadata.regularAndStaticColumns(), rows.length, false);
@@ -87,8 +98,8 @@ public class DataResolverTransientTest extends AbstractReadResponseTest
      */
     private void assertNoTransientRepairs(PartitionUpdate update)
     {
-        SinglePartitionReadCommand command = SinglePartitionReadCommand.fullPartitionRead(update.metadata(), nowInSec, dk(5));
-        EndpointsForRange targetReplicas = EndpointsForRange.of(full(EP1), full(EP2), trans(EP3));
+        SinglePartitionReadCommand command = SinglePartitionReadCommand.fullPartitionRead(update.metadata(), nowInSec, key);
+        EndpointsForToken targetReplicas = EndpointsForToken.of(key.getToken(), full(EP1), full(EP2), trans(EP3));
         TestableReadRepair repair = new TestableReadRepair(command, QUORUM);
         DataResolver resolver = new DataResolver(command, plan(targetReplicas, ConsistencyLevel.QUORUM), repair, 0);
 
@@ -157,7 +168,7 @@ public class DataResolverTransientTest extends AbstractReadResponseTest
     public void fullRepairsIgnoreTransientReplicas()
     {
         SinglePartitionReadCommand command = SinglePartitionReadCommand.fullPartitionRead(cfm, nowInSec, dk(5));
-        EndpointsForRange targetReplicas = EndpointsForRange.of(full(EP1), full(EP2), trans(EP3));
+        EndpointsForToken targetReplicas = EndpointsForToken.of(key.getToken(), full(EP1), full(EP2), trans(EP3));
         TestableReadRepair repair = new TestableReadRepair(command, QUORUM);
         DataResolver resolver = new DataResolver(command, plan(targetReplicas, QUORUM), repair, 0);
 
@@ -184,8 +195,8 @@ public class DataResolverTransientTest extends AbstractReadResponseTest
     public void transientMismatchesRepairFullReplicas()
     {
         SinglePartitionReadCommand command = SinglePartitionReadCommand.fullPartitionRead(cfm, nowInSec, dk(5));
-        EndpointsForRange targetReplicas = EndpointsForRange.of(full(EP1), full(EP2), trans(EP3));
-        TestableReadRepair repair = new TestableReadRepair(command, QUORUM);
+        EndpointsForToken targetReplicas = EndpointsForToken.of(key.getToken(), full(EP1), full(EP2), trans(EP3));
+        TestableReadRepair<?, ?> repair = new TestableReadRepair(command, QUORUM);
         DataResolver resolver = new DataResolver(command, plan(targetReplicas, QUORUM), repair, 0);
 
         Assert.assertFalse(resolver.isDataPresent());
@@ -206,8 +217,8 @@ public class DataResolverTransientTest extends AbstractReadResponseTest
 
     }
 
-    private ReplicaPlan plan(EndpointsForRange replicas, ConsistencyLevel consistencyLevel)
+    private ReplicaLayout.ForToken plan(EndpointsForToken replicas, ConsistencyLevel consistencyLevel)
     {
-        return new ReplicaPlan(ks, consistencyLevel, replicas, replicas);
+        return new ReplicaLayout.ForToken(ks, consistencyLevel, replicas.token(), replicas, null, replicas);
     }
 }

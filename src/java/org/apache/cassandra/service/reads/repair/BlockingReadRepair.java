@@ -24,6 +24,7 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
+import org.apache.cassandra.locator.ReplicaLayout;
 import org.apache.cassandra.locator.Endpoints;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -40,7 +41,6 @@ import org.apache.cassandra.exceptions.ReadTimeoutException;
 import org.apache.cassandra.locator.Replica;
 import org.apache.cassandra.metrics.ReadRepairMetrics;
 import org.apache.cassandra.net.MessagingService;
-import org.apache.cassandra.service.ReplicaPlan;
 import org.apache.cassandra.service.reads.DataResolver;
 import org.apache.cassandra.service.reads.DigestResolver;
 import org.apache.cassandra.service.reads.ReadCallback;
@@ -50,14 +50,14 @@ import org.apache.cassandra.tracing.Tracing;
  * 'Classic' read repair. Doesn't allow the client read to return until
  *  updates have been written to nodes needing correction.
  */
-public class BlockingReadRepair implements ReadRepair
+public class BlockingReadRepair<E extends Endpoints<E>, L extends ReplicaLayout<E, L>> implements ReadRepair<E, L>
 {
     private static final Logger logger = LoggerFactory.getLogger(BlockingReadRepair.class);
 
     private final ReadCommand command;
     private final long queryStartNanoTime;
     private final ColumnFamilyStore cfs;
-    private final ReplicaPlan replicaPlan;
+    private final L replicaPlan;
 
     private final Queue<BlockingPartitionRepair> repairs = new ConcurrentLinkedQueue<>();
 
@@ -81,7 +81,7 @@ public class BlockingReadRepair implements ReadRepair
     }
 
     public BlockingReadRepair(ReadCommand command,
-                              ReplicaPlan replicaPlan,
+                              L replicaPlan,
                               long queryStartNanoTime)
     {
         this.command = command;
@@ -91,7 +91,7 @@ public class BlockingReadRepair implements ReadRepair
         this.blockFor = replicaPlan.consistencyLevel().blockFor(cfs.keyspace);
     }
 
-    public UnfilteredPartitionIterators.MergeListener getMergeListener(Endpoints<?> replicas)
+    public UnfilteredPartitionIterators.MergeListener getMergeListener(L replicas)
     {
         return new PartitionIteratorMergeListener(replicas, command, replicaPlan.consistencyLevel(), this);
     }
@@ -115,12 +115,12 @@ public class BlockingReadRepair implements ReadRepair
         maybeMarkBlockingRepair();
 
         // Do a full data read to resolve the correct response (and repair node that need be)
-        ReplicaPlan repairPlan = replicaPlan.with(ConsistencyLevel.ALL);
-        DataResolver resolver = new DataResolver(command, repairPlan, this, queryStartNanoTime);
-        ReadCallback readCallback = new ReadCallback(resolver, repairPlan.targetReplicas().size(), command, cfs.keyspace, repairPlan, queryStartNanoTime);
+        L repairPlan = replicaPlan.forFullRepair();
+        DataResolver<E, L> resolver = new DataResolver<>(command, repairPlan, this, queryStartNanoTime);
+        ReadCallback<E, L> readCallback = new ReadCallback<>(resolver, repairPlan.selectedReplicas().size(), command, repairPlan, queryStartNanoTime);
         digestRepair = new DigestRepair(resolver, readCallback, resultConsumer);
 
-        for (Replica replica : repairPlan.targetReplicas())
+        for (Replica replica : repairPlan.selectedReplicas())
         {
             Tracing.trace("Enqueuing full data read to {}", replica);
             MessagingService.instance().sendRRWithFailure(command.createMessage(), replica.endpoint(), readCallback);
@@ -155,7 +155,7 @@ public class BlockingReadRepair implements ReadRepair
         if (shouldSpeculate() && !repair.readCallback.await(cfs.sampleReadLatencyNanos, TimeUnit.NANOSECONDS))
         {
             boolean speculated = false;
-            for (Replica replica: replicaPlan.additionalReplicas())
+            for (Replica replica: replicaPlan.extend().selectedReplicas())
             {
                 speculated = true;
                 Tracing.trace("Enqueuing speculative full data read to {}", replica);
@@ -200,11 +200,11 @@ public class BlockingReadRepair implements ReadRepair
     }
 
     @Override
-    public void repairPartition(Map<Replica, Mutation> mutations, Endpoints<?> targets)
+    public void repairPartition(Map<Replica, Mutation> mutations, L targets)
     {
         maybeMarkBlockingRepair();
         // Targets are overriden with ones that have responsed
-        BlockingPartitionRepair blockingRepair = new BlockingPartitionRepair(mutations, blockFor, replicaPlan.with(targets));
+        BlockingPartitionRepair<E, L> blockingRepair = new BlockingPartitionRepair<>(mutations, blockFor, targets);
         blockingRepair.sendInitialRepairs();
         repairs.add(blockingRepair);
     }
