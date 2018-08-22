@@ -71,9 +71,9 @@ public class WritePathReplicaPlan extends ReplicaPlan
         // TODO: TR-REVIEW why are we filtering to only isFull here? surely if any transient range is 'pending' it should be receiving writes too?
         pendingReplicas = pendingReplicas.filter(Replica::isFull);
         E allReplicas = Endpoints.concat(naturalReplicas, pendingReplicas, true);
-        E selectedReplicas = allReplicas.select(blockFor)
+        E selectedReplicas = allReplicas.select()
                 .add(r -> r.isFull() && livePredicate.test(r.endpoint()))
-                .add(r -> r.isTransient() && livePredicate.test(r.endpoint()))
+                .add(r -> r.isTransient() && livePredicate.test(r.endpoint()), blockFor)
                 .get();
 
         if (selectedReplicas.size() < blockFor)

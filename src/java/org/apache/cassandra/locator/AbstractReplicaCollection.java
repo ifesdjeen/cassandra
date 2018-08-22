@@ -135,23 +135,26 @@ public abstract class AbstractReplicaCollection<C extends AbstractReplicaCollect
     public final class Select
     {
         private final ArrayList<Replica> result;
-        private final int targetSize;
-        public Select(int targetSize)
+        public Select()
         {
-            this.result = new ArrayList<>(targetSize);
-            this.targetSize = targetSize;
+            this.result = new ArrayList<>(list.size());
         }
 
         /**
-         * Add matching replica to the result; this predicate should be mutually exclusive with all prior predicates
+         * Add matching replica to the result; this predicate should be mutually exclusive with all prior predicates.
+         * Stop once we have targetSize replicas in total, including preceding calls
          */
-        public Select add(Predicate<Replica> predicate)
+        public Select add(Predicate<Replica> predicate, int targetSize)
         {
             assert !Iterables.any(result, predicate::test);
             for (int i = 0 ; result.size() < targetSize && i < list.size() ; ++i)
                 if (predicate.test(list.get(i)))
                     result.add(list.get(i));
             return this;
+        }
+        public Select add(Predicate<Replica> predicate)
+        {
+            return add(predicate, Integer.MAX_VALUE);
         }
         public C get()
         {
@@ -161,16 +164,14 @@ public abstract class AbstractReplicaCollection<C extends AbstractReplicaCollect
 
     /**
      * An efficient method for selecting a subset of replica via a sequence of filters.
-     * Once the target number of replica are met, no more filters are applied, or replicas added.
      *
-     * Example: select(3).add(filter1).add(filter2).get();
+     * Example: select().add(filter1).add(filter2, 3).get();
      *
-     * @param targetSize the number of Replica you want to select into a new ReplicaCollection of type C
      * @return a Select object
      */
-    public final Select select(int targetSize)
+    public final Select select()
     {
-        return new Select(targetSize);
+        return new Select();
     }
 
     public final C sorted(Comparator<Replica> comparator)

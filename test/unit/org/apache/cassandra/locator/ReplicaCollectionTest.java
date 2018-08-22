@@ -142,10 +142,10 @@ public class ReplicaCollectionTest
 
         void testSelect(int subListDepth, int filterDepth, int sortDepth, int selectDepth)
         {
-            TestCase<C> allMatchZeroCapacity = new TestCase<>(test.select(0).add(Predicates.alwaysTrue()).get(), Collections.emptyList());
+            TestCase<C> allMatchZeroCapacity = new TestCase<>(test.select().add(Predicates.alwaysTrue(), 0).get(), Collections.emptyList());
             allMatchZeroCapacity.testAll(subListDepth, filterDepth, sortDepth, selectDepth - 1);
 
-            TestCase<C> noMatchFullCapacity = new TestCase<>(test.select(canonicalList.size()).add(Predicates.alwaysFalse()).get(), Collections.emptyList());
+            TestCase<C> noMatchFullCapacity = new TestCase<>(test.select().add(Predicates.alwaysFalse(), canonicalList.size()).get(), Collections.emptyList());
             noMatchFullCapacity.testAll(subListDepth, filterDepth, sortDepth,selectDepth - 1);
 
             if (canonicalList.size() <= 2)
@@ -153,10 +153,10 @@ public class ReplicaCollectionTest
 
             List<Replica> newOrderList = ImmutableList.of(canonicalList.get(2), canonicalList.get(1), canonicalList.get(0));
             TestCase<C> newOrder = new TestCase<>(
-                    test.select(3)
-                            .add(r -> r == newOrderList.get(0))
-                            .add(r -> r == newOrderList.get(1))
-                            .add(r -> r == newOrderList.get(2))
+                    test.select()
+                            .add(r -> r == newOrderList.get(0), 3)
+                            .add(r -> r == newOrderList.get(1), 3)
+                            .add(r -> r == newOrderList.get(2), 3)
                             .get(), newOrderList
             );
             newOrder.testAll(subListDepth, filterDepth, sortDepth,selectDepth - 1);
