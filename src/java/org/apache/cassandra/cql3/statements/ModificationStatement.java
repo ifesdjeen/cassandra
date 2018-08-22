@@ -465,7 +465,7 @@ public abstract class ModificationStatement implements CQLStatement
         else
             cl.validateForWrite(metadata.keyspace);
 
-        Collection<? extends IMutation> mutations = getMutations(options, false, options.getTimestamp(queryState), queryStartNanoTime);
+        List<? extends IMutation> mutations = getMutations(options, false, options.getTimestamp(queryState), queryStartNanoTime);
         if (!mutations.isEmpty())
             StorageProxy.mutateWithTriggers(mutations, cl, false, queryStartNanoTime);
 
@@ -660,7 +660,7 @@ public abstract class ModificationStatement implements CQLStatement
      *
      * @return list of the mutations
      */
-    private Collection<? extends IMutation> getMutations(QueryOptions options, boolean local, long now, long queryStartNanoTime)
+    private List<? extends IMutation> getMutations(QueryOptions options, boolean local, long now, long queryStartNanoTime)
     {
         UpdatesCollector collector = new SingleTableUpdatesCollector(metadata, updatedColumns, 1);
         addUpdates(collector, options, local, now, queryStartNanoTime);

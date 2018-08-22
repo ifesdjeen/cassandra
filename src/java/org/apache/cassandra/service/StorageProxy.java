@@ -668,40 +668,33 @@ public class StorageProxy implements StorageProxyMBean
      * @param consistency_level the consistency level for the operation
      * @param queryStartNanoTime the value of System.nanoTime() when the query started to be processed
      */
-    public static void mutate(Collection<? extends IMutation> mutations, ConsistencyLevel consistency_level, long queryStartNanoTime)
+    public static void mutate(List<? extends IMutation> mutations, ConsistencyLevel consistency_level, long queryStartNanoTime)
     throws UnavailableException, OverloadedException, WriteTimeoutException, WriteFailureException
     {
         Tracing.trace("Determining replicas for mutation");
         final String localDataCenter = DatabaseDescriptor.getEndpointSnitch().getDatacenter(FBUtilities.getBroadcastAddressAndPort());
 
         long startTime = System.nanoTime();
-        Map<IMutation, AbstractWriteResponseHandler<IMutation>> responseHandlers = new HashMap<>(mutations.size());
+
+        List<AbstractWriteResponseHandler<IMutation>> responseHandlers = new ArrayList<>(mutations.size());
+        WriteType plainWriteType = mutations.size() <= 1 ? WriteType.SIMPLE : WriteType.UNLOGGED_BATCH;
 
         try
         {
             for (IMutation mutation : mutations)
             {
                 if (mutation instanceof CounterMutation)
-                {
-                    responseHandlers.put(mutation, mutateCounter((CounterMutation)mutation, localDataCenter, queryStartNanoTime));
-                }
+                    responseHandlers.add(mutateCounter((CounterMutation)mutation, localDataCenter, queryStartNanoTime));
                 else
-                {
-                    WriteType wt = mutations.size() <= 1 ? WriteType.SIMPLE : WriteType.UNLOGGED_BATCH;
-                    responseHandlers.put(mutation, performWrite(mutation, consistency_level, localDataCenter, standardWritePerformer, null, wt, queryStartNanoTime));
-                }
+                    responseHandlers.add(performWrite(mutation, consistency_level, localDataCenter, standardWritePerformer, null, plainWriteType, queryStartNanoTime));
             }
 
-            for (Map.Entry<IMutation, AbstractWriteResponseHandler<IMutation>> entry : responseHandlers.entrySet())
-            {
-                entry.getValue().maybeTryAdditionalReplicas(entry.getKey(), standardWritePerformer, localDataCenter);
-            }
+            for (int i = 0 ; i < mutations.size() ; ++i)
+                responseHandlers.get(i).maybeTryAdditionalReplicas(mutations.get(i), standardWritePerformer, localDataCenter);
 
             // wait for writes.  throws TimeoutException if necessary
-            for (AbstractWriteResponseHandler<IMutation> responseHandler : responseHandlers.values())
-            {
+            for (AbstractWriteResponseHandler<IMutation> responseHandler : responseHandlers)
                 responseHandler.get();
-            }
         }
         catch (WriteTimeoutException|WriteFailureException ex)
         {
@@ -901,7 +894,7 @@ public class StorageProxy implements StorageProxyMBean
     }
 
     @SuppressWarnings("unchecked")
-    public static void mutateWithTriggers(Collection<? extends IMutation> mutations,
+    public static void mutateWithTriggers(List<? extends IMutation> mutations,
                                           ConsistencyLevel consistencyLevel,
                                           boolean mutateAtomically,
                                           long queryStartNanoTime)
