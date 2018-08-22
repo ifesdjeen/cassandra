@@ -34,8 +34,8 @@ import org.apache.cassandra.db.ReadCommand;
 import org.apache.cassandra.db.partitions.UnfilteredPartitionIterators;
 import org.apache.cassandra.exceptions.ReadTimeoutException;
 import org.apache.cassandra.locator.Replica;
+import org.apache.cassandra.locator.ReplicaLayout;
 import org.apache.cassandra.metrics.ReadRepairMetrics;
-import org.apache.cassandra.service.ReplicaPlan;
 import org.apache.cassandra.tracing.Tracing;
 
 /**
@@ -43,22 +43,22 @@ import org.apache.cassandra.tracing.Tracing;
  *  updates have been written to nodes needing correction. Breaks write
  *  atomicity in some situations
  */
-public class BlockingReadRepair extends AbstractReadRepair
+public class BlockingReadRepair<E extends Endpoints<E>, L extends ReplicaLayout<E, L>> extends AbstractReadRepair<E, L>
 {
     private static final Logger logger = LoggerFactory.getLogger(BlockingReadRepair.class);
 
     protected final Queue<BlockingPartitionRepair> repairs = new ConcurrentLinkedQueue<>();
     private final int blockFor;
 
-    public BlockingReadRepair(ReadCommand command, ReplicaPlan replicaPlan, long queryStartNanoTime)
+    public BlockingReadRepair(ReadCommand command, L replicaLayout, long queryStartNanoTime)
     {
-        super(command, replicaPlan, queryStartNanoTime);
-        this.blockFor = replicaPlan.consistencyLevel().blockFor(cfs.keyspace);
+        super(command, replicaLayout, queryStartNanoTime);
+        this.blockFor = replicaLayout.consistencyLevel().blockFor(cfs.keyspace);
     }
 
-    public UnfilteredPartitionIterators.MergeListener getMergeListener(Endpoints<?> replicas)
+    public UnfilteredPartitionIterators.MergeListener getMergeListener(L replicaLayout)
     {
-        return new PartitionIteratorMergeListener(replicas, command, replicaPlan.consistencyLevel(), this);
+        return new PartitionIteratorMergeListener(replicaLayout, command, this.replicaLayout.consistencyLevel(), this);
     }
 
     @Override
@@ -90,20 +90,21 @@ public class BlockingReadRepair extends AbstractReadRepair
         if (timedOut)
         {
             // We got all responses, but timed out while repairing
-            int blockFor = replicaPlan.consistencyLevel().blockFor(cfs.keyspace);
+            int blockFor = replicaLayout.consistencyLevel().blockFor(cfs.keyspace);
             if (Tracing.isTracing())
                 Tracing.trace("Timed out while read-repairing after receiving all {} data and digest responses", blockFor);
             else
                 logger.debug("Timeout while read-repairing after receiving all {} data and digest responses", blockFor);
 
-            throw new ReadTimeoutException(replicaPlan.consistencyLevel(), blockFor - 1, blockFor, true);
+            throw new ReadTimeoutException(replicaLayout.consistencyLevel(), blockFor - 1, blockFor, true);
         }
     }
 
     @Override
-    public void repairPartition(Map<Replica, Mutation> mutations, Endpoints<?> targets)
+    public void repairPartition(Map<Replica, Mutation> mutations, L replicaLayout)
     {
-        BlockingPartitionRepair blockingRepair = new BlockingPartitionRepair(mutations, blockFor, replicaPlan.with(targets));
+        // TODO BlockingPartitionRepair<E, L> blockingRepair = new BlockingPartitionRepair<E, L>(mutations, blockFor, replicaLayout.with(targets));
+        BlockingPartitionRepair<E, L> blockingRepair = new BlockingPartitionRepair<>(mutations, blockFor, replicaLayout);
         blockingRepair.sendInitialRepairs();
         repairs.add(blockingRepair);
     }

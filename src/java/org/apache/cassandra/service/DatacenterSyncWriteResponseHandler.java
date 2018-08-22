@@ -23,6 +23,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.Keyspace;
+import org.apache.cassandra.locator.ReplicaLayout;
 import org.apache.cassandra.locator.IEndpointSnitch;
 import org.apache.cassandra.locator.NetworkTopologyStrategy;
 import org.apache.cassandra.locator.Replica;
@@ -40,18 +41,16 @@ public class DatacenterSyncWriteResponseHandler<T> extends AbstractWriteResponse
     private final Map<String, AtomicInteger> responses = new HashMap<String, AtomicInteger>();
     private final AtomicInteger acks = new AtomicInteger(0);
 
-    public DatacenterSyncWriteResponseHandler(WritePathReplicaPlan replicaPlan,
-                                              ConsistencyLevel consistencyLevel,
-                                              Keyspace keyspace,
+    public DatacenterSyncWriteResponseHandler(ReplicaLayout.ForToken replicaLayout,
                                               Runnable callback,
                                               WriteType writeType,
                                               long queryStartNanoTime)
     {
         // Response is been managed by the map so make it 1 for the superclass.
-        super(keyspace, replicaPlan, consistencyLevel, callback, writeType, queryStartNanoTime);
-        assert consistencyLevel == ConsistencyLevel.EACH_QUORUM;
+        super(replicaLayout, callback, writeType, queryStartNanoTime);
+        assert replicaLayout.consistencyLevel() == ConsistencyLevel.EACH_QUORUM;
 
-        NetworkTopologyStrategy strategy = (NetworkTopologyStrategy) keyspace.getReplicationStrategy();
+        NetworkTopologyStrategy strategy = (NetworkTopologyStrategy) replicaLayout.keyspace().getReplicationStrategy();
 
         for (String dc : strategy.getDatacenters())
         {
@@ -62,7 +61,7 @@ public class DatacenterSyncWriteResponseHandler<T> extends AbstractWriteResponse
 
         // During bootstrap, we have to include the pending endpoints or we may fail the consistency level
         // guarantees (see #833)
-        for (Replica pending : replicaPlan.pendingReplicas())
+        for (Replica pending : replicaLayout.pendingReplicas())
         {
             responses.get(snitch.getDatacenter(pending)).incrementAndGet();
         }

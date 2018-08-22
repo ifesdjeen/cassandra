@@ -34,9 +34,10 @@ import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.db.Mutation;
 import org.apache.cassandra.db.partitions.PartitionUpdate;
+import org.apache.cassandra.locator.Endpoints;
+import org.apache.cassandra.locator.ReplicaLayout;
 import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.locator.Replica;
-import org.apache.cassandra.locator.ReplicaCollection;
 import org.apache.cassandra.locator.Replicas;
 import org.apache.cassandra.metrics.ReadRepairMetrics;
 import org.apache.cassandra.net.IAsyncCallback;
@@ -44,26 +45,25 @@ import org.apache.cassandra.net.MessageIn;
 import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.schema.TableId;
-import org.apache.cassandra.service.ReplicaPlan;
 import org.apache.cassandra.tracing.Tracing;
 
-public class BlockingPartitionRepair extends AbstractFuture<Object> implements IAsyncCallback<Object>
+public class BlockingPartitionRepair<E extends Endpoints<E>, L extends ReplicaLayout<E, L>> extends AbstractFuture<Object> implements IAsyncCallback<Object>
 {
-    private final ReplicaPlan replicaPlan;
+    private final L replicaLayout;
     private final Map<Replica, Mutation> pendingRepairs;
     private final CountDownLatch latch;
 
     private volatile long mutationsSentTime;
 
-    public BlockingPartitionRepair(Map<Replica, Mutation> repairs, int maxBlockFor, ReplicaPlan replicaPlan)
+    public BlockingPartitionRepair(Map<Replica, Mutation> repairs, int maxBlockFor, L replicaLayout)
     {
         this.pendingRepairs = new ConcurrentHashMap<>(repairs);
-        this.replicaPlan = replicaPlan;
+        this.replicaLayout = replicaLayout;
 
         // here we remove empty repair mutations from the block for total, since
         // we're not sending them mutations
         int blockFor = maxBlockFor;
-        for (Replica participant: replicaPlan.targetReplicas())
+        for (Replica participant: replicaLayout.selectedReplicas())
         {
             // remote dcs can sometimes get involved in dc-local reads. We want to repair
             // them if they do, but they shouldn't interfere with blocking the client read.
@@ -93,7 +93,7 @@ public class BlockingPartitionRepair extends AbstractFuture<Object> implements I
 
     private boolean shouldBlockOn(InetAddressAndPort endpoint)
     {
-        return !replicaPlan.consistencyLevel().isDatacenterLocal() || isLocal(endpoint);
+        return !replicaLayout.consistencyLevel().isDatacenterLocal() || isLocal(endpoint);
     }
 
     @VisibleForTesting
@@ -101,7 +101,7 @@ public class BlockingPartitionRepair extends AbstractFuture<Object> implements I
     {
         if (shouldBlockOn(from))
         {
-            pendingRepairs.remove(replicaPlan.getReplicaFor(from));
+            pendingRepairs.remove(replicaLayout.getReplicaFor(from));
             latch.countDown();
         }
     }
@@ -193,8 +193,8 @@ public class BlockingPartitionRepair extends AbstractFuture<Object> implements I
         if (awaitRepairs(timeout, timeoutUnit))
             return;
 
-        ReplicaCollection<?> newCandidates = replicaPlan.additionalReplicas();
-        if (newCandidates.isEmpty())
+        L newCandidates = replicaLayout.extend();
+        if (newCandidates.selectedReplicas().isEmpty())
             return;
 
         PartitionUpdate update = mergeUnackedUpdates();
@@ -207,7 +207,7 @@ public class BlockingPartitionRepair extends AbstractFuture<Object> implements I
 
         Mutation[] versionedMutations = new Mutation[msgVersionIdx(MessagingService.current_version) + 1];
 
-        for (Replica replica : newCandidates)
+        for (Replica replica : newCandidates.selectedReplicas())
         {
             int versionIdx = msgVersionIdx(MessagingService.instance().getVersion(replica.endpoint()));
 
@@ -215,7 +215,7 @@ public class BlockingPartitionRepair extends AbstractFuture<Object> implements I
 
             if (mutation == null)
             {
-                mutation = BlockingReadRepairs.createRepairMutation(update, replicaPlan.consistencyLevel(), replica.endpoint(), true);
+                mutation = BlockingReadRepairs.createRepairMutation(update, replicaLayout.consistencyLevel(), replica.endpoint(), true);
                 versionedMutations[versionIdx] = mutation;
             }
 

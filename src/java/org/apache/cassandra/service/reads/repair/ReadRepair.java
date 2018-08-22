@@ -22,31 +22,26 @@ import java.util.function.Consumer;
 
 import org.apache.cassandra.locator.Endpoints;
 
-import org.apache.cassandra.config.DatabaseDescriptor;
-import org.apache.cassandra.db.DecoratedKey;
-import org.apache.cassandra.db.Keyspace;
 import org.apache.cassandra.db.Mutation;
 import org.apache.cassandra.db.ReadCommand;
 import org.apache.cassandra.db.partitions.PartitionIterator;
 import org.apache.cassandra.db.partitions.UnfilteredPartitionIterators;
 import org.apache.cassandra.exceptions.ReadTimeoutException;
 import org.apache.cassandra.locator.Replica;
-import org.apache.cassandra.net.MessagingService;
-import org.apache.cassandra.schema.TableMetadata;
-import org.apache.cassandra.service.ReplicaPlan;
+import org.apache.cassandra.locator.ReplicaLayout;
 import org.apache.cassandra.service.reads.DigestResolver;
 
-public interface ReadRepair
+public interface ReadRepair<E extends Endpoints<E>, L extends ReplicaLayout<E, L>>
 {
     public interface Factory
     {
-        ReadRepair create(ReadCommand command, ReplicaPlan replicaPlan, long queryStartNanoTime);
+        <E extends Endpoints<E>, L extends ReplicaLayout<E, L>> ReadRepair<E, L> create(ReadCommand command, L replicaLayout, long queryStartNanoTime);
     }
 
     /**
      * Used by DataResolver to generate corrections as the partition iterator is consumed
      */
-    UnfilteredPartitionIterators.MergeListener getMergeListener(Endpoints<?> replicas);
+    UnfilteredPartitionIterators.MergeListener getMergeListener(L replicaLayout);
 
     /**
      * Called when the digests from the initial read don't match. Reads may block on the
@@ -54,7 +49,7 @@ public interface ReadRepair
      * @param digestResolver supplied so we can get the original data response
      * @param resultConsumer hook for the repair to set it's result on completion
      */
-    public void startRepair(DigestResolver digestResolver, Consumer<PartitionIterator> resultConsumer);
+    public void startRepair(DigestResolver<E, L> digestResolver, Consumer<PartitionIterator> resultConsumer);
 
     /**
      * Block on the reads (or timeout) sent out in {@link ReadRepair#startRepair}
@@ -89,10 +84,5 @@ public interface ReadRepair
      * Repairs a partition _after_ receiving data responses. This method receives replica list, since
      * we will block repair only on the replicas that have responded.
      */
-    void repairPartition(Map<Replica, Mutation> mutations, Endpoints<?> targets);
-
-    static ReadRepair create(ReadCommand command, ReplicaPlan replicaPlan, long queryStartNanoTime)
-    {
-        return command.metadata().params.readRepair.create(command, replicaPlan, queryStartNanoTime);
-    }
+    void repairPartition(Map<Replica, Mutation> mutations, L replicaLayout);
 }

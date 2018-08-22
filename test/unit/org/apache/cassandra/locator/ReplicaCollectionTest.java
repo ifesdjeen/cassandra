@@ -108,7 +108,7 @@ public class ReplicaCollectionTest
 
         void testEquals()
         {
-            Assert.assertEquals(ReplicaList.copyOf(canonicalList), test);
+            Assert.assertTrue(Iterables.elementsEqual(canonicalList, test));
         }
 
         void testEndpoints()
@@ -462,50 +462,4 @@ public class ReplicaCollectionTest
         new TestCase<>(view, canonical2).testAll();
         new TestCase<>(test, canonical2).testAll();
     }
-
-    private static final ImmutableList<Replica> REPLICA_LIST = ImmutableList.of(
-            Replica.full(EP1, R1),
-            Replica.full(EP2, R1),
-            Replica.trans(EP3, R1),
-            Replica.full(EP4, R1),
-            Replica.trans(EP5, R1),
-            Replica.trans(EP1, R2),
-            Replica.trans(EP2, R2),
-            Replica.full(EP3, R2),
-            Replica.trans(EP4, R2),
-            Replica.full(EP5, R2)
-    );
-
-    @Test
-    public void testReplicaList()
-    {
-        ImmutableList<Replica> canonical = REPLICA_LIST;
-        TestCase<ReplicaList> test = new TestCase<>(
-                ReplicaList.copyOf(canonical), canonical
-        );
-        test.testAll();
-    }
-
-    @Test
-    public void testMutableReplicaList()
-    {
-        ImmutableList<Replica> canonical1 = REPLICA_LIST.subList(0, REPLICA_LIST.size() - 1);
-        ReplicaList.Mutable test = new ReplicaList.Mutable(canonical1.size());
-        test.addAll(canonical1, Conflict.NONE);
-        new TestCase<>(test, canonical1).testAll();
-
-        ReplicaList view = test.asImmutableView();
-        ReplicaList snapshot = view.subList(0, view.size());
-
-        ImmutableList<Replica> canonical2 = REPLICA_LIST;
-        test.add(canonical2.get(canonical1.size()));
-
-        new TestCase<>(snapshot, canonical1).testAll();
-        new TestCase<>(view, canonical2).testAll();
-        new TestCase<>(test, canonical2).testAll();
-
-        test.addAll(canonical2.reverse(), Conflict.NONE);
-        Assert.assertEquals(canonical2.size() * 2, test.size());
-    }
-
 }

@@ -22,7 +22,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
 import com.google.common.base.Preconditions;
-import com.google.common.collect.Iterables;
 
 import com.codahale.metrics.Meter;
 import org.apache.cassandra.db.ColumnFamilyStore;
@@ -32,22 +31,22 @@ import org.apache.cassandra.db.ReadCommand;
 import org.apache.cassandra.db.SinglePartitionReadCommand;
 import org.apache.cassandra.db.partitions.PartitionIterator;
 import org.apache.cassandra.exceptions.ReadTimeoutException;
+import org.apache.cassandra.locator.Endpoints;
 import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.locator.Replica;
-import org.apache.cassandra.locator.ReplicaCollection;
+import org.apache.cassandra.locator.ReplicaLayout;
 import org.apache.cassandra.metrics.ReadRepairMetrics;
 import org.apache.cassandra.net.MessagingService;
-import org.apache.cassandra.service.ReplicaPlan;
 import org.apache.cassandra.service.reads.DataResolver;
 import org.apache.cassandra.service.reads.DigestResolver;
 import org.apache.cassandra.service.reads.ReadCallback;
 import org.apache.cassandra.tracing.Tracing;
 
-public abstract class AbstractReadRepair implements ReadRepair
+public abstract class AbstractReadRepair<E extends Endpoints<E>, L extends ReplicaLayout<E, L>> implements ReadRepair<E, L>
 {
     protected final ReadCommand command;
     protected final long queryStartNanoTime;
-    protected final ReplicaPlan replicaPlan;
+    protected final L replicaLayout;
     protected final ColumnFamilyStore cfs;
 
     private volatile DigestRepair digestRepair = null;
@@ -67,12 +66,12 @@ public abstract class AbstractReadRepair implements ReadRepair
     }
 
     public AbstractReadRepair(ReadCommand command,
-                              ReplicaPlan replicaPlan,
+                              L replicaLayout,
                               long queryStartNanoTime)
     {
         this.command = command;
         this.queryStartNanoTime = queryStartNanoTime;
-        this.replicaPlan = replicaPlan;
+        this.replicaLayout = replicaLayout;
         this.cfs = Keyspace.openAndGetStore(command.metadata());
     }
 
@@ -84,19 +83,18 @@ public abstract class AbstractReadRepair implements ReadRepair
     abstract Meter getRepairMeter();
 
     // digestResolver isn't used here because we resend read requests to all participants
-    public void startRepair(DigestResolver digestResolver, Consumer<PartitionIterator> resultConsumer)
+    public void startRepair(DigestResolver<E, L> digestResolver, Consumer<PartitionIterator> resultConsumer)
     {
         getRepairMeter().mark();
 
         // Do a full data read to resolve the correct response (and repair node that need be)
-        Keyspace keyspace = Keyspace.open(command.metadata().keyspace);
-        DataResolver resolver = new DataResolver(command, replicaPlan, this, queryStartNanoTime);
-        ReadCallback readCallback = new ReadCallback(resolver, replicaPlan.consistencyLevel().blockFor(cfs.keyspace),
-                                                     command, keyspace, replicaPlan, queryStartNanoTime);
+        DataResolver<E, L> resolver = new DataResolver<>(command, replicaLayout, this, queryStartNanoTime);
+        ReadCallback<E, L> readCallback = new ReadCallback<>(resolver, replicaLayout.consistencyLevel().blockFor(cfs.keyspace),
+                                                             command, replicaLayout, queryStartNanoTime);
 
         digestRepair = new DigestRepair(resolver, readCallback, resultConsumer);
 
-        for (Replica replica : replicaPlan.targetReplicas())
+        for (Replica replica : replicaLayout.selectedReplicas())
         {
             Tracing.trace("Enqueuing full data read to {}", replica);
             sendReadCommand(replica.endpoint(), readCallback);
@@ -115,7 +113,7 @@ public abstract class AbstractReadRepair implements ReadRepair
 
     private boolean shouldSpeculate()
     {
-        ConsistencyLevel consistency = replicaPlan.consistencyLevel();
+        ConsistencyLevel consistency = replicaLayout.consistencyLevel();
         ConsistencyLevel speculativeCL = consistency.isDatacenterLocal() ? ConsistencyLevel.LOCAL_QUORUM : ConsistencyLevel.QUORUM;
         return  consistency != ConsistencyLevel.EACH_QUORUM
                 && consistency.satisfies(speculativeCL, cfs.keyspace)
@@ -132,11 +130,11 @@ public abstract class AbstractReadRepair implements ReadRepair
 
         if (shouldSpeculate() && !repair.readCallback.await(cfs.sampleReadLatencyNanos, TimeUnit.NANOSECONDS))
         {
-            ReplicaCollection<?> additional = replicaPlan.additionalReplicas();
-            if (additional.isEmpty())
+            L uncontacted = replicaLayout.extend();
+            if (uncontacted.selectedReplicas().isEmpty())
                 return;
 
-            Replica replica = additional.iterator().next();
+            Replica replica = uncontacted.selectedReplicas().iterator().next();
             Tracing.trace("Enqueuing speculative full data read to {}", replica);
             sendReadCommand(replica.endpoint(), repair.readCallback);
             ReadRepairMetrics.speculatedRead.mark();

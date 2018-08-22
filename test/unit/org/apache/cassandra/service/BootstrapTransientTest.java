@@ -42,8 +42,9 @@ import org.apache.cassandra.locator.AbstractEndpointSnitch;
 import org.apache.cassandra.locator.AbstractReplicationStrategy;
 import org.apache.cassandra.locator.IEndpointSnitch;
 import org.apache.cassandra.locator.InetAddressAndPort;
+import org.apache.cassandra.locator.RangesAtEndpoint;
 import org.apache.cassandra.locator.Replica;
-import org.apache.cassandra.locator.ReplicaList;
+import org.apache.cassandra.locator.ReplicaCollection;
 import org.apache.cassandra.locator.SimpleStrategy;
 import org.apache.cassandra.locator.TokenMetadata;
 import org.apache.cassandra.utils.Pair;
@@ -100,9 +101,9 @@ public class BootstrapTransientTest
     Range<Token> cRange = new Range<>(twentyToken, thirtyToken);
     Range<Token> dRange = new Range<>(thirtyToken, fourtyToken);
 
-    ReplicaList toFetch = ReplicaList.of(new Replica(dAddress, dRange, true),
-                                       new Replica(dAddress, cRange, true),
-                                       new Replica(dAddress, bRange, false));
+    RangesAtEndpoint toFetch = RangesAtEndpoint.of(new Replica(dAddress, dRange, true),
+                                                   new Replica(dAddress, cRange, true),
+                                                   new Replica(dAddress, bRange, false));
 
     @Test
     public void testRangeStreamerRangesToFetch() throws Exception
@@ -127,7 +128,7 @@ public class BootstrapTransientTest
         return Pair.create(tmd, updated);
     }
 
-    private void invokeCalculateRangesToFetchWithPreferredEndpoints(ReplicaList toFetch,
+    private void invokeCalculateRangesToFetchWithPreferredEndpoints(ReplicaCollection<?> toFetch,
                                                                     Pair<TokenMetadata, TokenMetadata> tmds,
                                                                     EndpointsByReplica expectedResult)
     {

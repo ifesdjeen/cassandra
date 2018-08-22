@@ -36,20 +36,18 @@ import org.apache.cassandra.locator.Endpoints;
 import org.apache.cassandra.locator.EndpointsForRange;
 import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.locator.Replica;
-import org.apache.cassandra.locator.ReplicaList;
+import org.apache.cassandra.locator.ReplicaLayout;
 import org.apache.cassandra.locator.ReplicaUtils;
 import org.apache.cassandra.net.MessageOut;
-import org.apache.cassandra.service.ReplicaPlan;
 import org.apache.cassandra.service.reads.ReadCallback;
 
 public class BlockingReadRepairTest extends AbstractReadRepairTest
 {
-
-    private static class InstrumentedReadRepairHandler extends BlockingPartitionRepair
+    private static class InstrumentedReadRepairHandler<E extends Endpoints<E>, L extends ReplicaLayout<E, L>> extends BlockingPartitionRepair<E, L>
     {
-        public InstrumentedReadRepairHandler(Map<Replica, Mutation> repairs, int maxBlockFor, ReplicaPlan replicaPlan)
+        public InstrumentedReadRepairHandler(Map<Replica, Mutation> repairs, int maxBlockFor, L replicaLayout)
         {
-            super(repairs, maxBlockFor, replicaPlan);
+            super(repairs, maxBlockFor, replicaLayout);
         }
 
         Map<InetAddressAndPort, Mutation> mutationsSent = new HashMap<>();
@@ -72,22 +70,22 @@ public class BlockingReadRepairTest extends AbstractReadRepairTest
         configureClass(ReadRepairStrategy.BLOCKING);
     }
 
-    private static InstrumentedReadRepairHandler createRepairHandler(Map<Replica, Mutation> repairs, int maxBlockFor, ReplicaPlan replicaPlan)
+    private static InstrumentedReadRepairHandler createRepairHandler(Map<Replica, Mutation> repairs, int maxBlockFor, ReplicaLayout<?, ?> replicaLayout)
     {
-        return new InstrumentedReadRepairHandler(repairs, maxBlockFor, replicaPlan);
+        return new InstrumentedReadRepairHandler(repairs, maxBlockFor, replicaLayout);
     }
 
     private static InstrumentedReadRepairHandler createRepairHandler(Map<Replica, Mutation> repairs, int maxBlockFor)
     {
-        Endpoints replicas = EndpointsForRange.copyOf(Lists.newArrayList(repairs.keySet()));
-        return createRepairHandler(repairs, maxBlockFor, plan(replicas, replicas));
+        EndpointsForRange replicas = EndpointsForRange.copyOf(Lists.newArrayList(repairs.keySet()));
+        return createRepairHandler(repairs, maxBlockFor, replicaLayout(replicas, replicas));
     }
 
-    private static class InstrumentedBlockingReadRepair extends BlockingReadRepair implements InstrumentedReadRepair
+    private static class InstrumentedBlockingReadRepair<E extends Endpoints<E>, L extends ReplicaLayout<E, L>> extends BlockingReadRepair<E, L> implements InstrumentedReadRepair<E, L>
     {
-        public InstrumentedBlockingReadRepair(ReadCommand command, ReplicaPlan replicaPlan, long queryStartNanoTime)
+        public InstrumentedBlockingReadRepair(ReadCommand command, L replicaLayout, long queryStartNanoTime)
         {
-            super(command, replicaPlan, queryStartNanoTime);
+            super(command, replicaLayout, queryStartNanoTime);
         }
 
         Set<InetAddressAndPort> readCommandRecipients = new HashSet<>();
@@ -115,9 +113,9 @@ public class BlockingReadRepairTest extends AbstractReadRepairTest
     }
 
     @Override
-    public InstrumentedReadRepair createInstrumentedReadRepair(ReadCommand command, ReplicaPlan replicaPlan, long queryStartNanoTime)
+    public InstrumentedReadRepair createInstrumentedReadRepair(ReadCommand command, ReplicaLayout<?, ?> replicaLayout, long queryStartNanoTime)
     {
-        return new InstrumentedBlockingReadRepair(command, replicaPlan, queryStartNanoTime);
+        return new InstrumentedBlockingReadRepair(command, replicaLayout, queryStartNanoTime);
     }
 
     @Test
@@ -143,8 +141,8 @@ public class BlockingReadRepairTest extends AbstractReadRepairTest
         repairs.put(replica1, repair1);
         repairs.put(replica2, repair2);
 
-        ReplicaPlan replicaPlan = plan(replicas, EndpointsForRange.copyOf(Lists.newArrayList(repairs.keySet())));
-        InstrumentedReadRepairHandler handler = createRepairHandler(repairs, 2, replicaPlan);
+        ReplicaLayout.ForRange replicaLayout = replicaLayout(replicas, EndpointsForRange.copyOf(Lists.newArrayList(repairs.keySet())));
+        InstrumentedReadRepairHandler<?, ?> handler = createRepairHandler(repairs, 2, replicaLayout);
 
         Assert.assertTrue(handler.mutationsSent.isEmpty());
 
@@ -222,7 +220,7 @@ public class BlockingReadRepairTest extends AbstractReadRepairTest
         repairs.put(replica1, repair1);
 
         // check that the correct initial mutations are sent out
-        InstrumentedReadRepairHandler handler = createRepairHandler(repairs, 2, plan(replicas, EndpointsForRange.of(replica1, replica2)));
+        InstrumentedReadRepairHandler handler = createRepairHandler(repairs, 2, replicaLayout(replicas, EndpointsForRange.of(replica1, replica2)));
         handler.sendInitialRepairs();
         Assert.assertEquals(1, handler.mutationsSent.size());
         Assert.assertTrue(handler.mutationsSent.containsKey(target1));
@@ -269,9 +267,9 @@ public class BlockingReadRepairTest extends AbstractReadRepairTest
         Replica remote2 = ReplicaUtils.full(InetAddressAndPort.getByName("10.0.0.2"));
         repairs.put(remote1, mutation(cell1));
 
-        Endpoints participants = EndpointsForRange.of(replica1, replica2, remote1, remote2);
-        ReplicaPlan plan = new ReplicaPlan(ks, ConsistencyLevel.LOCAL_QUORUM, participants, participants);
-        InstrumentedReadRepairHandler handler = createRepairHandler(repairs, 2, plan);
+        EndpointsForRange participants = EndpointsForRange.of(replica1, replica2, remote1, remote2);
+        ReplicaLayout.ForRange replicaLayout = new ReplicaLayout.ForRange(ks, ConsistencyLevel.LOCAL_QUORUM, ReplicaUtils.FULL_BOUNDS, participants, participants);
+        InstrumentedReadRepairHandler handler = createRepairHandler(repairs, 2, replicaLayout);
         handler.sendInitialRepairs();
         Assert.assertEquals(2, handler.mutationsSent.size());
         Assert.assertTrue(handler.mutationsSent.containsKey(replica1.endpoint()));

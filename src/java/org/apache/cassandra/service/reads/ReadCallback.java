@@ -27,7 +27,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.config.DatabaseDescriptor;
-import org.apache.cassandra.db.Keyspace;
 import org.apache.cassandra.db.PartitionRangeReadCommand;
 import org.apache.cassandra.db.ReadCommand;
 import org.apache.cassandra.db.ReadResponse;
@@ -35,24 +34,26 @@ import org.apache.cassandra.exceptions.ReadFailureException;
 import org.apache.cassandra.exceptions.ReadTimeoutException;
 import org.apache.cassandra.exceptions.RequestFailureReason;
 import org.apache.cassandra.exceptions.UnavailableException;
+import org.apache.cassandra.locator.Endpoints;
+import org.apache.cassandra.locator.ReplicaLayout;
 import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.net.IAsyncCallbackWithFailure;
 import org.apache.cassandra.net.MessageIn;
 import org.apache.cassandra.net.MessagingService;
-import org.apache.cassandra.service.ReplicaPlan;
 import org.apache.cassandra.tracing.Tracing;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.concurrent.SimpleCondition;
 
-public class ReadCallback implements IAsyncCallbackWithFailure<ReadResponse>
+public class ReadCallback<E extends Endpoints<E>, L extends ReplicaLayout<E, L>> implements IAsyncCallbackWithFailure<ReadResponse>
 {
     protected static final Logger logger = LoggerFactory.getLogger( ReadCallback.class );
 
     public final ResponseResolver resolver;
     final SimpleCondition condition = new SimpleCondition();
     private final long queryStartNanoTime;
+    // TODO: move to replica plan as well?
     final int blockfor;
-    final ReplicaPlan replicaPlan;
+    final L replicaLayout;
     private final ReadCommand command;
     private static final AtomicIntegerFieldUpdater<ReadCallback> recievedUpdater
             = AtomicIntegerFieldUpdater.newUpdater(ReadCallback.class, "received");
@@ -62,34 +63,19 @@ public class ReadCallback implements IAsyncCallbackWithFailure<ReadResponse>
     private volatile int failures = 0;
     private final Map<InetAddressAndPort, RequestFailureReason> failureReasonByEndpoint;
 
-    private final Keyspace keyspace;
-
-    // Calculates blocked for
-    public static ReadCallback create(ResponseResolver resolver, ReadCommand command, ReplicaPlan replicaPlan, long queryStartNanoTime)
-    {
-        Keyspace keyspace = Keyspace.open(command.metadata().keyspace);
-        return new ReadCallback(resolver,
-                                replicaPlan.consistencyLevel().blockFor(keyspace),
-                                command,
-                                keyspace,
-                                replicaPlan,
-                                queryStartNanoTime);
-    }
-
-    public ReadCallback(ResponseResolver resolver, int blockfor, ReadCommand command, Keyspace keyspace, ReplicaPlan replicaPlan, long queryStartNanoTime)
+    public ReadCallback(ResponseResolver resolver, int blockfor, ReadCommand command, L replicaLayout, long queryStartNanoTime)
     {
         this.command = command;
-        this.keyspace = keyspace;
         this.blockfor = blockfor;
         this.resolver = resolver;
         this.queryStartNanoTime = queryStartNanoTime;
-        this.replicaPlan = replicaPlan;
+        this.replicaLayout = replicaLayout;
         this.failureReasonByEndpoint = new ConcurrentHashMap<>();
         // we don't support read repair (or rapid read protection) for range scans yet (CASSANDRA-6897)
-        assert !(command instanceof PartitionRangeReadCommand) || blockfor >= replicaPlan.targetReplicas().size();
+        assert !(command instanceof PartitionRangeReadCommand) || blockfor >= replicaLayout.selectedReplicas().size();
 
         if (logger.isTraceEnabled())
-            logger.trace("Blockfor is {}; setting up requests to {}", blockfor, this.replicaPlan);
+            logger.trace("Blockfor is {}; setting up requests to {}", blockfor, this.replicaLayout);
     }
 
     public boolean await(long timePastStart, TimeUnit unit)
@@ -108,7 +94,7 @@ public class ReadCallback implements IAsyncCallbackWithFailure<ReadResponse>
     public void awaitResults() throws ReadFailureException, ReadTimeoutException
     {
         boolean signaled = await(command.getTimeout(), TimeUnit.MILLISECONDS);
-        boolean failed = failures > 0  && blockfor + failures > replicaPlan.targetReplicas().size();
+        boolean failed = failures > 0  && blockfor + failures > replicaLayout.selectedReplicas().size();
         if (signaled && !failed)
             return;
 
@@ -125,8 +111,8 @@ public class ReadCallback implements IAsyncCallbackWithFailure<ReadResponse>
 
         // Same as for writes, see AbstractWriteResponseHandler
         throw failed
-            ? new ReadFailureException(replicaPlan.consistencyLevel(), received, blockfor, resolver.isDataPresent(), failureReasonByEndpoint)
-            : new ReadTimeoutException(replicaPlan.consistencyLevel(), received, blockfor, resolver.isDataPresent());
+            ? new ReadFailureException(replicaLayout.consistencyLevel(), received, blockfor, resolver.isDataPresent(), failureReasonByEndpoint)
+            : new ReadTimeoutException(replicaLayout.consistencyLevel(), received, blockfor, resolver.isDataPresent());
     }
 
     public int blockFor()
@@ -150,7 +136,7 @@ public class ReadCallback implements IAsyncCallbackWithFailure<ReadResponse>
      */
     private boolean waitingFor(InetAddressAndPort from)
     {
-        return !replicaPlan.consistencyLevel().isDatacenterLocal() || DatabaseDescriptor.getLocalDataCenter().equals(DatabaseDescriptor.getEndpointSnitch().getDatacenter(from));
+        return !replicaLayout.consistencyLevel().isDatacenterLocal() || DatabaseDescriptor.getLocalDataCenter().equals(DatabaseDescriptor.getEndpointSnitch().getDatacenter(from));
     }
 
     /**
@@ -173,7 +159,7 @@ public class ReadCallback implements IAsyncCallbackWithFailure<ReadResponse>
 
     public void assureSufficientLiveNodes() throws UnavailableException
     {
-        replicaPlan.consistencyLevel().assureSufficientLiveNodes(keyspace, replicaPlan.targetReplicas());
+        replicaLayout.consistencyLevel().assureSufficientLiveNodes(replicaLayout.keyspace(), replicaLayout.selectedReplicas());
     }
 
     public boolean isLatencyForSnitch()
@@ -190,7 +176,7 @@ public class ReadCallback implements IAsyncCallbackWithFailure<ReadResponse>
 
         failureReasonByEndpoint.put(from, failureReason);
 
-        if (blockfor + n > replicaPlan.targetReplicas().size())
+        if (blockfor + n > replicaLayout.selectedReplicas().size())
             condition.signalAll();
     }
 }

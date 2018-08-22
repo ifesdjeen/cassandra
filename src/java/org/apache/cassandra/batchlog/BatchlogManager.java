@@ -28,6 +28,8 @@ import javax.management.ObjectName;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.*;
 import com.google.common.util.concurrent.RateLimiter;
+
+import org.apache.cassandra.locator.ReplicaLayout;
 import org.apache.cassandra.locator.EndpointsForToken;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -56,7 +58,6 @@ import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.schema.TableId;
 import org.apache.cassandra.service.StorageService;
-import org.apache.cassandra.service.WritePathReplicaPlan;
 import org.apache.cassandra.service.WriteResponseHandler;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.UUIDGen;
@@ -457,6 +458,7 @@ public class BatchlogManager implements BatchlogManagerMBean
             Keyspace keyspace = Keyspace.open(ks);
             Token tk = mutation.key().getToken();
 
+            // TODO: this should be done through adding "non-avlie" replicas to replica layout
             EndpointsForToken allReplicas = StorageService.instance.getNaturalAndPendingReplicasForToken(ks, tk);
             EndpointsForToken.Builder liveReplicasBuilder = EndpointsForToken.builder(tk);
             for (Replica replica : allReplicas)
@@ -509,15 +511,15 @@ public class BatchlogManager implements BatchlogManagerMBean
 
             ReplayWriteResponseHandler(Keyspace keyspace, EndpointsForToken writeReplicas, long queryStartNanoTime)
             {
-                super(WritePathReplicaPlan.createReplicaPlan(keyspace, null, writeReplicas, EndpointsForToken.empty(writeReplicas.token())),
-                      null, null, null, WriteType.UNLOGGED_BATCH, queryStartNanoTime);
+                super(ReplicaLayout.forWrite(keyspace, ConsistencyLevel.ALL, writeReplicas.token(), writeReplicas, EndpointsForToken.empty(writeReplicas.token()), writeReplicas),
+                      null, WriteType.UNLOGGED_BATCH, queryStartNanoTime);
                 Iterables.addAll(undelivered, writeReplicas.endpoints());
             }
 
             @Override
             protected int totalBlockFor()
             {
-                return this.replicaPlan.targetReplicas().size();
+                return this.replicaLayout.selectedReplicas().size();
             }
 
             @Override

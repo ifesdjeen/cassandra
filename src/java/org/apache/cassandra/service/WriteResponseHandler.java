@@ -20,14 +20,13 @@ package org.apache.cassandra.service;
 import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
 
 import org.apache.cassandra.dht.Token;
-import org.apache.cassandra.locator.EndpointsForToken;
+import org.apache.cassandra.locator.ReplicaLayout;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.apache.cassandra.db.Keyspace;
 import org.apache.cassandra.locator.Replica;
 import org.apache.cassandra.net.MessageIn;
-import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.db.WriteType;
 
 /**
@@ -41,25 +40,18 @@ public class WriteResponseHandler<T> extends AbstractWriteResponseHandler<T>
     private static final AtomicIntegerFieldUpdater<WriteResponseHandler> responsesUpdater
             = AtomicIntegerFieldUpdater.newUpdater(WriteResponseHandler.class, "responses");
 
-    public WriteResponseHandler(WritePathReplicaPlan replicaPlan,
-                                ConsistencyLevel consistencyLevel,
-                                Keyspace keyspace,
+    public WriteResponseHandler(ReplicaLayout.ForToken replicaLayout,
                                 Runnable callback,
                                 WriteType writeType,
                                 long queryStartNanoTime)
     {
-        super(keyspace, replicaPlan, consistencyLevel, callback, writeType, queryStartNanoTime);
+        super(replicaLayout, callback, writeType, queryStartNanoTime);
         responses = totalBlockFor();
     }
 
-    public WriteResponseHandler(Token token, Replica replica, WriteType writeType, Runnable callback, long queryStartNanoTime)
+    public WriteResponseHandler(ReplicaLayout.ForToken replicaLayout, WriteType writeType, long queryStartNanoTime)
     {
-        this(WritePathReplicaPlan.createReplicaPlan(null, ConsistencyLevel.ONE, EndpointsForToken.of(token, replica), EndpointsForToken.empty(token)), ConsistencyLevel.ONE, null, callback, writeType, queryStartNanoTime);
-    }
-
-    public WriteResponseHandler(Token token, Replica replica, WriteType writeType, long queryStartNanoTime)
-    {
-        this(token, replica, writeType, null, queryStartNanoTime);
+        this(replicaLayout, null, writeType, queryStartNanoTime);
     }
 
     public void response(MessageIn<T> m)

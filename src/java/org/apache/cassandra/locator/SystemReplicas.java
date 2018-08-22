@@ -18,7 +18,9 @@
 
 package org.apache.cassandra.locator;
 
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -29,8 +31,8 @@ import org.apache.cassandra.dht.Token;
 public class SystemReplicas
 {
     private static final Map<InetAddressAndPort, Replica> systemReplicas = new ConcurrentHashMap<>();
-    private static final Range<Token> FULL_RANGE = new Range<>(DatabaseDescriptor.getPartitioner().getMinimumToken(),
-                                                               DatabaseDescriptor.getPartitioner().getMinimumToken());
+    public static final Range<Token> FULL_RANGE = new Range<>(DatabaseDescriptor.getPartitioner().getMinimumToken(),
+                                                              DatabaseDescriptor.getPartitioner().getMinimumToken());
 
     private static Replica createSystemReplica(InetAddressAndPort endpoint)
     {
@@ -48,13 +50,13 @@ public class SystemReplicas
         return systemReplicas.computeIfAbsent(endpoint, SystemReplicas::createSystemReplica);
     }
 
-    public static EndpointsForRange getSystemReplicas(Collection<InetAddressAndPort> endpoints)
+    public static Collection<Replica> getSystemReplicas(Collection<InetAddressAndPort> endpoints)
     {
-        EndpointsForRange.Builder rlist = EndpointsForRange.builder(FULL_RANGE, endpoints.size());
+        List<Replica> replicas = new ArrayList<>(endpoints.size());
         for (InetAddressAndPort endpoint: endpoints)
         {
-            rlist.add(getSystemReplica(endpoint));
+            replicas.add(getSystemReplica(endpoint));
         }
-        return rlist.build();
+        return replicas;
     }
 }
