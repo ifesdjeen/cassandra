@@ -33,9 +33,10 @@ import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.db.Mutation;
 import org.apache.cassandra.db.partitions.PartitionUpdate;
+import org.apache.cassandra.locator.Endpoints;
+import org.apache.cassandra.locator.ReplicaLayout;
 import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.locator.Replica;
-import org.apache.cassandra.locator.ReplicaCollection;
 import org.apache.cassandra.locator.Replicas;
 import org.apache.cassandra.metrics.ReadRepairMetrics;
 import org.apache.cassandra.net.IAsyncCallback;
@@ -43,20 +44,19 @@ import org.apache.cassandra.net.MessageIn;
 import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.schema.TableId;
-import org.apache.cassandra.service.ReplicaPlan;
 import org.apache.cassandra.tracing.Tracing;
 
 import static org.apache.cassandra.service.reads.repair.ReadRepair.createRepairMutation;
 
-public class BlockingPartitionRepair extends AbstractFuture<Object> implements IAsyncCallback<Object>
+public class BlockingPartitionRepair<E extends Endpoints<E>, L extends ReplicaLayout<E, L>> extends AbstractFuture<Object> implements IAsyncCallback<Object>
 {
-    private final ReplicaPlan replicaPlan;
+    private final L replicaPlan;
     private final Map<Replica, Mutation> pendingRepairs;
     private final CountDownLatch latch;
 
     private volatile long mutationsSentTime;
 
-    public BlockingPartitionRepair(Map<Replica, Mutation> repairs, int maxBlockFor, ReplicaPlan replicaPlan)
+    public BlockingPartitionRepair(Map<Replica, Mutation> repairs, int maxBlockFor, L replicaPlan)
     {
         this.pendingRepairs = new ConcurrentHashMap<>(repairs);
         this.replicaPlan = replicaPlan;
@@ -64,7 +64,7 @@ public class BlockingPartitionRepair extends AbstractFuture<Object> implements I
         // here we remove empty repair mutations from the block for total, since
         // we're not sending them mutations
         int blockFor = maxBlockFor;
-        for (Replica participant: replicaPlan.targetReplicas())
+        for (Replica participant: replicaPlan.selectedReplicas())
         {
             // remote dcs can sometimes get involved in dc-local reads. We want to repair
             // them if they do, but they shouldn't interfere with blocking the client read.
@@ -189,8 +189,8 @@ public class BlockingPartitionRepair extends AbstractFuture<Object> implements I
         if (awaitRepairs(timeout, timeoutUnit))
             return;
 
-        ReplicaCollection<?> newCandidates = replicaPlan.additionalReplicas();
-        if (newCandidates.isEmpty())
+        L newCandidates = replicaPlan.extend();
+        if (newCandidates.selectedReplicas().isEmpty())
             return;
 
         PartitionUpdate update = mergeUnackedUpdates();
@@ -201,9 +201,9 @@ public class BlockingPartitionRepair extends AbstractFuture<Object> implements I
 
         ReadRepairMetrics.speculatedWrite.mark();
 
-        for (Replica replica: newCandidates)
+        for (Replica replica: newCandidates.selectedReplicas())
         {
-            Mutation mutation = createRepairMutation(update, replicaPlan.consistencyLevel(), replica, true);
+            Mutation mutation = createRepairMutation(update, newCandidates.consistencyLevel(), replica, true);
 
             if (mutation == null)
             {

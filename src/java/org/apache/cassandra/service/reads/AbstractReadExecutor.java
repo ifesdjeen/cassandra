@@ -21,8 +21,9 @@ import java.util.concurrent.TimeUnit;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Iterables;
-import org.apache.cassandra.locator.Endpoints;
-import org.apache.cassandra.locator.EndpointsForToken;
+
+import org.apache.cassandra.locator.ReplicaLayout;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -38,13 +39,12 @@ import org.apache.cassandra.db.partitions.PartitionIterator;
 import org.apache.cassandra.exceptions.ReadFailureException;
 import org.apache.cassandra.exceptions.ReadTimeoutException;
 import org.apache.cassandra.exceptions.UnavailableException;
+import org.apache.cassandra.locator.EndpointsForToken;
 import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.locator.Replica;
 import org.apache.cassandra.locator.ReplicaCollection;
 import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
-import org.apache.cassandra.service.ReplicaPlan;
-import org.apache.cassandra.service.StorageProxy;
 import org.apache.cassandra.service.reads.repair.BlockingReadRepair;
 import org.apache.cassandra.service.reads.repair.ReadRepair;
 import org.apache.cassandra.service.StorageProxy.LocalReadRunnable;
@@ -64,22 +64,22 @@ public abstract class AbstractReadExecutor
     private static final Logger logger = LoggerFactory.getLogger(AbstractReadExecutor.class);
 
     protected final ReadCommand command;
-    protected final ReplicaPlan replicaPlan;
-    protected final ReadRepair readRepair;
-    protected final DigestResolver digestResolver;
-    protected final ReadCallback handler;
+    private final ReplicaLayout.ForToken replicaPlan;
+    protected final ReadRepair<EndpointsForToken, ReplicaLayout.ForToken> readRepair;
+    protected final DigestResolver<EndpointsForToken, ReplicaLayout.ForToken> digestResolver;
+    protected final ReadCallback<EndpointsForToken, ReplicaLayout.ForToken> handler;
     protected final TraceState traceState;
     protected final ColumnFamilyStore cfs;
     protected final long queryStartNanoTime;
     protected volatile PartitionIterator result = null;
 
-    AbstractReadExecutor(ColumnFamilyStore cfs, ReadCommand command, ReplicaPlan replicaPlan, long queryStartNanoTime)
+    AbstractReadExecutor(ColumnFamilyStore cfs, ReadCommand command, ReplicaLayout.ForToken replicaPlan, long queryStartNanoTime)
     {
         this.command = command;
         this.replicaPlan = replicaPlan;
-        this.readRepair = new BlockingReadRepair(command, replicaPlan, queryStartNanoTime);
-        this.digestResolver = new DigestResolver(command, replicaPlan, readRepair, queryStartNanoTime);
-        this.handler = ReadCallback.create(digestResolver, command, replicaPlan, queryStartNanoTime);
+        this.readRepair = new BlockingReadRepair<>(command, replicaPlan, queryStartNanoTime);
+        this.digestResolver = new DigestResolver<>(command, replicaPlan, readRepair, queryStartNanoTime);
+        this.handler = new ReadCallback<>(digestResolver, replicaPlan.blockFor(), command, replicaPlan, queryStartNanoTime);
         this.cfs = cfs;
         this.traceState = Tracing.instance.get();
         this.queryStartNanoTime = queryStartNanoTime;
@@ -89,7 +89,7 @@ public abstract class AbstractReadExecutor
         // TODO: we need this when talking with pre-3.0 nodes. So if we preserve the digest format moving forward, we can get rid of this once
         // we stop being compatible with pre-3.0 nodes.
         int digestVersion = MessagingService.current_version;
-        for (Replica replica : replicaPlan.targetReplicas())
+        for (Replica replica : replicaPlan.selectedReplicas())
             digestVersion = Math.min(digestVersion, MessagingService.instance().getVersion(replica.endpoint()));
         command.setDigestVersion(digestVersion);
     }
@@ -168,27 +168,24 @@ public abstract class AbstractReadExecutor
         ColumnFamilyStore cfs = keyspace.getColumnFamilyStore(command.metadata().id);
         SpeculativeRetryPolicy retry = cfs.metadata().params.speculativeRetry;
 
-        EndpointsForToken allReplicas = StorageProxy.getLiveSortedReplicasForToken(keyspace, command.partitionKey());
-        EndpointsForToken targetReplicas = consistencyLevel.filterForQuery(keyspace, allReplicas, retry.equals(AlwaysSpeculativeRetryPolicy.INSTANCE));
-
-        ReplicaPlan replicaPlan = new ReplicaPlan(keyspace, consistencyLevel, allReplicas, targetReplicas);
-        // Throw UAE early if we don't have enough replicas.
-        consistencyLevel.assureSufficientLiveNodes(keyspace, targetReplicas);
+        // Endpoints for Token
+        ReplicaLayout.ForToken replicaPlan = ReplicaLayout.forRead(keyspace, command.partitionKey().getToken(), consistencyLevel, retry);
 
         // Speculative retry is disabled *OR*
         // 11980: Disable speculative retry if using EACH_QUORUM in order to prevent miscounting DC responses
         if (retry.equals(NeverSpeculativeRetryPolicy.INSTANCE) || consistencyLevel == ConsistencyLevel.EACH_QUORUM)
+            // TODO Looks like we might want to move speculation into the replica layout, but that might be a story for post-4.0
             return new NeverSpeculatingReadExecutor(cfs, command, replicaPlan, queryStartNanoTime, false);
 
         // There are simply no extra replicas to speculate.
         // Handle this separately so it can log failed attempts to speculate due to lack of replicas
-        if (consistencyLevel.blockFor(keyspace) == allReplicas.size())
+        if (consistencyLevel.blockFor(keyspace) == replicaPlan.natrualReplicas().size())
             return new NeverSpeculatingReadExecutor(cfs, command, replicaPlan, queryStartNanoTime, true);
 
         // If CL.ALL, upgrade to AlwaysSpeculating;
         // If We are going to contact every node anyway, ask for 2 full data requests instead of 1, for redundancy
         // (same amount of requests in total, but we turn 1 digest request into a full blown data request)
-        if (targetReplicas.size() == allReplicas.size() || retry.equals(AlwaysSpeculativeRetryPolicy.INSTANCE))
+        if (replicaPlan.natrualReplicas().size() == replicaPlan.selectedReplicas().size() || retry.equals(AlwaysSpeculativeRetryPolicy.INSTANCE))
             return new AlwaysSpeculatingReadExecutor(cfs, command, replicaPlan, queryStartNanoTime);
         else // PERCENTILE or CUSTOM.
             return new SpeculatingReadExecutor(cfs, command, replicaPlan, queryStartNanoTime);
@@ -207,6 +204,16 @@ public abstract class AbstractReadExecutor
         return !handler.await(cfs.sampleReadLatencyNanos, TimeUnit.NANOSECONDS);
     }
 
+    boolean speculated()
+    {
+        return false;
+    }
+
+    ReplicaLayout.ForToken replicaPlan()
+    {
+        return replicaPlan;
+    }
+
     void onReadTimeout() {}
 
     public static class NeverSpeculatingReadExecutor extends AbstractReadExecutor
@@ -218,7 +225,7 @@ public abstract class AbstractReadExecutor
          */
         private final boolean logFailedSpeculation;
 
-        public NeverSpeculatingReadExecutor(ColumnFamilyStore cfs, ReadCommand command, ReplicaPlan replicaPlan, long queryStartNanoTime, boolean logFailedSpeculation)
+        public NeverSpeculatingReadExecutor(ColumnFamilyStore cfs, ReadCommand command, ReplicaLayout.ForToken replicaPlan, long queryStartNanoTime, boolean logFailedSpeculation)
         {
             super(cfs, command, replicaPlan, queryStartNanoTime);
             this.logFailedSpeculation = logFailedSpeculation;
@@ -226,9 +233,9 @@ public abstract class AbstractReadExecutor
 
         public void executeAsync()
         {
-            makeDataRequests(replicaPlan.targetReplicas().subList(0, 1));
-            if (replicaPlan.targetReplicas().size() > 1)
-                makeDigestRequests(replicaPlan.targetReplicas().subList(1, replicaPlan.targetReplicas().size()));
+            makeDataRequests(replicaPlan().selectedReplicas().subList(0, 1));
+            if (replicaPlan().selectedReplicas().size() > 1)
+                makeDigestRequests(replicaPlan().selectedReplicas().subList(1, replicaPlan().selectedReplicas().size()));
         }
 
         public void maybeTryAdditionalReplicas()
@@ -242,19 +249,26 @@ public abstract class AbstractReadExecutor
 
     static class SpeculatingReadExecutor extends AbstractReadExecutor
     {
+        private volatile ReplicaLayout.ForToken replicaPlan;
         private volatile boolean speculated = false;
 
         public SpeculatingReadExecutor(ColumnFamilyStore cfs,
                                        ReadCommand command,
-                                       ReplicaPlan replicaPlan,
+                                       ReplicaLayout.ForToken replicaPlan,
                                        long queryStartNanoTime)
         {
             super(cfs, command, replicaPlan, queryStartNanoTime);
+            this.replicaPlan = replicaPlan;
+        }
+
+        public ReplicaLayout.ForToken replicaPlan()
+        {
+            return replicaPlan;
         }
 
         public void executeAsync()
         {
-            Endpoints<?> initialReplicas = replicaPlan.targetReplicas();
+            EndpointsForToken initialReplicas = replicaPlan().selectedReplicas();
 
             if (handler.blockfor < initialReplicas.size())
             {
@@ -281,10 +295,10 @@ public abstract class AbstractReadExecutor
             {
                 //Handle speculation stats first in case the callback fires immediately
                 speculated = true;
-                replicaPlan.resetTargetReplicas(replicaPlan.allReplicas().subList(0, replicaPlan.targetReplicas().size() + 1));
+                replicaPlan = ReplicaLayout.forSpeculation(replicaPlan);
                 cfs.metric.speculativeRetries.inc();
                 // Could be waiting on the data, or on enough digests.
-                Replica extraReplica = Iterables.getLast(replicaPlan.targetReplicas());
+                Replica extraReplica = Iterables.getLast(replicaPlan().selectedReplicas());
                 ReadCommand retryCommand = command;
 
                 if (handler.resolver.isDataPresent() && extraReplica.isFull())
@@ -311,7 +325,7 @@ public abstract class AbstractReadExecutor
     {
         public AlwaysSpeculatingReadExecutor(ColumnFamilyStore cfs,
                                              ReadCommand command,
-                                             ReplicaPlan targetReplicas,
+                                             ReplicaLayout.ForToken targetReplicas,
                                              long queryStartNanoTime)
         {
             super(cfs, command, targetReplicas, queryStartNanoTime);
@@ -325,9 +339,9 @@ public abstract class AbstractReadExecutor
         @Override
         public void executeAsync()
         {
-            makeDataRequests(replicaPlan.targetReplicas().subList(0, replicaPlan.targetReplicas().size() > 1 ? 2 : 1));
-            if (replicaPlan.targetReplicas().size() > 2)
-                makeDigestRequests(replicaPlan.targetReplicas().subList(2, replicaPlan.targetReplicas().size()));
+            makeDataRequests(replicaPlan().selectedReplicas().subList(0, replicaPlan().selectedReplicas().size() > 1 ? 2 : 1));
+            if (replicaPlan().selectedReplicas().size() > 2)
+                makeDigestRequests(replicaPlan().selectedReplicas().subList(2, replicaPlan().selectedReplicas().size()));
             cfs.metric.speculativeRetries.inc();
         }
 
@@ -391,7 +405,7 @@ public abstract class AbstractReadExecutor
                 logger.trace("Timed out waiting on digest mismatch repair requests");
             // the caught exception here will have CL.ALL from the repair command,
             // not whatever CL the initial command was at (CASSANDRA-7947)
-            throw new ReadTimeoutException(replicaPlan.consistencyLevel(), handler.blockfor-1, handler.blockfor, true);
+            throw new ReadTimeoutException(replicaPlan().consistencyLevel(), handler.blockfor-1, handler.blockfor, true);
         }
     }
 

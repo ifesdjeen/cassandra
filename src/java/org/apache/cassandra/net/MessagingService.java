@@ -1046,7 +1046,7 @@ public final class MessagingService implements MessagingServiceMBean
                            AbstractWriteResponseHandler<?> handler,
                            boolean allowHints)
     {
-        int id = addWriteCallback(handler, message, to, message.getTimeout(), handler.consistencyLevel, allowHints);
+        int id = addWriteCallback(handler, message, to, message.getTimeout(), handler.consistencyLevel(), allowHints);
         updateBackPressureOnSend(to.endpoint(), handler, message);
         sendOneWay(message.withParameter(ParameterType.FAILURE_CALLBACK, ONE_BYTE), id, to.endpoint());
         return id;

@@ -20,6 +20,7 @@ package org.apache.cassandra.service.reads.repair;
 import java.util.Map;
 import java.util.function.Consumer;
 
+import org.apache.cassandra.locator.ReplicaLayout;
 import org.apache.cassandra.locator.Endpoints;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -39,16 +40,15 @@ import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.service.reads.DigestResolver;
 import org.apache.cassandra.tracing.Tracing;
 
-public interface ReadRepair
+public interface ReadRepair<E extends Endpoints<E>, L extends ReplicaLayout<E, L>>
 {
     static final Logger logger = LoggerFactory.getLogger(ReadRepair.class);
     static final boolean DROP_OVERSIZED_READ_REPAIR_MUTATIONS = Boolean.getBoolean("cassandra.drop_oversized_readrepair_mutations");
 
-
     /**
      * Used by DataResolver to generate corrections as the partition iterator is consumed
      */
-    UnfilteredPartitionIterators.MergeListener getMergeListener(Endpoints<?> replicas);
+    UnfilteredPartitionIterators.MergeListener getMergeListener(L replicas);
 
     /**
      * Called when the digests from the initial read don't match. Reads may block on the
@@ -87,7 +87,7 @@ public interface ReadRepair
      * Repairs a partition _after_ receiving data responses. This method receives replica list, since
      * we will block repair only on the replicas that have responded.
      */
-    void repairPartition(Map<Replica, Mutation> mutations, Endpoints<?> targets);
+    void repairPartition(Map<Replica, Mutation> mutations, L targets);
 
     /**
      * Create a read repair mutation from the given update, if the mutation is not larger than the maximum

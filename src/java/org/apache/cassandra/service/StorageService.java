@@ -1247,7 +1247,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
 
                 // Ensure all specified ranges are actually ranges owned by this host
                 RangesAtEndpoint localReplicas = getLocalReplicas(keyspace);
-                ReplicaList.Builder streamRanges = ReplicaList.builder(ranges.size());
+                RangesAtEndpoint.Builder streamRanges = new RangesAtEndpoint.Builder(ranges.size());
                 for (Range<Token> specifiedRange : ranges)
                 {
                     boolean foundParentRange = false;
@@ -3969,7 +3969,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
      * @param pos position for which we need to find the endpoint
      * @return the endpoint responsible for this token
      */
-    public EndpointsForToken getNaturalReplicasForToken(String keyspaceName, RingPosition pos)
+    public static EndpointsForToken getNaturalReplicasForToken(String keyspaceName, RingPosition pos)
     {
         return Keyspace.open(keyspaceName).getReplicationStrategy().getNaturalReplicasForToken(pos);
     }
@@ -4249,7 +4249,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                              .filter(endpoint -> FailureDetector.instance.isAlive(endpoint) && !FBUtilities.getBroadcastAddressAndPort().equals(endpoint))
                              .collect(Collectors.toList());
 
-        return SystemReplicas.getSystemReplicas(endpoints);
+        return EndpointsForRange.copyOf(SystemReplicas.getSystemReplicas(endpoints));
     }
     /**
      * Find the best target to stream hints to. Currently the closest peer according to the snitch

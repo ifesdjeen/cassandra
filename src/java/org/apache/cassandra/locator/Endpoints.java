@@ -32,11 +32,7 @@ public abstract class Endpoints<C extends Endpoints<C>> extends AbstractReplicaC
     static final Map<InetAddressAndPort, Replica> EMPTY_MAP = Collections.unmodifiableMap(new LinkedHashMap<>());
 
     volatile Map<InetAddressAndPort, Replica> byEndpoint;
-    // TODO UNUSED
-    Endpoints(List<Replica> list, boolean isSnapshot)
-    {
-        this(list, isSnapshot, null);
-    }
+
     Endpoints(List<Replica> list, boolean isSnapshot, Map<InetAddressAndPort, Replica> byEndpoint)
     {
         super(list, isSnapshot);

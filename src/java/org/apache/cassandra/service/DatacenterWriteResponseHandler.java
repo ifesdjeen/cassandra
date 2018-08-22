@@ -17,26 +17,23 @@
  */
 package org.apache.cassandra.service;
 
-import org.apache.cassandra.db.Keyspace;
-import org.apache.cassandra.locator.InetAddressAndPort;
-import org.apache.cassandra.net.MessageIn;
-import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.db.WriteType;
+import org.apache.cassandra.locator.InetAddressAndPort;
+import org.apache.cassandra.locator.ReplicaLayout;
+import org.apache.cassandra.net.MessageIn;
 
 /**
  * This class blocks for a quorum of responses _in the local datacenter only_ (CL.LOCAL_QUORUM).
  */
 public class DatacenterWriteResponseHandler<T> extends WriteResponseHandler<T>
 {
-    public DatacenterWriteResponseHandler(WritePathReplicaPlan replicaPlan,
-                                          ConsistencyLevel consistencyLevel,
-                                          Keyspace keyspace,
+    public DatacenterWriteResponseHandler(ReplicaLayout.ForToken replicaPlan,
                                           Runnable callback,
                                           WriteType writeType,
                                           long queryStartNanoTime)
     {
-        super(replicaPlan, consistencyLevel, keyspace, callback, writeType, queryStartNanoTime);
-        assert consistencyLevel.isDatacenterLocal();
+        super(replicaPlan, callback, writeType, queryStartNanoTime);
+        assert replicaPlan.consistencyLevel().isDatacenterLocal();
     }
 
     @Override
@@ -59,12 +56,12 @@ public class DatacenterWriteResponseHandler<T> extends WriteResponseHandler<T>
     {
         // during bootstrap, include pending endpoints (only local here) in the count
         // or we may fail the consistency level guarantees (see #833, #8058)
-        return consistencyLevel.blockFor(keyspace) + consistencyLevel.countLocalEndpoints(replicaPlan.pendingReplicas());
+        return replicaPlan.consistencyLevel().blockFor(replicaPlan.keyspace()) + replicaPlan.consistencyLevel().countLocalEndpoints(replicaPlan.pendingReplicas());
     }
 
     @Override
     protected boolean waitingFor(InetAddressAndPort from)
     {
-        return consistencyLevel.isLocal(from);
+        return replicaPlan.consistencyLevel().isLocal(from);
     }
 }

@@ -35,9 +35,10 @@ import org.apache.cassandra.exceptions.ReadTimeoutException;
 import org.apache.cassandra.locator.Endpoints;
 import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.locator.Replica;
+import org.apache.cassandra.locator.ReplicaLayout;
 import org.apache.cassandra.service.reads.DigestResolver;
 
-public class TestableReadRepair implements ReadRepair
+public class TestableReadRepair<E extends Endpoints<E>, L extends ReplicaLayout<E, L>> implements ReadRepair<E, L>
 {
     public final Map<InetAddressAndPort, Mutation> sent = new HashMap<>();
 
@@ -54,7 +55,7 @@ public class TestableReadRepair implements ReadRepair
     }
 
     @Override
-    public UnfilteredPartitionIterators.MergeListener getMergeListener(Endpoints<?> endpoints)
+    public UnfilteredPartitionIterators.MergeListener getMergeListener(L endpoints)
     {
         return new PartitionIteratorMergeListener(endpoints, command, consistency, this) {
             @Override
@@ -112,7 +113,7 @@ public class TestableReadRepair implements ReadRepair
     }
 
     @Override
-    public void repairPartition(Map<Replica, Mutation> mutations, Endpoints<?> destinations)
+    public void repairPartition(Map<Replica, Mutation> mutations, L targets)
     {
         for (Map.Entry<Replica, Mutation> entry: mutations.entrySet())
             sent.put(entry.getKey().endpoint(), entry.getValue());

@@ -221,15 +221,19 @@ public class SimpleStrategyTest
 
         SimpleStrategy strategy = new SimpleStrategy("ks", metadata, snitch, configOptions);
 
-        Assert.assertEquals(ReplicaList.of(ReplicaUtils.full(endpoints.get(0), range(400, 100)),
-                                           ReplicaUtils.full(endpoints.get(1), range(400, 100)),
-                                           ReplicaUtils.trans(endpoints.get(2), range(400, 100))),
+        Range<Token> range1 = range(400, 100);
+        Assert.assertEquals(EndpointsForToken.of(range1.right,
+                                                 ReplicaUtils.full(endpoints.get(0), range1),
+                                                 ReplicaUtils.full(endpoints.get(1), range1),
+                                                 ReplicaUtils.trans(endpoints.get(2), range1)),
                             strategy.getNaturalReplicasForToken(tk(99)));
 
 
-        Assert.assertEquals(ReplicaList.of(ReplicaUtils.full(endpoints.get(1), range(100, 200)),
-                                           ReplicaUtils.full(endpoints.get(2), range(100, 200)),
-                                           ReplicaUtils.trans(endpoints.get(3), range(100, 200))),
+        Range<Token> range2 = range(100, 200);
+        Assert.assertEquals(EndpointsForToken.of(range2.right,
+                                                 ReplicaUtils.full(endpoints.get(1), range2),
+                                                 ReplicaUtils.full(endpoints.get(2), range2),
+                                                 ReplicaUtils.trans(endpoints.get(3), range2)),
                             strategy.getNaturalReplicasForToken(tk(101)));
     }
 

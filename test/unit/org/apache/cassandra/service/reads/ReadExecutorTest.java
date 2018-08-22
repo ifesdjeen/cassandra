@@ -20,6 +20,9 @@ package org.apache.cassandra.service.reads;
 
 import java.util.concurrent.TimeUnit;
 
+import org.apache.cassandra.config.DatabaseDescriptor;
+import org.apache.cassandra.dht.Murmur3Partitioner;
+import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.locator.EndpointsForRange;
 import org.junit.Before;
 import org.junit.BeforeClass;
@@ -34,12 +37,13 @@ import org.apache.cassandra.db.SinglePartitionReadCommand;
 import org.apache.cassandra.exceptions.ReadFailureException;
 import org.apache.cassandra.exceptions.ReadTimeoutException;
 import org.apache.cassandra.exceptions.RequestFailureReason;
+import org.apache.cassandra.locator.EndpointsForToken;
 import org.apache.cassandra.locator.InetAddressAndPort;
+import org.apache.cassandra.locator.ReplicaLayout;
 import org.apache.cassandra.locator.ReplicaUtils;
 import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.schema.KeyspaceParams;
-import org.apache.cassandra.service.ReplicaPlan;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.fail;
@@ -48,7 +52,8 @@ public class ReadExecutorTest
 {
     static Keyspace ks;
     static ColumnFamilyStore cfs;
-    static EndpointsForRange targets;
+    static EndpointsForToken targets;
+    static Token dummy;
 
     @BeforeClass
     public static void setUpClass() throws Throwable
@@ -57,7 +62,8 @@ public class ReadExecutorTest
         SchemaLoader.createKeyspace("Foo", KeyspaceParams.simple(3), SchemaLoader.standardCFMD("Foo", "Bar"));
         ks = Keyspace.open("Foo");
         cfs = ks.getColumnFamilyStore("Bar");
-        targets = EndpointsForRange.of(
+        dummy = Murmur3Partitioner.instance.getMinimumToken();
+        targets = EndpointsForToken.of(dummy,
                 ReplicaUtils.full(InetAddressAndPort.getByName("127.0.0.255")),
                 ReplicaUtils.full(InetAddressAndPort.getByName("127.0.0.254")),
                 ReplicaUtils.full(InetAddressAndPort.getByName("127.0.0.253"))
@@ -217,13 +223,13 @@ public class ReadExecutorTest
 
     }
 
-    private ReplicaPlan plan(EndpointsForRange targets, ConsistencyLevel consistencyLevel)
+    private ReplicaLayout.ForToken plan(EndpointsForToken targets, ConsistencyLevel consistencyLevel)
     {
         return plan(consistencyLevel, targets, targets);
     }
 
-    private ReplicaPlan plan(ConsistencyLevel consistencyLevel, EndpointsForRange all, EndpointsForRange target)
+    private ReplicaLayout.ForToken plan(ConsistencyLevel consistencyLevel, EndpointsForToken natural, EndpointsForToken selected)
     {
-        return new ReplicaPlan(ks, consistencyLevel, all, target);
+        return new ReplicaLayout.ForToken(ks, consistencyLevel, natural.token(), natural, null, selected);
     }
 }

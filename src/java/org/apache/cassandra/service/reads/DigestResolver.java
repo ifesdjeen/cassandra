@@ -24,6 +24,7 @@ import java.util.function.Consumer;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
+import com.google.common.collect.Iterables;
 
 import org.apache.cassandra.db.Mutation;
 import org.apache.cassandra.db.ReadCommand;
@@ -32,20 +33,19 @@ import org.apache.cassandra.db.SinglePartitionReadCommand;
 import org.apache.cassandra.db.partitions.PartitionIterator;
 import org.apache.cassandra.db.partitions.UnfilteredPartitionIterators;
 import org.apache.cassandra.exceptions.ReadTimeoutException;
+import org.apache.cassandra.locator.ReplicaLayout;
 import org.apache.cassandra.locator.Endpoints;
 import org.apache.cassandra.locator.Replica;
-import org.apache.cassandra.locator.ReplicaCollection;
 import org.apache.cassandra.net.MessageIn;
-import org.apache.cassandra.service.ReplicaPlan;
 import org.apache.cassandra.service.reads.repair.PartitionIteratorMergeListener;
 import org.apache.cassandra.service.reads.repair.ReadRepair;
 
-public class DigestResolver extends ResponseResolver
+public class DigestResolver<E extends Endpoints<E>, L extends ReplicaLayout<E, L>> extends ResponseResolver<E, L>
 {
     private volatile MessageIn<ReadResponse> dataResponse;
     private volatile boolean hasTransientResponse = false;
 
-    public DigestResolver(ReadCommand command, ReplicaPlan replicas, ReadRepair readRepair, long queryStartNanoTime)
+    public DigestResolver(ReadCommand command, L replicas, ReadRepair<E, L> readRepair, long queryStartNanoTime)
     {
         super(command, replicas, readRepair, queryStartNanoTime);
         Preconditions.checkArgument(command instanceof SinglePartitionReadCommand,
@@ -80,22 +80,23 @@ public class DigestResolver extends ResponseResolver
         {
             // This path can be triggered only if we've got responses from full replicas and they match, but
             // transient replica response still contains data, which needs to be reconciled.
-            ReplicaCollection.Mutable<? extends Endpoints<?>> forwardTo = replicaPlan.allReplicas().newMutable(responses.size());
-
+            // TODO: should be changed to yet another plan but for sakes of making it quicker making a shortcut
+            // should be replicaPlan.fromResponses()
             // Create data resolver that will forward data to
-            DataResolver dataResolver = new DataResolver(command,
-                                                         replicaPlan,
-                                                         new ForwardingReadRepair(replicaPlan.getReplicaFor(dataResponse.from), forwardTo.asImmutableView()),
-                                                         queryStartNanoTime);
+            L layout = replicaPlan.forResponded(Iterables.transform(Iterables.filter(responses, a -> a.payload.isDigestResponse()),
+                                                                     a -> a.from));
+            DataResolver<E, L> dataResolver = new DataResolver<>(command,
+                                                                 replicaPlan,
+                                                                 new ForwardingReadRepair(replicaPlan.getReplicaFor(dataResponse.from),
+                                                                                          layout),
+                                                                 queryStartNanoTime);
 
             dataResolver.preprocess(dataResponse);
             // Forward differences to all full nodes
             for (MessageIn<ReadResponse> response : responses)
             {
                 Replica replica = replicaPlan.getReplicaFor(response.from);
-                if (response.payload.isDigestResponse())
-                    forwardTo.add(replica);
-                else if (replica.isTransient())
+                if (replica.isTransient())
                     dataResolver.preprocess(response);
             }
 
@@ -152,19 +153,21 @@ public class DigestResolver extends ResponseResolver
      * This class assumes that all of the responses from full replicas agreed on their data (otherwise
      * we'd be doing a normal foreground repair)
      */
-    private class ForwardingReadRepair implements ReadRepair
+    private class ForwardingReadRepair implements ReadRepair<E, L>
     {
         private final Replica from;
-        private final Endpoints<?> forwardTo;
+        private final L forwardTo;
 
-        public ForwardingReadRepair(Replica from, Endpoints<?> forwardTo)
+        public ForwardingReadRepair(Replica from, L forwardTo)
         {
             this.from = from;
             this.forwardTo = forwardTo;
         }
+
         @Override
-        public UnfilteredPartitionIterators.MergeListener getMergeListener(Endpoints<?> replicas)
+        public UnfilteredPartitionIterators.MergeListener getMergeListener(L replicas)
         {
+            // TODO: consistencylevel here is probably redundant by now
             return new PartitionIteratorMergeListener(replicas, command, replicaPlan.consistencyLevel(), this);
         }
 
@@ -199,17 +202,17 @@ public class DigestResolver extends ResponseResolver
         }
 
         @Override
-        public void repairPartition(Map<Replica, Mutation> mutations, Endpoints<?> replicas)
+        public void repairPartition(Map<Replica, Mutation> mutations, L targets)
         {
             Preconditions.checkArgument(mutations.containsKey(from));
 
             Mutation mutation = mutations.get(from);
-            for (Replica digestSender: forwardTo)
+            for (Replica digestSender: forwardTo.selectedReplicas())
             {
                 mutations.put(digestSender, mutation);
             }
 
-            readRepair.repairPartition(mutations, replicas);
+            readRepair.repairPartition(mutations, targets);
         }
     }
 }
