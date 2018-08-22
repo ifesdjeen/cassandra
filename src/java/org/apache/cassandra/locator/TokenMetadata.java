@@ -869,10 +869,10 @@ public class TokenMetadata
         {
             EndpointsForRange currentReplicas = strategy.calculateNaturalReplicas(range.right, metadata);
             EndpointsForRange newReplicas = strategy.calculateNaturalReplicas(range.right, allLeftMetadata);
-            for (Replica replica : Replicas.subtractEndpoints(newReplicas, currentReplicas.endpoints()))
+            for (Replica replica : newReplicas)
             {
                 //Believe that transient ranges don't need a pending state
-                if (replica.isTransient())
+                if (replica.isTransient() || currentReplicas.endpoints().contains(replica.endpoint()))
                     continue;
                 newPendingRanges.addPendingRange(range, replica);
             }

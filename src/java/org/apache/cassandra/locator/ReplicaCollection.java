@@ -24,9 +24,6 @@ import java.util.Set;
 import java.util.function.Predicate;
 import java.util.stream.Stream;
 
-import org.apache.cassandra.dht.Range;
-import org.apache.cassandra.dht.Token;
-
 /**
  * A collection like class for Replica objects. Represents both a well defined order on the contained Replica objects,
  * and efficient methods for accessing the contained Replicas, directly and as a projection onto their endpoints and ranges.

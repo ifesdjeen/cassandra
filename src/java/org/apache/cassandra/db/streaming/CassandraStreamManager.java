@@ -146,14 +146,7 @@ public class CassandraStreamManager implements TableStreamManager
 
 
             List<OutgoingStream> streams = new ArrayList<>(refs.size());
-            Set<Range<Token>> fullRanges = replicas.stream()
-                                                   .filter(Replica::isFull)
-                                                   .map(Replica::range)
-                                                   .collect(Collectors.toSet());
-            Set<Range<Token>> transientRanges = replicas.stream()
-                                                        .filter(Replica::isTransient)
-                                                        .map(Replica::range)
-                                                        .collect(Collectors.toSet());
+            Set<Range<Token>> fullRanges = replicas.filter(Replica::isFull).ranges();
 
             //Create outgoing file streams for ranges possibly skipping repaired ranges in sstables
             for (SSTableReader sstable : refs)
@@ -162,13 +155,9 @@ public class CassandraStreamManager implements TableStreamManager
 
                 Set<Range<Token>> ranges;
                 if (!sstable.isRepaired())
-                {
-                    ranges = Streams.concat(fullRanges.stream(), transientRanges.stream()).collect(Collectors.toSet());
-                }
+                    ranges = replicas.ranges();
                 else
-                {
                     ranges = fullRanges;
-                }
 
                 List<SSTableReader.PartitionPositionBounds> sections = sstable.getPositionsForRanges(ranges);
                 if (sections.isEmpty())
