@@ -251,6 +251,6 @@ public class CassandraOutgoingFile implements OutgoingStream
     @Override
     public String toString()
     {
-        return "CassandraOutgoingFile{" + ref.get().getFilename() + '}';
+        return "CassandraOutgoingFile{" + filename + '}';
     }
 }

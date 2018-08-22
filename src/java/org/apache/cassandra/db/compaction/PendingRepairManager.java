@@ -474,7 +474,14 @@ class PendingRepairManager
                 // we always abort because mutating metadata isn't guarded by LifecycleTransaction, so this won't roll
                 // anything back. Also, we don't want to obsolete the originals. We're only using it to prevent other
                 // compactions from marking these sstables compacting, and unmarking them when we're done
-                transaction.abort();
+                if (obsoleteSSTables)
+                {
+                    transaction.finish();
+                }
+                else
+                {
+                    transaction.abort();
+                }
                 if (completed)
                 {
                     removeSession(sessionID);

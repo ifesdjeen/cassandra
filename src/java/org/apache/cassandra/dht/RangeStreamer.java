@@ -594,7 +594,7 @@ public class RangeStreamer
                     }
                 };
 
-                Iterable<FetchReplica> remaining = fetchReplicas.stream().filter(not(isAvailable)).collect(Collectors.toList());
+                List<FetchReplica> remaining = fetchReplicas.stream().filter(not(isAvailable)).collect(Collectors.toList());
                 Iterator<FetchReplica> skipped = fetchReplicas.stream().filter(isAvailable).iterator();
                 if (!skipped.hasNext())
                 {
@@ -605,11 +605,11 @@ public class RangeStreamer
                 if (logger.isTraceEnabled())
                     logger.trace("{}ing from {} ranges {}", description, source, StringUtils.join(remaining, ", "));
 
-                RangesAtEndpoint fullReplicas = fetchReplicas.stream()
+                RangesAtEndpoint fullReplicas = remaining.stream()
                         .filter(pair -> pair.remote.isFull())
                         .map(pair -> pair.local)
                         .collect(RangesAtEndpoint.collector());
-                RangesAtEndpoint transientReplicas = fetchReplicas.stream()
+                RangesAtEndpoint transientReplicas = remaining.stream()
                         .filter(pair -> pair.remote.isTransient())
                         .map(pair -> pair.local)
                         .collect(RangesAtEndpoint.collector());

@@ -25,7 +25,10 @@ import java.util.Collections;
 import java.util.List;
 
 import com.google.common.base.Predicate;
+import com.google.common.collect.ImmutableMap;
+
 import org.apache.cassandra.locator.EndpointsByReplica;
+import org.apache.cassandra.locator.EndpointsForRange;
 import org.apache.cassandra.locator.RangesAtEndpoint;
 import org.junit.After;
 import org.junit.BeforeClass;
@@ -99,23 +102,20 @@ public class BootstrapTransientTest
     Range<Token> bRange = new Range<>(tenToken, twentyToken);
     Range<Token> cRange = new Range<>(twentyToken, thirtyToken);
     Range<Token> dRange = new Range<>(thirtyToken, fourtyToken);
-    Range<Token> aPrimeRange = new Range<>(fourtyToken, tenToken);
-
-
-    RangesAtEndpoint current = RangesAtEndpoint.of(new Replica(aAddress, aRange, true),
-                                       new Replica(aAddress, cRange, true),
-                                       new Replica(aAddress, bRange, false));
 
     ReplicaList toFetch = ReplicaList.of(new Replica(dAddress, dRange, true),
                                        new Replica(cAddress, cRange, true),
                                        new Replica(bAddress, bRange, false));
 
-
-
     @Test
     public void testRangeStreamerRangesToFetch() throws Exception
     {
-        invokeCalculateRangesToFetchWithPreferredEndpoints(toFetch, constructTMDs(), null);
+        EndpointsByReplica expectedResult = new EndpointsByReplica(ImmutableMap.of(
+        Replica.full(dAddress, dRange), EndpointsForRange.builder(aRange).add(Replica.full(bAddress, aRange)).add(Replica.trans(cAddress, aRange)).build(),
+        Replica.full(dAddress, cRange), EndpointsForRange.builder(cRange).add(Replica.full(cAddress, cRange)).add(Replica.trans(bAddress, cRange)).build(),
+        Replica.trans(dAddress, bRange), EndpointsForRange.builder(bRange).add(Replica.trans(aAddress, bRange)).build()));
+
+        invokeCalculateRangesToFetchWithPreferredEndpoints(toFetch, constructTMDs(), expectedResult);
     }
 
     private Pair<TokenMetadata, TokenMetadata> constructTMDs()
