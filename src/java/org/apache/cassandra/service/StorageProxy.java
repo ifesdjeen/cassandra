@@ -689,8 +689,12 @@ public class StorageProxy implements StorageProxyMBean
                     responseHandlers.add(performWrite(mutation, consistency_level, localDataCenter, standardWritePerformer, null, plainWriteType, queryStartNanoTime));
             }
 
+            // upgrade to full quorum any failed cheap quorums
             for (int i = 0 ; i < mutations.size() ; ++i)
-                responseHandlers.get(i).maybeTryAdditionalReplicas(mutations.get(i), standardWritePerformer, localDataCenter);
+            {
+                if (!(mutations.get(i) instanceof CounterMutation)) // at the moment, only non-counter writes support cheap quorums
+                    responseHandlers.get(i).maybeTryAdditionalReplicas(mutations.get(i), standardWritePerformer, localDataCenter);
+            }
 
             // wait for writes.  throws TimeoutException if necessary
             for (AbstractWriteResponseHandler<IMutation> responseHandler : responseHandlers)

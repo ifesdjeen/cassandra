@@ -68,7 +68,7 @@ public class WritePathReplicaPlan extends ReplicaPlan
     @VisibleForTesting
     static <E extends Endpoints<E>> WritePathReplicaPlan createReplicaPlan(Keyspace keyspace, ConsistencyLevel consistencyLevel, int blockFor, E naturalReplicas, E pendingReplicas, Predicate<InetAddressAndPort> livePredicate) throws UnavailableException
     {
-        // TODO: TR-REVIEW why are we filtering to only isFull here? surely if any transient range is 'pending' it should be receiving writes too?
+        // TODO: TR-Review why are we filtering to only isFull here? surely if any transient range is 'pending' it should be receiving writes too?
         pendingReplicas = pendingReplicas.filter(Replica::isFull);
         E allReplicas = Endpoints.concat(naturalReplicas, pendingReplicas, true);
         E selectedReplicas = allReplicas.select()
