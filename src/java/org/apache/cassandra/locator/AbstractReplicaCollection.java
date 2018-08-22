@@ -40,11 +40,11 @@ import java.util.stream.Stream;
  * transient replication status, basic contains and remove methods can be ambiguous. Replicas forces you
  * to be explicit about what you're checking the container for, or removing from it.
  */
-public abstract class AbstractReplicaCollection<C extends AbstractReplicaCollection<? extends C>> implements ReplicaCollection<C>
+public abstract class AbstractReplicaCollection<C extends AbstractReplicaCollection<C>> implements ReplicaCollection<C>
 {
     protected static final List<Replica> EMPTY_LIST = new ArrayList<>(); // since immutable, can safely return this to avoid megamorphic callsites
 
-    public static <C extends ReplicaCollection<? extends C>, B extends Builder<C, ?, B>> Collector<Replica, B, C> collector(Set<Collector.Characteristics> characteristics, Supplier<B> supplier)
+    public static <C extends ReplicaCollection<C>, B extends Builder<C, ?, B>> Collector<Replica, B, C> collector(Set<Collector.Characteristics> characteristics, Supplier<B> supplier)
     {
         return new Collector<Replica, B, C>()
         {

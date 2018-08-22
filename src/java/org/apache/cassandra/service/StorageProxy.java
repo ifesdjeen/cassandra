@@ -589,7 +589,7 @@ public class StorageProxy implements StorageProxyMBean
         }
 
         MessageOut<Commit> message = new MessageOut<Commit>(MessagingService.Verb.PAXOS_COMMIT, proposal, Commit.serializer);
-        for (Replica replica : Iterables.concat(naturalReplicas, pendingReplicas))
+        for (Replica replica : Endpoints.concat(naturalReplicas, pendingReplicas, true))
         {
             InetAddressAndPort destination = replica.endpoint();
             checkHintOverload(replica);
