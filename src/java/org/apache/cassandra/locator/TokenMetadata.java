@@ -871,9 +871,6 @@ public class TokenMetadata
             ReplicaSet newReplicas = ReplicaSet.immutableCopyOf(strategy.calculateNaturalReplicas(range.right, allLeftMetadata));
             for (Replica replica : newReplicas.differenceOnEndpoint(currentReplicas))
             {
-                //Believe that transient ranges don't need a pending state
-                if (replica.isTransient())
-                    continue;
                 newPendingRanges.addPendingRange(range, replica);
             }
         }
@@ -891,9 +888,6 @@ public class TokenMetadata
             allLeftMetadata.updateNormalTokens(tokens, endpoint);
             for (Replica replica : strategy.getAddressReplicas(allLeftMetadata, endpoint))
             {
-                //Believe transient replicas don't need a pending state
-                if (replica.isTransient())
-                    continue;
                 newPendingRanges.addPendingRange(replica.getRange(), replica);
             }
             allLeftMetadata.removeEndpoint(endpoint);
@@ -932,20 +926,14 @@ public class TokenMetadata
                     ReplicaSet newReplicas = strategy.getAddressReplicas(allLeftMetadata, address);
                     ReplicaSet oldReplicas = strategy.getAddressReplicas(metadata, address);
 
-                    //Filter out the things that were already replicated
+                    //Filter out the things that are already replicated exactly the same
+                    //This does mean a transition like full -> transient will be pending
+                    //This is something we would like to refine later
                     newReplicas.removeRanges(oldReplicas);
 
-                    //We want to get rid of any ranges which the node is currently getting.
                     for(Replica newReplica : newReplicas)
                     {
-                        //Only full ranges are pending, transient ranges don't need to be pending
-                        //Need to confirm this, but you can only do one move at a time or one increase
-                        //in RF at a time.
-                        //TODO this needs wider discussion
-                        if (newReplica.isTransient())
-                            continue;
-
-                        for (Replica pendingReplica: newReplica.subtractByRange(oldReplicas))
+                        for (Replica pendingReplica : newReplica.subtractByRange(oldReplicas))
                         {
                             newPendingRanges.addPendingRange(pendingReplica.getRange(), pendingReplica);
                         }
