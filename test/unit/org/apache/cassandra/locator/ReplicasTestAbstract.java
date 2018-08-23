@@ -315,25 +315,25 @@
 //    @Test(expected = UnsupportedOperationException.class)
 //    public void testCheckFullTransientReplica()
 //    {
-//        Replicas.checkFull(C);
+//        Replicas.assertFull(C);
 //    }
 //
 //    @Test
 //    public void testCheckFullFullReplica()
 //    {
-//        Replicas.checkFull(A);
+//        Replicas.assertFull(A);
 //    }
 //
 //    @Test(expected = UnsupportedOperationException.class)
 //    public void testCheckFullIterableTransientReplica()
 //    {
-//        Replicas.checkFull(Collections.singleton(C));
+//        Replicas.assertFull(Collections.singleton(C));
 //    }
 //
 //    @Test
 //    public void testCheckFullIterableFullReplica()
 //    {
-//        Replicas.checkFull(Collections.singleton(A));
+//        Replicas.assertFull(Collections.singleton(A));
 //    }
 //
 //    @Test

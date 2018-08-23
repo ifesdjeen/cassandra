@@ -187,7 +187,7 @@ public final class HintsService implements HintsServiceMBean
         Token token = hint.mutation.key().getToken();
 
         ReplicaCollection<?> replicas = StorageService.instance.getNaturalAndPendingReplicasForToken(keyspaceName, token);
-        Replicas.checkFull(replicas);
+        Replicas.assertFull(replicas);
 
         // judicious use of streams: eagerly materializing probably cheaper
         // than performing filters / translations 2x extra via Iterables.filter/transform

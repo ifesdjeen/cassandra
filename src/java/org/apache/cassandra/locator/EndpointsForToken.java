@@ -79,7 +79,7 @@ public class EndpointsForToken extends Endpoints<EndpointsForToken>
         public Mutable(Token token) { this(token, 0); }
         public Mutable(Token token, int capacity) { super(token, new ArrayList<>(capacity), false, new LinkedHashMap<>()); }
 
-        public void add(Replica replica, boolean ignoreConflict)
+        public void add(Replica replica, Conflict ignoreConflict)
         {
             if (hasSnapshot) throw new IllegalStateException();
             Preconditions.checkNotNull(replica);
@@ -90,8 +90,15 @@ public class EndpointsForToken extends Endpoints<EndpointsForToken>
             if (prev != null)
             {
                 super.byEndpoint.put(replica.endpoint(), prev); // restore prev
-                if (!prev.equals(replica) && !ignoreConflict)
-                    throw new IllegalArgumentException("Conflicting replica added (expected unique endpoints): " + replica + "; existing: " + prev);
+                switch (ignoreConflict)
+                {
+                    case DUPLICATE:
+                        if (prev.equals(replica))
+                            break;
+                    case NONE:
+                        throw new IllegalArgumentException("Conflicting replica added (expected unique endpoints): " + replica + "; existing: " + prev);
+                    case ALL:
+                }
                 return;
             }
 

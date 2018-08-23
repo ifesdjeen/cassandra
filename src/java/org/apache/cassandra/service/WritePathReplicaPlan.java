@@ -28,6 +28,7 @@ import org.apache.cassandra.exceptions.UnavailableException;
 import org.apache.cassandra.locator.Endpoints;
 import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.locator.Replica;
+import org.apache.cassandra.locator.ReplicaCollection.Mutable.Conflict;
 
 public class WritePathReplicaPlan extends ReplicaPlan
 {
@@ -46,7 +47,7 @@ public class WritePathReplicaPlan extends ReplicaPlan
 
     public static <E extends Endpoints<E>> WritePathReplicaPlan createReplicaPlan(Keyspace keyspace, ConsistencyLevel consistencyLevel, E naturalReplicas, E pendingReplicas) throws UnavailableException
     {
-        E replicas = Endpoints.concat(naturalReplicas, pendingReplicas, true);
+        E replicas = Endpoints.concat(naturalReplicas, pendingReplicas, Conflict.ALL);
         return new WritePathReplicaPlan(keyspace, consistencyLevel, replicas, replicas, pendingReplicas);
     }
 
@@ -58,7 +59,7 @@ public class WritePathReplicaPlan extends ReplicaPlan
     {
         if (!keyspace.getReplicationStrategy().hasTransientReplicas())
         {
-            E replicas = Endpoints.concat(naturalReplicas, pendingReplicas, true);
+            E replicas = Endpoints.concat(naturalReplicas, pendingReplicas, Conflict.ALL);
             return new WritePathReplicaPlan(keyspace, consistencyLevel, replicas, replicas, pendingReplicas);
         }
 
@@ -70,7 +71,7 @@ public class WritePathReplicaPlan extends ReplicaPlan
     {
         // TODO: TR-Review why are we filtering to only isFull here? surely if any transient range is 'pending' it should be receiving writes too?
         pendingReplicas = pendingReplicas.filter(Replica::isFull);
-        E allReplicas = Endpoints.concat(naturalReplicas, pendingReplicas, true);
+        E allReplicas = Endpoints.concat(naturalReplicas, pendingReplicas, Conflict.ALL);
         E selectedReplicas = allReplicas.select()
                 .add(r -> r.isFull() && livePredicate.test(r.endpoint()))
                 .add(r -> r.isTransient() && livePredicate.test(r.endpoint()), blockFor)

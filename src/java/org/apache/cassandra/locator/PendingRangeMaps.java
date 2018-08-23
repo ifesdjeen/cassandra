@@ -23,6 +23,7 @@ package org.apache.cassandra.locator;
 import com.google.common.collect.Iterators;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
+import org.apache.cassandra.locator.ReplicaCollection.Mutable.Conflict;
 
 import java.util.*;
 
@@ -115,7 +116,7 @@ public class PendingRangeMaps implements Iterable<Map.Entry<Range<Token>, Endpoi
             ascendingMap.put(range, replicas);
             descendingMap.put(range, replicas);
         }
-        replicas.add(replica);
+        replicas.add(replica, Conflict.DUPLICATE);
     }
 
     public void addPendingRange(Range<Token> range, Replica replica)

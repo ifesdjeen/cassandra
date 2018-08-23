@@ -137,7 +137,7 @@ public class RangesAtEndpoint extends AbstractReplicaCollection<RangesAtEndpoint
         public Mutable(int capacity) { this(null, capacity); }
         public Mutable(InetAddressAndPort endpoint, int capacity) { super(endpoint, new ArrayList<>(capacity), false, new LinkedHashMap<>()); }
 
-        public void add(Replica replica, boolean ignoreConflict)
+        public void add(Replica replica, Conflict ignoreConflict)
         {
             if (hasSnapshot) throw new IllegalStateException();
             Preconditions.checkNotNull(replica);
@@ -150,8 +150,15 @@ public class RangesAtEndpoint extends AbstractReplicaCollection<RangesAtEndpoint
             if (prev != null)
             {
                 super.byRange.put(replica.range(), prev); // restore prev
-                if (!prev.equals(replica) && !ignoreConflict) // we will ignore a pure duplicate
-                    throw new IllegalArgumentException("Conflicting replica added (expected unique ranges): " + replica + "; existing: " + prev);
+                switch (ignoreConflict)
+                {
+                    case DUPLICATE:
+                        if (prev.equals(replica))
+                            break;
+                    case NONE:
+                        throw new IllegalArgumentException("Conflicting replica added (expected unique ranges): " + replica + "; existing: " + prev);
+                    case ALL:
+                }
                 return;
             }
 

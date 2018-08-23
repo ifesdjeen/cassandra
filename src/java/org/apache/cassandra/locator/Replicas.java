@@ -24,6 +24,7 @@ import java.util.Set;
 
 import com.google.common.base.Predicate;
 
+import com.google.common.collect.Iterables;
 import org.apache.cassandra.utils.FBUtilities;
 
 import static com.google.common.collect.Iterables.all;
@@ -57,24 +58,24 @@ public class Replicas
     /**
      * Basically a placeholder for places new logic for transient replicas should go
      */
-    public static void checkFull(Replica replica)
+    public static void assertFull(Replica replica)
     {
         if (!replica.isFull())
         {
             // FIXME: add support for transient replicas
-            throw new UnsupportedOperationException("transient replicas are currently unsupported");
+            throw new UnsupportedOperationException("transient replicas are currently unsupported: " + replica);
         }
     }
 
     /**
      * Basically a placeholder for places new logic for transient replicas should go
      */
-    public static void checkFull(Iterable<Replica> replicas)
+    public static void assertFull(Iterable<Replica> replicas)
     {
         if (!all(replicas, Replica::isFull))
         {
             // FIXME: add support for transient replicas
-            throw new UnsupportedOperationException("transient replicas are currently unsupported");
+            throw new UnsupportedOperationException("transient replicas are currently unsupported: " + Iterables.toString(replicas));
         }
     }
 

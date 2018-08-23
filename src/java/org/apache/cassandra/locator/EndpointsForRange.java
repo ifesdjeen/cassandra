@@ -88,7 +88,7 @@ public class EndpointsForRange extends Endpoints<EndpointsForRange>
         public Mutable(Range<Token> range) { this(range, 0); }
         public Mutable(Range<Token> range, int capacity) { super(range, new ArrayList<>(capacity), false, new LinkedHashMap<>()); }
 
-        public void add(Replica replica, boolean ignoreConflict)
+        public void add(Replica replica, Conflict ignoreConflict)
         {
             if (hasSnapshot) throw new IllegalStateException();
             Preconditions.checkNotNull(replica);
@@ -99,8 +99,15 @@ public class EndpointsForRange extends Endpoints<EndpointsForRange>
             if (prev != null)
             {
                 super.byEndpoint.put(replica.endpoint(), prev); // restore prev
-                if (!prev.equals(replica) && !ignoreConflict) // ignore pure duplicates
-                    throw new IllegalArgumentException("Conflicting replica added (expected unique endpoints): " + replica + "; existing: " + prev);
+                switch (ignoreConflict)
+                {
+                    case DUPLICATE:
+                        if (prev.equals(replica))
+                            break;
+                    case NONE:
+                        throw new IllegalArgumentException("Conflicting replica added (expected unique endpoints): " + replica + "; existing: " + prev);
+                    case ALL:
+                }
                 return;
             }
 

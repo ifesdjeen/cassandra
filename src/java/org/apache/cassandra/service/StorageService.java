@@ -47,6 +47,7 @@ import com.google.common.collect.*;
 import com.google.common.util.concurrent.*;
 
 import org.apache.cassandra.dht.RangeStreamer.FetchReplica;
+import org.apache.cassandra.locator.ReplicaCollection.Mutable.Conflict;
 import org.apache.commons.lang3.StringUtils;
 
 import org.slf4j.Logger;
@@ -2952,7 +2953,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                     logger.debug("Replica {} already in all replicas", replica);
                 else
                     logger.debug("Replica {} will be responsibility of {}", replica, StringUtils.join(newReplicaEndpoints, ", "));
-            changedRanges.putAll(replica, newReplicaEndpoints, false);
+            changedRanges.putAll(replica, newReplicaEndpoints, Conflict.NONE);
         }
 
         return changedRanges.asImmutableView();
@@ -3938,7 +3939,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         // TODO: race condition to fetch these. impliciations??
         EndpointsForToken natural = getNaturalReplicasForToken(keyspaceName, token);
         EndpointsForToken pending = tokenMetadata.pendingEndpointsForToken(token, keyspaceName);
-        return Endpoints.concat(natural, pending, true);
+        return Endpoints.concat(natural, pending, Conflict.ALL);
     }
 
     /**
@@ -4488,11 +4489,12 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                     // stream requests
                     workMap.asMap().forEach((address, sourceAndOurReplicas) -> {
                         RangesAtEndpoint fullReplicas = sourceAndOurReplicas.stream()
-                                .filter(pair -> pair.local.isFull()).map(pair -> pair.remote)
+                                .filter(pair -> pair.remote.isFull())
+                                .map(pair -> pair.local)
                                 .collect(RangesAtEndpoint.collector());
                         RangesAtEndpoint transientReplicas = sourceAndOurReplicas.stream()
-                                .filter(pair -> pair.local.isTransient())
-                                .map(pair -> pair.remote).collect(RangesAtEndpoint.collector());
+                                .filter(pair -> pair.remote.isTransient())
+                                .map(pair -> pair.local).collect(RangesAtEndpoint.collector());
                         logger.debug("Will request range {} of keyspace {} from endpoint {}", workMap.get(address), keyspace, address);
                         streamPlan.requestRanges(address, keyspace, fullReplicas, transientReplicas);
                     });
@@ -5413,7 +5415,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                         Range<Token> range = entry.getKey();
                         EndpointsForRange replicas = entry.getValue();
                         // TODO: test bulk load
-                        Replicas.checkFull(replicas);
+                        Replicas.assertFull(replicas);
                         for (InetAddressAndPort endpoint : replicas.endpoints())
                             addRangeForEndpoint(range, endpoint);
                     }

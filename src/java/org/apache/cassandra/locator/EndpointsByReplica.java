@@ -20,6 +20,7 @@ package org.apache.cassandra.locator;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Maps;
+import org.apache.cassandra.locator.ReplicaCollection.Mutable.Conflict;
 
 import java.util.Collections;
 import java.util.Map;
@@ -46,9 +47,9 @@ public class EndpointsByReplica extends ReplicaMultimap<Replica, EndpointsForRan
         }
 
         // TODO: consider all ignoreDuplicates cases
-        public void putAll(Replica range, EndpointsForRange replicas, boolean ignoreDuplicates)
+        public void putAll(Replica range, EndpointsForRange replicas, Conflict ignoreConflicts)
         {
-            map.computeIfAbsent(range, r -> newMutable(r)).addAll(replicas, ignoreDuplicates);
+            map.computeIfAbsent(range, r -> newMutable(r)).addAll(replicas, ignoreConflicts);
         }
 
         public EndpointsByReplica asImmutableView()

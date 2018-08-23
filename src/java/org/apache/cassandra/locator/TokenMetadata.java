@@ -27,6 +27,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.*;
+import org.apache.cassandra.locator.ReplicaCollection.Mutable.Conflict;
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -742,7 +743,7 @@ public class TokenMetadata
         {
             for (Map.Entry<Range<Token>, EndpointsForRange.Mutable> entry : pendingRangeMaps)
             {
-                byRange.putAll(entry.getKey(), entry.getValue(), true);
+                byRange.putAll(entry.getKey(), entry.getValue(), Conflict.ALL);
             }
         }
 
@@ -1220,7 +1221,7 @@ public class TokenMetadata
      */
     public EndpointsForToken getWriteEndpoints(Token token, String keyspaceName, EndpointsForToken naturalEndpoints)
     {
-        return Endpoints.concat(naturalEndpoints, pendingEndpointsForToken(token, keyspaceName), true);
+        return Endpoints.concat(naturalEndpoints, pendingEndpointsForToken(token, keyspaceName), Conflict.ALL);
     }
 
     /** @return an endpoint to token multimap representation of tokenToEndpointMap (a copy) */

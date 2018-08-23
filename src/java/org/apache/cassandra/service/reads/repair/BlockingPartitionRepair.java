@@ -143,7 +143,7 @@ public class BlockingPartitionRepair extends AbstractFuture<Object> implements I
     public void sendInitialRepairs()
     {
         mutationsSentTime = System.nanoTime();
-        Replicas.checkFull(pendingRepairs.keySet());
+        Replicas.assertFull(pendingRepairs.keySet());
 
         for (Map.Entry<Replica, Mutation> entry: pendingRepairs.entrySet())
         {

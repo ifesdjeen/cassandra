@@ -28,6 +28,7 @@ import com.google.common.collect.Multimap;
 import org.apache.cassandra.dht.Murmur3Partitioner;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
+import org.apache.cassandra.locator.ReplicaCollection.Mutable.Conflict;
 import org.apache.cassandra.utils.FBUtilities;
 import org.junit.Assert;
 import org.junit.Test;
@@ -333,19 +334,24 @@ public class ReplicaCollectionTest
     {
         ImmutableList<Replica> canonical1 = RANGES_AT_ENDPOINT.subList(0, RANGES_AT_ENDPOINT.size());
         RangesAtEndpoint.Mutable test = new RangesAtEndpoint.Mutable(canonical1.size());
-        test.addAll(canonical1, false);
-        test.addAll(canonical1, false); // we ignore exact duplicates
+        test.addAll(canonical1, Conflict.NONE);
+        try
+        {   // incorrect range
+            test.addAll(canonical1, Conflict.NONE);
+            Assert.fail();
+        } catch (IllegalArgumentException e) { }
+        test.addAll(canonical1, Conflict.DUPLICATE); // we ignore exact duplicates
         try
         {   // invalid endpoint; always error
-            test.add(Replica.full(EP2, BROADCAST_RANGE), true);
+            test.add(Replica.full(EP2, BROADCAST_RANGE), Conflict.ALL);
             Assert.fail();
         } catch (IllegalArgumentException e) { }
         try
         {   // conflict on isFull/isTransient
-            test.add(Replica.full(EP1, R3), false);
+            test.add(Replica.full(EP1, R3), Conflict.DUPLICATE);
             Assert.fail();
         } catch (IllegalArgumentException e) { }
-        test.add(Replica.full(EP1, R3), true);
+        test.add(Replica.full(EP1, R3), Conflict.ALL);
 
         new RangesAtEndpointTestCase(test, canonical1).testAll();
 
@@ -353,7 +359,7 @@ public class ReplicaCollectionTest
         RangesAtEndpoint snapshot = view.subList(0, view.size());
 
         ImmutableList<Replica> canonical2 = RANGES_AT_ENDPOINT;
-        test.addAll(canonical2);
+        test.addAll(canonical2.reverse(), Conflict.DUPLICATE);
         new TestCase<>(snapshot, canonical1).testAll();
         new TestCase<>(view, canonical2).testAll();
         new TestCase<>(test, canonical2).testAll();
@@ -381,19 +387,24 @@ public class ReplicaCollectionTest
     {
         ImmutableList<Replica> canonical1 = ENDPOINTS_FOR_X.subList(0, ENDPOINTS_FOR_X.size() - 1);
         EndpointsForRange.Mutable test = new EndpointsForRange.Mutable(R1, canonical1.size());
-        test.addAll(canonical1, false);
-        test.addAll(canonical1, false); // we ignore exact duplicates
+        test.addAll(canonical1, Conflict.NONE);
         try
         {   // incorrect range
-            test.add(Replica.full(BROADCAST_EP, R2), true);
+            test.addAll(canonical1, Conflict.NONE);
+            Assert.fail();
+        } catch (IllegalArgumentException e) { }
+        test.addAll(canonical1, Conflict.DUPLICATE); // we ignore exact duplicates
+        try
+        {   // incorrect range
+            test.add(Replica.full(BROADCAST_EP, R2), Conflict.ALL);
             Assert.fail();
         } catch (IllegalArgumentException e) { }
         try
         {   // conflict on isFull/isTransient
-            test.add(Replica.trans(EP1, R1), false);
+            test.add(Replica.trans(EP1, R1), Conflict.DUPLICATE);
             Assert.fail();
         } catch (IllegalArgumentException e) { }
-        test.add(Replica.trans(EP1, R1), true);
+        test.add(Replica.trans(EP1, R1), Conflict.ALL);
 
         new TestCase<>(test, canonical1).testAll();
 
@@ -401,7 +412,7 @@ public class ReplicaCollectionTest
         EndpointsForRange snapshot = view.subList(0, view.size());
 
         ImmutableList<Replica> canonical2 = ENDPOINTS_FOR_X;
-        test.addAll(canonical2);
+        test.addAll(canonical2.reverse(), Conflict.DUPLICATE);
         new TestCase<>(snapshot, canonical1).testAll();
         new TestCase<>(view, canonical2).testAll();
         new TestCase<>(test, canonical2).testAll();
@@ -421,19 +432,24 @@ public class ReplicaCollectionTest
     {
         ImmutableList<Replica> canonical1 = ENDPOINTS_FOR_X.subList(0, ENDPOINTS_FOR_X.size() - 1);
         EndpointsForToken.Mutable test = new EndpointsForToken.Mutable(tk(1), canonical1.size());
-        test.addAll(canonical1, false);
-        test.addAll(canonical1, false); // we ignore exact duplicates
+        test.addAll(canonical1, Conflict.NONE);
         try
         {   // incorrect range
-            test.add(Replica.full(BROADCAST_EP, R2), true);
+            test.addAll(canonical1, Conflict.NONE);
+            Assert.fail();
+        } catch (IllegalArgumentException e) { }
+        test.addAll(canonical1, Conflict.DUPLICATE); // we ignore exact duplicates
+        try
+        {   // incorrect range
+            test.add(Replica.full(BROADCAST_EP, R2), Conflict.ALL);
             Assert.fail();
         } catch (IllegalArgumentException e) { }
         try
         {   // conflict on isFull/isTransient
-            test.add(Replica.trans(EP1, R1), false);
+            test.add(Replica.trans(EP1, R1), Conflict.DUPLICATE);
             Assert.fail();
         } catch (IllegalArgumentException e) { }
-        test.add(Replica.trans(EP1, R1), true);
+        test.add(Replica.trans(EP1, R1), Conflict.ALL);
 
         new TestCase<>(test, canonical1).testAll();
 
@@ -441,7 +457,7 @@ public class ReplicaCollectionTest
         EndpointsForToken snapshot = view.subList(0, view.size());
 
         ImmutableList<Replica> canonical2 = ENDPOINTS_FOR_X;
-        test.addAll(canonical2);
+        test.addAll(canonical2.reverse(), Conflict.DUPLICATE);
         new TestCase<>(snapshot, canonical1).testAll();
         new TestCase<>(view, canonical2).testAll();
         new TestCase<>(test, canonical2).testAll();
@@ -475,7 +491,7 @@ public class ReplicaCollectionTest
     {
         ImmutableList<Replica> canonical1 = REPLICA_LIST.subList(0, REPLICA_LIST.size() - 1);
         ReplicaList.Mutable test = new ReplicaList.Mutable(canonical1.size());
-        test.addAll(canonical1, false);
+        test.addAll(canonical1, Conflict.NONE);
         new TestCase<>(test, canonical1).testAll();
 
         ReplicaList view = test.asImmutableView();
@@ -488,7 +504,7 @@ public class ReplicaCollectionTest
         new TestCase<>(view, canonical2).testAll();
         new TestCase<>(test, canonical2).testAll();
 
-        test.addAll(canonical2, false);
+        test.addAll(canonical2.reverse(), Conflict.NONE);
         Assert.assertEquals(canonical2.size() * 2, test.size());
     }
 

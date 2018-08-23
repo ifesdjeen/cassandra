@@ -18,6 +18,8 @@
 
 package org.apache.cassandra.locator;
 
+import org.apache.cassandra.locator.ReplicaCollection.Mutable.Conflict;
+
 import java.util.Comparator;
 import java.util.Iterator;
 import java.util.Set;
@@ -103,18 +105,20 @@ public interface ReplicaCollection<C extends ReplicaCollection<C>> extends Itera
          */
         C asSnapshot();
 
+        enum Conflict { NONE, DUPLICATE, ALL}
+
         /**
          * @param replica add this replica to the end of the collection
          * @param ignoreConflict if false, fail on any conflicting additions (as defined by C's semantics)
          */
-        void add(Replica replica, boolean ignoreConflict);
+        void add(Replica replica, Conflict ignoreConflict);
 
         default public void add(Replica replica)
         {
-            add(replica, false);
+            add(replica, Conflict.NONE);
         }
 
-        default public void addAll(Iterable<Replica> replicas, boolean ignoreConflicts)
+        default public void addAll(Iterable<Replica> replicas, Conflict ignoreConflicts)
         {
             for (Replica replica : replicas)
                 add(replica, ignoreConflicts);
@@ -122,7 +126,7 @@ public interface ReplicaCollection<C extends ReplicaCollection<C>> extends Itera
 
         default public void addAll(Iterable<Replica> replicas)
         {
-            addAll(replicas, false);
+            addAll(replicas, Conflict.NONE);
         }
     }
 
@@ -133,9 +137,9 @@ public interface ReplicaCollection<C extends ReplicaCollection<C>> extends Itera
 
         public int size() { return mutable.size(); }
         public B add(Replica replica) { mutable.add(replica); return (B) this; }
-        public B add(Replica replica, boolean ignoreDuplicate) { mutable.add(replica, ignoreDuplicate); return (B) this; }
+        public B add(Replica replica, Conflict ignoreConflict) { mutable.add(replica, ignoreConflict); return (B) this; }
         public B addAll(Iterable<Replica> replica) { mutable.addAll(replica); return (B) this; }
-        public B addAll(Iterable<Replica> replica, boolean ignoreDuplicate) { mutable.addAll(replica, ignoreDuplicate); return (B) this; }
+        public B addAll(Iterable<Replica> replica, Conflict ignoreConflict) { mutable.addAll(replica, ignoreConflict); return (B) this; }
 
         public C build()
         {

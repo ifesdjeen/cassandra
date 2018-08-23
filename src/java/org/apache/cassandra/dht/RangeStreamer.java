@@ -39,6 +39,7 @@ import org.apache.cassandra.locator.LocalStrategy;
 import org.apache.cassandra.locator.EndpointsByRange;
 import org.apache.cassandra.locator.EndpointsForRange;
 import org.apache.cassandra.locator.RangesAtEndpoint;
+import org.apache.cassandra.locator.ReplicaCollection.Mutable.Conflict;
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -386,7 +387,7 @@ public class RangeStreamer
                                 // include all our filters, to ensure we include a matching node
                                 Optional<Replica> fullReplica = Iterables.<Replica>tryFind(endpointsForRange, and(accept, testSourceFilters)).toJavaUtil();
                                 if (fullReplica.isPresent())
-                                    oldEndpoints = Endpoints.concat(oldEndpoints, EndpointsForRange.of(fullReplica.get()), false);
+                                    oldEndpoints = Endpoints.concat(oldEndpoints, EndpointsForRange.of(fullReplica.get()), Conflict.NONE);
                                 else
                                     throw new IllegalStateException("Couldn't find any matching sufficient replica out of " + endpointsForRange);
                             }
@@ -415,7 +416,7 @@ public class RangeStreamer
                     sources = sources.filter(testSourceFilters);
 
                     // storing range and preferred endpoint set
-                    rangesToFetchWithPreferredEndpoints.putAll(toFetch, sources, false);
+                    rangesToFetchWithPreferredEndpoints.putAll(toFetch, sources, Conflict.NONE);
                     logger.debug("Endpoints to fetch for {} are {}", toFetch, sources);
                 }
             }
@@ -495,7 +496,7 @@ public class RangeStreamer
         EndpointsByRange.Mutable unwrapped = new EndpointsByRange.Mutable();
         for (Map.Entry<Replica, Replica> entry : rangesWithSources.flattenEntries())
         {
-            Replicas.checkFull(entry.getValue());
+            Replicas.assertFull(entry.getValue());
             unwrapped.put(entry.getKey().range(), entry.getValue());
         }
 

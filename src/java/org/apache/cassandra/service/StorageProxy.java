@@ -35,6 +35,7 @@ import com.google.common.collect.*;
 import com.google.common.primitives.Ints;
 import com.google.common.util.concurrent.Uninterruptibles;
 
+import org.apache.cassandra.locator.ReplicaCollection.Mutable.Conflict;
 import org.apache.commons.lang3.StringUtils;
 
 import org.slf4j.Logger;
@@ -149,14 +150,14 @@ public class StorageProxy implements StorageProxyMBean
         counterWritePerformer = (mutation, targets, responseHandler, localDataCenter, consistencyLevel) ->
         {
             // TODO: test counters
-            Replicas.checkFull(targets);
+            Replicas.assertFull(targets);
             counterWriteTask(mutation, targets, responseHandler, localDataCenter).run();
         };
 
         counterWriteOnCoordinatorPerformer = (mutation, targets, responseHandler, localDataCenter, consistencyLevel) ->
         {
             // TODO: test counters
-            Replicas.checkFull(targets);
+            Replicas.assertFull(targets);
             StageManager.getStage(Stage.COUNTER_MUTATION)
                         .execute(counterWriteTask(mutation, targets, responseHandler, localDataCenter));
         };
@@ -338,8 +339,8 @@ public class StorageProxy implements StorageProxyMBean
         EndpointsForToken naturalReplicas = StorageService.instance.getNaturalReplicasForToken(metadata.keyspace, tk);
         EndpointsForToken pendingReplicas = StorageService.instance.getTokenMetadata().pendingEndpointsForToken(tk, metadata.keyspace);
         // TODO: test LWTs
-        Replicas.checkFull(naturalReplicas);
-        Replicas.checkFull(pendingReplicas);
+        Replicas.assertFull(naturalReplicas);
+        Replicas.assertFull(pendingReplicas);
         if (consistencyForPaxos == ConsistencyLevel.LOCAL_SERIAL)
         {
             // Restrict naturalReplicas and pendingReplicas to node in the local DC only
@@ -354,7 +355,7 @@ public class StorageProxy implements StorageProxyMBean
         EndpointsForToken liveReplicas = Endpoints.concat(
                 naturalReplicas.filter(IAsyncCallback.isReplicaAlive),
                 pendingReplicas.filter(IAsyncCallback.isReplicaAlive),
-                true
+                Conflict.ALL
         );
         if (liveReplicas.size() < requiredParticipants)
             throw new UnavailableException(consistencyForPaxos, requiredParticipants, liveReplicas.size());
@@ -589,7 +590,7 @@ public class StorageProxy implements StorageProxyMBean
         }
 
         MessageOut<Commit> message = new MessageOut<Commit>(MessagingService.Verb.PAXOS_COMMIT, proposal, Commit.serializer);
-        for (Replica replica : Endpoints.concat(naturalReplicas, pendingReplicas, true))
+        for (Replica replica : Endpoints.concat(naturalReplicas, pendingReplicas, Conflict.ALL))
         {
             InetAddressAndPort destination = replica.endpoint();
             checkHintOverload(replica);
@@ -1092,7 +1093,7 @@ public class StorageProxy implements StorageProxyMBean
     {
         for (WriteResponseHandlerWrapper wrapper : wrappers)
         {
-            Replicas.checkFull(wrapper.handler.replicaPlan.allReplicas());
+            Replicas.assertFull(wrapper.handler.replicaPlan.allReplicas());
             Endpoints<?> replicas = wrapper.handler.replicaPlan.allReplicas();
 
             try
@@ -1111,7 +1112,7 @@ public class StorageProxy implements StorageProxyMBean
     {
         for (WriteResponseHandlerWrapper wrapper : wrappers)
         {
-            Replicas.checkFull(wrapper.handler.replicaPlan.allReplicas());
+            Replicas.assertFull(wrapper.handler.replicaPlan.allReplicas());
             Endpoints<?> replicas = wrapper.handler.replicaPlan.allReplicas();
 
             sendToHintedReplicas(wrapper.mutation, replicas, wrapper.handler, localDataCenter, stage);
@@ -1412,7 +1413,7 @@ public class StorageProxy implements StorageProxyMBean
             logger.trace("Adding FWD message to {}@{}", id, destination);
         }
         // TODO: test non-local DCs
-        Replicas.checkFull(targets);
+        Replicas.assertFull(targets);
         message = message.withParameter(ParameterType.FORWARD_TO.FORWARD_TO, new ForwardToContainer(targets.endpoints(), messageIds));
         // send the combined message + forward headers
         int id = MessagingService.instance().sendWriteRR(message, target, handler, true);
@@ -2729,7 +2730,7 @@ public class StorageProxy implements StorageProxyMBean
                                           AbstractWriteResponseHandler<IMutation> responseHandler)
     {
         // TODO: test hints
-        Replicas.checkFull(targets);
+        Replicas.assertFull(targets);
         HintRunnable runnable = new HintRunnable(targets)
         {
             public void runMayThrow()

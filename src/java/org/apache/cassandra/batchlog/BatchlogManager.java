@@ -462,7 +462,7 @@ public class BatchlogManager implements BatchlogManagerMBean
             for (Replica replica : allReplicas)
             {
                 // TODO: surely we should be filtering out to only transient replicas, not asserting?
-                Replicas.checkFull(replica);
+                Replicas.assertFull(replica);
                 if (replica.isLocal())
                 {
                     mutation.apply();
@@ -483,7 +483,7 @@ public class BatchlogManager implements BatchlogManagerMBean
             if (liveReplicas.isEmpty())
                 return null;
 
-            Replicas.checkFull(liveReplicas);
+            Replicas.assertFull(liveReplicas);
             ReplayWriteResponseHandler<Mutation> handler = new ReplayWriteResponseHandler<>(keyspace, liveReplicas, System.nanoTime());
             MessageOut<Mutation> message = mutation.createMessage();
             for (Replica replica : liveReplicas)

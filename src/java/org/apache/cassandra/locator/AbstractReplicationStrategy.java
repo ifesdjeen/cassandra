@@ -23,6 +23,7 @@ import java.util.*;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
+import org.apache.cassandra.locator.ReplicaCollection.Mutable.Conflict;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -247,7 +248,7 @@ public abstract class AbstractReplicationStrategy
             {
                 // LocalStrategy always returns (min, min] ranges for it's replicas, so we skip the check here
                 Preconditions.checkState(range.equals(replica.range()) || this instanceof LocalStrategy);
-                builder.add(replica);
+                builder.add(replica, Conflict.DUPLICATE);
             }
         }
         return builder.build();

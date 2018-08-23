@@ -22,6 +22,7 @@ import com.google.common.base.Preconditions;
 import com.google.common.collect.Maps;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
+import org.apache.cassandra.locator.ReplicaCollection.Mutable.Conflict;
 
 import java.util.Collections;
 import java.util.Map;
@@ -48,9 +49,9 @@ public class EndpointsByRange extends ReplicaMultimap<Range<Token>, EndpointsFor
         }
 
         // TODO: consider all ignoreDuplicates cases
-        public void putAll(Range<Token> range, EndpointsForRange replicas, boolean ignoreDuplicates)
+        public void putAll(Range<Token> range, EndpointsForRange replicas, Conflict ignoreConflicts)
         {
-            get(range).addAll(replicas, ignoreDuplicates);
+            get(range).addAll(replicas, ignoreConflicts);
         }
 
         public EndpointsByRange asImmutableView()

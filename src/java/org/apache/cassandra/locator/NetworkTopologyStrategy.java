@@ -20,6 +20,7 @@ package org.apache.cassandra.locator;
 import java.util.*;
 import java.util.Map.Entry;
 
+import org.apache.cassandra.locator.ReplicaCollection.Mutable.Conflict;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -135,14 +136,14 @@ public class NetworkTopologyStrategy extends AbstractReplicationStrategy
             {
                 // New rack.
                 --rfLeft;
-                replicas.add(replica, false);
+                replicas.add(replica, Conflict.NONE);
                 return done();
             }
             if (acceptableRackRepeats <= 0)
                 // There must be rfLeft distinct racks left, do not add any more rack repeats.
                 return false;
 
-            replicas.add(replica, false);
+            replicas.add(replica, Conflict.NONE);
             // Added a node that is from an already met rack to match RF when there aren't enough racks.
             --acceptableRackRepeats;
             --rfLeft;

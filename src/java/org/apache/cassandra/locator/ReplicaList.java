@@ -77,7 +77,7 @@ public class ReplicaList extends AbstractReplicaCollection<ReplicaList>
         public Mutable() { this(0); }
         public Mutable(int capacity) { super(new ArrayList<>(capacity), false); }
 
-        public void add(Replica replica, boolean ignoreConflict)
+        public void add(Replica replica, Conflict ignoreConflict)
         {
             if (hasSnapshot) throw new IllegalStateException();
             Preconditions.checkNotNull(replica);

@@ -18,6 +18,8 @@
 
 package org.apache.cassandra.locator;
 
+import org.apache.cassandra.locator.ReplicaCollection.Mutable.Conflict;
+
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -83,7 +85,8 @@ public abstract class Endpoints<C extends Endpoints<C>> extends AbstractReplicaC
         return Collections.unmodifiableMap(byEndpoint);
     }
 
-    public static <E extends Endpoints<E>> E concat(E natural, E pending, boolean ignoreDuplicates)
+    // TODO: TR-Review ignoreConflicts is not an acceptable solution here - we need to explicitly resolve them in case of transient/full mismatch
+    public static <E extends Endpoints<E>> E concat(E natural, E pending, Conflict ignoreConflicts)
     {
         if (pending.isEmpty())
             return natural;
@@ -91,7 +94,7 @@ public abstract class Endpoints<C extends Endpoints<C>> extends AbstractReplicaC
             return pending;
         Mutable<E> mutable = natural.newMutable(natural.size() + pending.size());
         mutable.addAll(natural);
-        mutable.addAll(pending, ignoreDuplicates);
+        mutable.addAll(pending, ignoreConflicts);
         return mutable.asImmutableView();
     }
 

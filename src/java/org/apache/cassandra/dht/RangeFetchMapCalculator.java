@@ -163,7 +163,7 @@ public class RangeFetchMapCalculator
                 // sort with the endpoint having the least number of streams first:
                 EndpointsForRange replicas = rangesWithSources.get(trivialRange)
                         .sorted(Comparator.comparingInt(o -> optimisedMap.get(o.endpoint()).size()));
-                Replicas.checkFull(replicas);
+                Replicas.assertFull(replicas);
                 for (Replica replica : replicas)
                 {
                     if (passFilters(replica, localDCCheck))
@@ -350,7 +350,7 @@ public class RangeFetchMapCalculator
     private boolean addEndpoints(MutableCapacityGraph<Vertex, Integer> capacityGraph, RangeVertex rangeVertex, boolean localDCCheck)
     {
         boolean sourceFound = false;
-        Replicas.checkFull(rangesWithSources.get(rangeVertex.getRange()));
+        Replicas.assertFull(rangesWithSources.get(rangeVertex.getRange()));
         for (Replica replica : rangesWithSources.get(rangeVertex.getRange()))
         {
             if (passFilters(replica, localDCCheck))

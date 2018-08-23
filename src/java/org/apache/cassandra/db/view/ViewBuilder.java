@@ -138,7 +138,7 @@ class ViewBuilder
 
         // Get the local ranges for which the view hasn't already been built nor it's building
         RangesAtEndpoint replicatedRanges = StorageService.instance.getLocalReplicas(ksName);
-        Replicas.checkFull(StorageService.instance.getLocalReplicas(ksName));
+        Replicas.assertFull(StorageService.instance.getLocalReplicas(ksName));
         Set<Range<Token>> newRanges = replicatedRanges.ranges()
                                                       .stream()
                                                       .map(r -> r.subtractAll(builtRanges))
