@@ -29,7 +29,6 @@ import com.google.common.collect.ImmutableMap;
 
 import org.apache.cassandra.locator.EndpointsByReplica;
 import org.apache.cassandra.locator.EndpointsForRange;
-import org.apache.cassandra.locator.RangesAtEndpoint;
 import org.junit.After;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -50,8 +49,6 @@ import org.apache.cassandra.locator.TokenMetadata;
 import org.apache.cassandra.utils.Pair;
 
 import static org.apache.cassandra.service.StorageServiceTest.assertMultimapEqualsIgnoreOrder;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
 
 /**
  * This is also fairly effectively testing source retrieval for bootstrap as well since RangeStreamer
@@ -104,8 +101,8 @@ public class BootstrapTransientTest
     Range<Token> dRange = new Range<>(thirtyToken, fourtyToken);
 
     ReplicaList toFetch = ReplicaList.of(new Replica(dAddress, dRange, true),
-                                       new Replica(cAddress, cRange, true),
-                                       new Replica(bAddress, bRange, false));
+                                       new Replica(dAddress, cRange, true),
+                                       new Replica(dAddress, bRange, false));
 
     @Test
     public void testRangeStreamerRangesToFetch() throws Exception
