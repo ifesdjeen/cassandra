@@ -66,11 +66,13 @@ public class LocalSyncTask extends SyncTask implements StreamEventHandler
         StreamPlan plan = new StreamPlan(StreamOperation.REPAIR, 1, false, pendingRepair, previewKind)
                           .listeners(this)
                           .flushBeforeTransfer(pendingRepair == null)
+                          // see comment on RangesAtEndpoint.toDummyList for why we synthesize replicas here
                           .requestRanges(dst, desc.keyspace, RangesAtEndpoint.toDummyList(differences), RangesAtEndpoint.empty(), desc.columnFamily);  // request ranges from the remote node
 
         if (!pullRepair && !isTransient.test(dst))
         {
             // send ranges to the remote node if we are not performing a pull repair
+            // see comment on RangesAtEndpoint.toDummyList for why we synthesize replicas here
             plan.transferRanges(dst, desc.keyspace, RangesAtEndpoint.toDummyList(differences), desc.columnFamily);
         }
 
