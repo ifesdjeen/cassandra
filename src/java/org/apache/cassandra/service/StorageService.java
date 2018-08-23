@@ -2728,7 +2728,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
      * @param newReplicas the ranges to find sources for
      * @return multimap of addresses to ranges the address is responsible for
      */
-    private Multimap<InetAddressAndPort, FetchReplica> getNewSourceReplicas(String keyspaceName, Set<Map.Entry<Replica,Replica>> newReplicas)
+    private Multimap<InetAddressAndPort, FetchReplica> getNewSourceReplicas(String keyspaceName, Set<LeavingReplica> newReplicas)
     {
         InetAddressAndPort myAddress = FBUtilities.getBroadcastAddressAndPort();
         EndpointsByRange rangeReplicas = Keyspace.open(keyspaceName).getReplicationStrategy().getRangeAddresses(tokenMetadata.cloneOnlyTokenMap());
@@ -2738,7 +2738,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         logger.debug("Getting new source replicas for {}", newReplicas);
 
         // find alive sources for our new ranges
-        for (Map.Entry<Replica,Replica> leavingReplicaAndOurReplica : newReplicas)
+        for (LeavingReplica leavingReplicaAndOurReplica : newReplicas)
         {
             //We need this to find the replicas from before leaving to supply the data
             Replica leavingReplica = leavingReplicaAndOurReplica.getKey();
@@ -2807,6 +2807,39 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         }
     }
 
+    private static class LeavingReplica
+    {
+        //The node that is leaving
+        private final Replica leavingReplica;
+
+        //Our range and transient status
+        private final Replica ourReplica;
+
+        public LeavingReplica(Replica leavingReplica, Replica ourReplica)
+        {
+            this.leavingReplica = leavingReplica;
+            this.ourReplica = ourReplica;
+        }
+
+        public boolean equals(Object o)
+        {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+
+            LeavingReplica that = (LeavingReplica) o;
+
+            if (!leavingReplica.equals(that.leavingReplica)) return false;
+            return ourReplica.equals(that.ourReplica);
+        }
+
+        public int hashCode()
+        {
+            int result = leavingReplica.hashCode();
+            result = 31 * result + ourReplica.hashCode();
+            return result;
+        }
+    }
+
     /**
      * Called when an endpoint is removed from the ring. This function checks
      * whether this node becomes responsible for new ranges as a
@@ -2827,7 +2860,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         {
             logger.debug("Restoring replica count for keyspace {}", keyspaceName);
             EndpointsByReplica changedReplicas = getChangedReplicasForLeaving(keyspaceName, endpoint, tokenMetadata, Keyspace.open(keyspaceName).getReplicationStrategy());
-            Set<Map.Entry<Replica, Replica>> myNewReplicas = new HashSet<>();
+            Set<LeavingReplica> myNewReplicas = new HashSet<>();
             for (Map.Entry<Replica, Replica> entry : changedReplicas.flattenEntries())
             {
                 Replica replica = entry.getValue();
@@ -2836,7 +2869,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                     //Maybe we don't technically need to fetch transient data from somewhere
                     //but it's probably not a lot and it probably makes things a hair more resilient to people
                     //not running repair when they should.
-                    myNewReplicas.add(entry);
+                    myNewReplicas.add(new LeavingReplica(entry.getKey(), entry.getValue()));
                 }
             }
             logger.debug("Changed replicas for leaving {}, myNewReplicas {}", changedReplicas, myNewReplicas);
@@ -2901,7 +2934,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
     static EndpointsByReplica getChangedReplicasForLeaving(String keyspaceName, InetAddressAndPort endpoint, TokenMetadata tokenMetadata, AbstractReplicationStrategy strat)
     {
         // First get all ranges the leaving endpoint is responsible for
-        RangesAtEndpoint replicas = strat.getAddressReplicas().get(endpoint);
+        RangesAtEndpoint replicas = strat.getAddressReplicas(endpoint);
 
         if (logger.isDebugEnabled())
             logger.debug("Node {} replicas [{}]", endpoint, StringUtils.join(replicas, ", "));
