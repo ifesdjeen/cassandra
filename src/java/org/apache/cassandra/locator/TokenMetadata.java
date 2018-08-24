@@ -758,7 +758,7 @@ public class TokenMetadata
 
     public RangesAtEndpoint getPendingRanges(String keyspaceName, InetAddressAndPort endpoint)
     {
-        RangesAtEndpoint.Builder builder = RangesAtEndpoint.builder();
+        RangesAtEndpoint.Builder builder = RangesAtEndpoint.builder(endpoint);
         for (Map.Entry<Range<Token>, Replica> entry : getPendingRangesMM(keyspaceName).flattenEntries())
         {
             Replica replica = entry.getValue();

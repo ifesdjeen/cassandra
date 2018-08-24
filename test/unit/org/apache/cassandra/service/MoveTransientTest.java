@@ -137,13 +137,13 @@ public class MoveTransientTest
     {
         Range<Token> aPrimeRange = new Range<>(oneToken, fourToken);
 
-        RangesAtEndpoint.Builder updated = RangesAtEndpoint.builder(3);
-        updated.add(new Replica(aAddress, aPrimeRange, true));
-        updated.add(new Replica(aAddress, eRange, true));
-        updated.add(new Replica(aAddress, dRange, false));
+        RangesAtEndpoint updated = RangesAtEndpoint.of(
+                new Replica(aAddress, aPrimeRange, true),
+                new Replica(aAddress, eRange, true),
+                new Replica(aAddress, dRange, false)
+        );
 
-
-        Pair<RangesAtEndpoint, RangesAtEndpoint> result = StorageService.calculateStreamAndFetchRanges(current, updated.build());
+        Pair<RangesAtEndpoint, RangesAtEndpoint> result = StorageService.calculateStreamAndFetchRanges(current, updated);
         assertContentsIgnoreOrder(result.left);
         assertContentsIgnoreOrder(result.right, Replica.full(aAddress, threeToken, fourToken));
         return result;

@@ -333,7 +333,7 @@ public class ReplicaCollectionTest
     public void testMutableRangesAtEndpoint()
     {
         ImmutableList<Replica> canonical1 = RANGES_AT_ENDPOINT.subList(0, RANGES_AT_ENDPOINT.size());
-        RangesAtEndpoint.Mutable test = new RangesAtEndpoint.Mutable(canonical1.size());
+        RangesAtEndpoint.Mutable test = new RangesAtEndpoint.Mutable(RANGES_AT_ENDPOINT.get(0).endpoint(), canonical1.size());
         test.addAll(canonical1, Conflict.NONE);
         try
         {   // incorrect range

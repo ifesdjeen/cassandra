@@ -34,7 +34,7 @@ public class RangesByEndpoint extends ReplicaMultimap<InetAddressAndPort, Ranges
     public RangesAtEndpoint get(InetAddressAndPort endpoint)
     {
         Preconditions.checkNotNull(endpoint);
-        return map.getOrDefault(endpoint, RangesAtEndpoint.empty());
+        return map.getOrDefault(endpoint, RangesAtEndpoint.empty(endpoint));
     }
 
     public static class Mutable extends ReplicaMultimap.Mutable<InetAddressAndPort, RangesAtEndpoint.Mutable>
@@ -42,7 +42,7 @@ public class RangesByEndpoint extends ReplicaMultimap<InetAddressAndPort, Ranges
         @Override
         protected RangesAtEndpoint.Mutable newMutable(InetAddressAndPort endpoint)
         {
-            return new RangesAtEndpoint.Mutable();
+            return new RangesAtEndpoint.Mutable(endpoint);
         }
 
         public RangesByEndpoint asImmutableView()

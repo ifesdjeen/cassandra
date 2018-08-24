@@ -35,6 +35,7 @@ import org.apache.cassandra.locator.Replica;
 import org.apache.cassandra.locator.ReplicaCollection;
 import org.apache.cassandra.net.CompactEndpointSerializationHelper;
 import org.apache.cassandra.net.MessagingService;
+import org.apache.hadoop.mapred.JobTracker;
 
 public class StreamRequest
 {
@@ -64,6 +65,7 @@ public class StreamRequest
         {
             out.writeUTF(request.keyspace);
             out.writeInt(request.columnFamilies.size());
+
             serializeReplicas(request.fullReplicas, out, version);
             serializeReplicas(request.transientReplicas, out, version);
             for (String cf : request.columnFamilies)
@@ -73,10 +75,10 @@ public class StreamRequest
         private void serializeReplicas(RangesAtEndpoint replicas, DataOutputPlus out, int version) throws IOException
         {
             out.writeInt(replicas.size());
+            CompactEndpointSerializationHelper.streamingInstance.serialize(replicas.endpoint(), out, version);
             for (Replica replica : replicas)
             {
                 MessagingService.validatePartitioner(replica.range());
-                CompactEndpointSerializationHelper.streamingInstance.serialize(replica.endpoint(), out, version);
                 Token.serializer.serialize(replica.range().left, out, version);
                 Token.serializer.serialize(replica.range().right, out, version);
                 out.writeBoolean(replica.isFull());
@@ -89,6 +91,8 @@ public class StreamRequest
             int cfCount = in.readInt();
             RangesAtEndpoint fullReplicas = deserializeReplicas(in, version);
             RangesAtEndpoint transientReplicas = deserializeReplicas(in, version);
+            if (!fullReplicas.endpoint().equals(transientReplicas.endpoint()))
+                throw new IllegalStateException("Mismatching endpoints: " + fullReplicas + ", " + transientReplicas);
             List<String> columnFamilies = new ArrayList<>(cfCount);
             for (int i = 0; i < cfCount; i++)
                 columnFamilies.add(in.readUTF());
@@ -98,14 +102,13 @@ public class StreamRequest
         RangesAtEndpoint deserializeReplicas(DataInputPlus in, int version) throws IOException
         {
             int replicaCount = in.readInt();
-            RangesAtEndpoint.Builder replicas = RangesAtEndpoint.builder(replicaCount);
+            InetAddressAndPort endpoint = CompactEndpointSerializationHelper.streamingInstance.deserialize(in, version);
+            RangesAtEndpoint.Builder replicas = RangesAtEndpoint.builder(endpoint, replicaCount);
             for (int i = 0; i < replicaCount; i++)
             {
                 //TODO, super need to review the usage of streaming vs not streaming endpoint serialization helper
                 //to make sure I'm not using the wrong one some of the time, like do repair messages use the
                 //streaming version?
-                // TODO: should we be serializing the endpoint here, given we guarantee only one unique endpoint?
-                InetAddressAndPort endpoint = CompactEndpointSerializationHelper.streamingInstance.deserialize(in, version);
                 Token left = Token.serializer.deserialize(in, MessagingService.globalPartitioner(), version);
                 Token right = Token.serializer.deserialize(in, MessagingService.globalPartitioner(), version);
                 boolean full = in.readBoolean();
@@ -125,13 +128,13 @@ public class StreamRequest
             return size;
         }
 
-        private long replicasSerializedSize(ReplicaCollection<?> replicas, int version)
+        private long replicasSerializedSize(RangesAtEndpoint replicas, int version)
         {
             long size = 0;
             size += TypeSizes.sizeof(replicas.size());
+            size += CompactEndpointSerializationHelper.streamingInstance.serializedSize(replicas.endpoint(), version);
             for (Replica replica : replicas)
             {
-                size += CompactEndpointSerializationHelper.streamingInstance.serializedSize(replica.endpoint(), version);
                 size += Token.serializer.serializedSize(replica.range().left, version);
                 size += Token.serializer.serializedSize(replica.range().right, version);
                 size += TypeSizes.sizeof(replica.isFull());

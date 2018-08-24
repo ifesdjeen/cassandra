@@ -37,17 +37,17 @@ import java.util.Set;
 import java.util.stream.Collector;
 import java.util.stream.Collectors;
 
+import static org.apache.cassandra.locator.ReplicaCollection.Mutable.Conflict.*;
+
 /**
  * A ReplicaCollection for Ranges occurring at an endpoint. All Replica will be for the same endpoint,
  * and must be unique Ranges (though overlapping ranges are presently permitted, these should probably not be permitted to occur)
  */
 public class RangesAtEndpoint extends AbstractReplicaCollection<RangesAtEndpoint>
 {
-    private static final Collector<Replica, Builder, RangesAtEndpoint> COLLECTOR = collector(ImmutableSet.of(), Builder::new);
     private static final Map<Range<Token>, Replica> EMPTY_MAP = Collections.unmodifiableMap(new LinkedHashMap<>());
-    private static final RangesAtEndpoint EMPTY = new RangesAtEndpoint(null, EMPTY_LIST, true, EMPTY_MAP);
 
-    private InetAddressAndPort endpoint;
+    private final InetAddressAndPort endpoint;
     private volatile Map<Range<Token>, Replica> byRange;
 
     private RangesAtEndpoint(InetAddressAndPort endpoint, List<Replica> list, boolean isSnapshot)
@@ -59,8 +59,13 @@ public class RangesAtEndpoint extends AbstractReplicaCollection<RangesAtEndpoint
         super(list, isSnapshot);
         this.endpoint = endpoint;
         this.byRange = byRange;
+        assert endpoint != null;
     }
 
+    public InetAddressAndPort endpoint()
+    {
+        return endpoint;
+    }
 
     @Override
     public Set<InetAddressAndPort> endpoints()
@@ -87,7 +92,7 @@ public class RangesAtEndpoint extends AbstractReplicaCollection<RangesAtEndpoint
     @Override
     protected RangesAtEndpoint snapshot(List<Replica> subList)
     {
-        if (subList.isEmpty()) return empty();
+        if (subList.isEmpty()) return empty(endpoint);
         return new RangesAtEndpoint(endpoint, subList, true);
     }
 
@@ -95,6 +100,12 @@ public class RangesAtEndpoint extends AbstractReplicaCollection<RangesAtEndpoint
     public RangesAtEndpoint self()
     {
         return this;
+    }
+
+    @Override
+    public ReplicaCollection.Mutable<RangesAtEndpoint> newMutable(int initialCapacity)
+    {
+        return new Mutable(endpoint, initialCapacity);
     }
 
     @Override
@@ -125,26 +136,23 @@ public class RangesAtEndpoint extends AbstractReplicaCollection<RangesAtEndpoint
         return Collections.unmodifiableMap(byRange);
     }
 
-    public static Collector<Replica, Builder, RangesAtEndpoint> collector()
+    public static Collector<Replica, Builder, RangesAtEndpoint> collector(InetAddressAndPort endpoint)
     {
-        return COLLECTOR;
+        return collector(ImmutableSet.of(), () -> new Builder(endpoint));
     }
 
     public static class Mutable extends RangesAtEndpoint implements ReplicaCollection.Mutable<RangesAtEndpoint>
     {
         boolean hasSnapshot;
-        public Mutable() { this(0); }
-        public Mutable(int capacity) { this(null, capacity); }
+        public Mutable(InetAddressAndPort endpoint) { this(endpoint, 0); }
         public Mutable(InetAddressAndPort endpoint, int capacity) { super(endpoint, new ArrayList<>(capacity), false, new LinkedHashMap<>()); }
 
         public void add(Replica replica, Conflict ignoreConflict)
         {
             if (hasSnapshot) throw new IllegalStateException();
             Preconditions.checkNotNull(replica);
-            if (super.endpoint == null)
-                super.endpoint = replica.endpoint();
-            else if (!Objects.equals(super.endpoint, replica.endpoint()))
-                throw new IllegalArgumentException("Mismatching ranges added to EndpointsForRange.Builder: " + replica + " and " + list.get(0));
+            if (!Objects.equals(super.endpoint, replica.endpoint()))
+                throw new IllegalArgumentException("Replica " + replica + " has incorrect endpoint (expected " + super.endpoint + ")");
 
             Replica prev = super.byRange.put(replica.range(), replica);
             if (prev != null)
@@ -192,23 +200,23 @@ public class RangesAtEndpoint extends AbstractReplicaCollection<RangesAtEndpoint
 
     public static class Builder extends ReplicaCollection.Builder<RangesAtEndpoint, Mutable, RangesAtEndpoint.Builder>
     {
-        public Builder() { this(0); }
-        public Builder(int capacity) { super(new Mutable(capacity)); }
+        public Builder(InetAddressAndPort endpoint) { this(endpoint, 0); }
+        public Builder(InetAddressAndPort endpoint, int capacity) { super(new Mutable(endpoint, capacity)); }
     }
 
-    public static RangesAtEndpoint.Builder builder()
+    public static RangesAtEndpoint.Builder builder(InetAddressAndPort endpoint)
     {
-        return new RangesAtEndpoint.Builder();
+        return new RangesAtEndpoint.Builder(endpoint);
     }
 
-    public static RangesAtEndpoint.Builder builder(int capacity)
+    public static RangesAtEndpoint.Builder builder(InetAddressAndPort endpoint, int capacity)
     {
-        return new RangesAtEndpoint.Builder(capacity);
+        return new RangesAtEndpoint.Builder(endpoint, capacity);
     }
 
-    public static RangesAtEndpoint empty()
+    public static RangesAtEndpoint empty(InetAddressAndPort endpoint)
     {
-        return EMPTY;
+        return new RangesAtEndpoint(endpoint, EMPTY_LIST, true, EMPTY_MAP);
     }
 
     public static RangesAtEndpoint of(Replica replica)
@@ -223,9 +231,11 @@ public class RangesAtEndpoint extends AbstractReplicaCollection<RangesAtEndpoint
         return copyOf(Arrays.asList(replicas));
     }
 
-    public static RangesAtEndpoint copyOf(Collection<Replica> replicas)
+    public static RangesAtEndpoint copyOf(List<Replica> replicas)
     {
-        return builder(replicas.size()).addAll(replicas).build();
+        if (replicas.isEmpty())
+            throw new IllegalArgumentException("Must specify a non-empty collection of replicas");
+        return builder(replicas.get(0).endpoint(), replicas.size()).addAll(replicas).build();
     }
 
 
@@ -256,11 +266,20 @@ public class RangesAtEndpoint extends AbstractReplicaCollection<RangesAtEndpoint
         {
             throw new RuntimeException(e);
         }
+
         //For repair we are less concerned with full vs transient since repair is already dealing with those concerns.
         //Always say full and then if the repair is incremental or not will determine what is streamed.
-        return new RangesAtEndpoint(dummy, ranges.stream()
+        return ranges.stream()
                 .map(range -> new Replica(dummy, range, true))
-                .collect(Collectors.toList()), true);
-
+                .collect(collector(dummy));
     }
+
+    /**
+     * @return concatenate two DISJOINT collections together
+     */
+    public static RangesAtEndpoint concat(RangesAtEndpoint replicas, RangesAtEndpoint extraReplicas)
+    {
+        return AbstractReplicaCollection.concat(replicas, extraReplicas, NONE);
+    }
+
 }

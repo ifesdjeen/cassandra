@@ -1248,7 +1248,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
 
                 // Ensure all specified ranges are actually ranges owned by this host
                 RangesAtEndpoint localReplicas = getLocalReplicas(keyspace);
-                RangesAtEndpoint.Builder streamRanges = new RangesAtEndpoint.Builder(ranges.size());
+                RangesAtEndpoint.Builder streamRanges = new RangesAtEndpoint.Builder(FBUtilities.getBroadcastAddressAndPort(), ranges.size());
                 for (Range<Token> specifiedRange : ranges)
                 {
                     boolean foundParentRange = false;
@@ -2898,11 +2898,11 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                 RangesAtEndpoint fullReplicas = fetchReplicas.stream()
                                                              .filter(f -> f.remote.isFull())
                                                              .map(f -> f.local)
-                                                             .collect(RangesAtEndpoint.collector());
+                                                             .collect(RangesAtEndpoint.collector(myAddress));
                 RangesAtEndpoint transientReplicas = fetchReplicas.stream()
                                                                   .filter(f -> f.remote.isTransient())
                                                                   .map(f -> f.local)
-                                                                  .collect(RangesAtEndpoint.collector());
+                                                                  .collect(RangesAtEndpoint.collector(myAddress));
                 if (logger.isDebugEnabled())
                     logger.debug("Requesting from {} full replicas {} transient replicas {}", sourceAddress, StringUtils.join(fullReplicas, ", "), StringUtils.join(transientReplicas, ", "));
 
@@ -4507,7 +4507,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                     RangesAtEndpoint updatedReplicas = strategy.getPendingAddressRanges(tokenMetaClone, newToken, localAddress);
 
                     // calculated parts of the ranges to request/stream from/to nodes in the ring
-                    Pair<RangesAtEndpoint, RangesAtEndpoint> streamAndFetchOwnRanges = Pair.create(RangesAtEndpoint.empty(), RangesAtEndpoint.empty());
+                    Pair<RangesAtEndpoint, RangesAtEndpoint> streamAndFetchOwnRanges = Pair.create(RangesAtEndpoint.empty(localAddress), RangesAtEndpoint.empty(localAddress));
                     //In the single node token move there is nothing to do and Range subtraction is broken
                     //so it's easier to just identify this case up front.
                     if (tokenMetaClone.getTopology().getDatacenterEndpoints().get(DatabaseDescriptor.getEndpointSnitch().getDatacenter(FBUtilities.getBroadcastAddressAndPort()
@@ -4535,11 +4535,11 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                         RangesAtEndpoint fullReplicas = sourceAndOurReplicas.stream()
                                 .filter(pair -> pair.remote.isFull())
                                 .map(pair -> pair.local)
-                                .collect(RangesAtEndpoint.collector());
+                                .collect(RangesAtEndpoint.collector(localAddress));
                         RangesAtEndpoint transientReplicas = sourceAndOurReplicas.stream()
                                 .filter(pair -> pair.remote.isTransient())
                                 .map(pair -> pair.local)
-                                .collect(RangesAtEndpoint.collector());
+                                .collect(RangesAtEndpoint.collector(localAddress));
                         logger.debug("Will request range {} of keyspace {} from endpoint {}", workMap.get(address), keyspace, address);
                         streamPlan.requestRanges(address, keyspace, fullReplicas, transientReplicas);
                     });
@@ -5334,8 +5334,9 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
     public static Pair<RangesAtEndpoint, RangesAtEndpoint> calculateStreamAndFetchRanges(RangesAtEndpoint current, RangesAtEndpoint updated)
     {
         // FIXME: transient replication
-        RangesAtEndpoint.Builder toStream = RangesAtEndpoint.builder();
-        RangesAtEndpoint.Builder toFetch  = RangesAtEndpoint.builder();
+        // this should always be the local node, except for tests TODO: assert this
+        RangesAtEndpoint.Builder toStream = RangesAtEndpoint.builder(current.endpoint());
+        RangesAtEndpoint.Builder toFetch  = RangesAtEndpoint.builder(current.endpoint());
 
         logger.debug("Calculating toStream");
         for (Replica r1 : current)
@@ -5349,7 +5350,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                 if (r1.intersectsOnRange(r2) && !(r1.isFull() && r2.isTransient()))
                 {
                     RangesAtEndpoint.Mutable oldRemainder = remainder;
-                    remainder = new RangesAtEndpoint.Mutable();
+                    remainder = new RangesAtEndpoint.Mutable(current.endpoint());
                     if (oldRemainder != null)
                     {
                         for (Replica replica : oldRemainder)
@@ -5388,7 +5389,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                 if (r2.intersectsOnRange(r1) && !(r1.isTransient() && r2.isFull()))
                 {
                     RangesAtEndpoint.Mutable oldRemainder = remainder;
-                    remainder = new RangesAtEndpoint.Mutable();
+                    remainder = new RangesAtEndpoint.Mutable(current.endpoint());
                     if (oldRemainder != null)
                     {
                         for (Replica replica : oldRemainder)

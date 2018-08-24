@@ -331,7 +331,7 @@ public class StreamSession implements IEndpointStateChangeSubscriber
         //Was it safe to remove this normalize, sorting seems not to matter, merging? Maybe we should have?
         //Do we need to unwrap here also or is that just making it worse?
         //Range and if it's transient
-        RangesAtEndpoint.Builder unwrappedRanges = RangesAtEndpoint.builder(replicas.size());
+        RangesAtEndpoint.Builder unwrappedRanges = RangesAtEndpoint.builder(replicas.endpoint(), replicas.size());
         for (Replica replica : replicas)
         {
             for (Range<Token> unwrapped : replica.range().unwrap())
@@ -579,7 +579,7 @@ public class StreamSession implements IEndpointStateChangeSubscriber
     {
 
         for (StreamRequest request : requests)
-            addTransferRanges(request.keyspace, RangesAtEndpoint.builder().addAll(request.fullReplicas).addAll(request.transientReplicas).build(), request.columnFamilies, true); // always flush on stream request
+            addTransferRanges(request.keyspace, RangesAtEndpoint.concat(request.fullReplicas, request.transientReplicas), request.columnFamilies, true); // always flush on stream request
         for (StreamSummary summary : summaries)
             prepareReceiving(summary);
 

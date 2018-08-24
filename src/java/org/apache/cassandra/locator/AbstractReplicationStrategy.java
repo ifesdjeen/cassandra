@@ -234,7 +234,7 @@ public abstract class AbstractReplicationStrategy
 
     public RangesAtEndpoint getAddressReplicas(TokenMetadata metadata, InetAddressAndPort endpoint)
     {
-        RangesAtEndpoint.Builder builder = RangesAtEndpoint.builder();
+        RangesAtEndpoint.Builder builder = RangesAtEndpoint.builder(endpoint);
         for (Token token : metadata.sortedTokens())
         {
             Range<Token> range = metadata.getPrimaryRangeFor(token);

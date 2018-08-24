@@ -39,12 +39,6 @@ public abstract class Endpoints<C extends Endpoints<C>> extends AbstractReplicaC
         this.byEndpoint = byEndpoint;
     }
 
-    /**
-     * construct a new Mutable of our own type, so that we can concatenate
-     * TODO: this isn't terribly pretty, but we need sometimes to select / merge two Endpoints of unknown type;
-     */
-    public abstract Mutable<C> newMutable(int initialCapacity);
-
     @Override
     public Set<InetAddressAndPort> endpoints()
     {
@@ -84,14 +78,7 @@ public abstract class Endpoints<C extends Endpoints<C>> extends AbstractReplicaC
     // TODO: TR-Review ignoreConflicts is not an acceptable solution here - we need to explicitly resolve them in case of transient/full mismatch
     public static <E extends Endpoints<E>> E concat(E natural, E pending, Conflict ignoreConflicts)
     {
-        if (pending.isEmpty())
-            return natural;
-        if (natural.isEmpty())
-            return pending;
-        Mutable<E> mutable = natural.newMutable(natural.size() + pending.size());
-        mutable.addAll(natural);
-        mutable.addAll(pending, ignoreConflicts);
-        return mutable.asImmutableView();
+        return AbstractReplicaCollection.concat(natural, pending, ignoreConflicts);
     }
 
 }

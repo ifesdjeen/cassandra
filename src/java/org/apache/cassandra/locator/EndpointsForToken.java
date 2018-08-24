@@ -84,7 +84,7 @@ public class EndpointsForToken extends Endpoints<EndpointsForToken>
             if (hasSnapshot) throw new IllegalStateException();
             Preconditions.checkNotNull(replica);
             if (!replica.range().contains(super.token))
-                throw new IllegalArgumentException("Mismatching ranges added to EndpointsForRange.Builder: " + replica + " does not contain " + super.token);
+                throw new IllegalArgumentException("Replica " + replica + " does not contain " + super.token);
 
             Replica prev = super.byEndpoint.put(replica.endpoint(), replica);
             if (prev != null)

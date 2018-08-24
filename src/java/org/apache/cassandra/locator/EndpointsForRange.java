@@ -93,7 +93,7 @@ public class EndpointsForRange extends Endpoints<EndpointsForRange>
             if (hasSnapshot) throw new IllegalStateException();
             Preconditions.checkNotNull(replica);
             if (!replica.range().contains(super.range))
-                throw new IllegalArgumentException("Mismatching ranges added to EndpointsForRange.Builder: " + replica + " does not contain " + super.range);
+                throw new IllegalArgumentException("Replica " + replica + " does not contain " + super.range);
 
             Replica prev = super.byEndpoint.put(replica.endpoint(), replica);
             if (prev != null)

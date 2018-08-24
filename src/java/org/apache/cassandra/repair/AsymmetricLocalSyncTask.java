@@ -18,6 +18,7 @@
 
 package org.apache.cassandra.repair;
 
+import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
 
@@ -56,7 +57,8 @@ public class AsymmetricLocalSyncTask extends AsymmetricSyncTask implements Strea
                           .listeners(this)
                           .flushBeforeTransfer(pendingRepair == null)
                           // request ranges from the remote node, see comment on RangesAtEndpoint.toDummyList for why we synthesize replicas here
-                          .requestRanges(fetchFrom, desc.keyspace, RangesAtEndpoint.toDummyList(rangesToFetch), RangesAtEndpoint.empty(), desc.columnFamily);
+                          .requestRanges(fetchFrom, desc.keyspace, RangesAtEndpoint.toDummyList(rangesToFetch),
+                                  RangesAtEndpoint.toDummyList(Collections.emptyList()), desc.columnFamily);
         plan.execute();
 
     }

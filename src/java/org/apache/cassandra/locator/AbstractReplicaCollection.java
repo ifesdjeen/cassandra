@@ -21,7 +21,6 @@ package org.apache.cassandra.locator;
 import com.google.common.collect.Iterables;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.Iterator;
 import java.util.List;
@@ -70,6 +69,12 @@ public abstract class AbstractReplicaCollection<C extends AbstractReplicaCollect
     // if subList == null, should return self (or a clone thereof)
     protected abstract C snapshot(List<Replica> subList);
     protected abstract C self();
+    /**
+     * construct a new Mutable of our own type, so that we can concatenate
+     * TODO: this isn't terribly pretty, but we need sometimes to select / merge two Endpoints of unknown type;
+     */
+    public abstract Mutable<C> newMutable(int initialCapacity);
+
 
     public C snapshot()
     {
@@ -232,4 +237,17 @@ public abstract class AbstractReplicaCollection<C extends AbstractReplicaCollect
     {
         return list.toString();
     }
+
+    static <C extends AbstractReplicaCollection<C>> C concat(C replicas, C extraReplicas, Mutable.Conflict ignoreConflicts)
+    {
+        if (extraReplicas.isEmpty())
+            return replicas;
+        if (replicas.isEmpty())
+            return extraReplicas;
+        Mutable<C> mutable = replicas.newMutable(replicas.size() + extraReplicas.size());
+        mutable.addAll(replicas);
+        mutable.addAll(extraReplicas, ignoreConflicts);
+        return mutable.asImmutableView();
+    }
+
 }

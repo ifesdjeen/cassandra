@@ -1286,10 +1286,10 @@ public final class SystemKeyspace
 
     public static synchronized RangesAtEndpoint getAvailableRanges(String keyspace, IPartitioner partitioner)
     {
-        RangesAtEndpoint.Builder builder = RangesAtEndpoint.builder();
         String query = "SELECT * FROM system.%s WHERE keyspace_name=?";
         UntypedResultSet rs = executeInternal(format(query, AVAILABLE_RANGES_V2), keyspace);
         InetAddressAndPort endpoint = InetAddressAndPort.getLocalHost();
+        RangesAtEndpoint.Builder builder = RangesAtEndpoint.builder(endpoint);
         for (UntypedResultSet.Row row : rs)
         {
             Optional.ofNullable(row.getSet("full_ranges", BytesType.instance))

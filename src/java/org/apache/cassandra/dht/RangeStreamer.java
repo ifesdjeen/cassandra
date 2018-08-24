@@ -641,14 +641,15 @@ public class RangeStreamer
                 //what has already been streamed. At that point since we only have the local Replica instances so we don't
                 //know what we got from the remote. We preserve that here by splitting based on the remotes transient
                 //status.
+                InetAddressAndPort self = FBUtilities.getBroadcastAddressAndPort();
                 RangesAtEndpoint fullReplicas = remaining.stream()
                         .filter(pair -> pair.remote.isFull())
                         .map(pair -> pair.local)
-                        .collect(RangesAtEndpoint.collector());
+                        .collect(RangesAtEndpoint.collector(self));
                 RangesAtEndpoint transientReplicas = remaining.stream()
                         .filter(pair -> pair.remote.isTransient())
                         .map(pair -> pair.local)
-                        .collect(RangesAtEndpoint.collector());
+                        .collect(RangesAtEndpoint.collector(self));
 
                 logger.debug("Source and our replicas {}", fetchReplicas);
                 logger.debug("Source {} Keyspace {}  streaming full {} transient {}", source, keyspace, fullReplicas, transientReplicas);
