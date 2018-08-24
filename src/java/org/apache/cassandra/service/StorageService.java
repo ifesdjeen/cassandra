@@ -2895,13 +2895,13 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                 //to pass streaming the local instance of Replica for the range which doesn't tell us anything about the source
                 //By encoding it as two separate sets we retain this information about the source.
                 RangesAtEndpoint fullReplicas = fetchReplicas.stream()
-                        .map(f -> f.remote)
-                        .filter(Replica::isFull)
-                        .collect(RangesAtEndpoint.collector());
+                                                             .filter(f -> f.remote.isFull())
+                                                             .map(f -> f.local)
+                                                             .collect(RangesAtEndpoint.collector());
                 RangesAtEndpoint transientReplicas = fetchReplicas.stream()
-                        .map(f -> f.remote)
-                        .filter(Replica::isTransient)
-                        .collect(RangesAtEndpoint.collector());
+                                                                  .filter(f -> f.remote.isTransient())
+                                                                  .map(f -> f.local)
+                                                                  .collect(RangesAtEndpoint.collector());
                 if (logger.isDebugEnabled())
                     logger.debug("Requesting from {} full replicas {} transient replicas {}", sourceAddress, StringUtils.join(fullReplicas, ", "), StringUtils.join(transientReplicas, ", "));
 
@@ -4537,7 +4537,8 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                                 .collect(RangesAtEndpoint.collector());
                         RangesAtEndpoint transientReplicas = sourceAndOurReplicas.stream()
                                 .filter(pair -> pair.remote.isTransient())
-                                .map(pair -> pair.local).collect(RangesAtEndpoint.collector());
+                                .map(pair -> pair.local)
+                                .collect(RangesAtEndpoint.collector());
                         logger.debug("Will request range {} of keyspace {} from endpoint {}", workMap.get(address), keyspace, address);
                         streamPlan.requestRanges(address, keyspace, fullReplicas, transientReplicas);
                     });
