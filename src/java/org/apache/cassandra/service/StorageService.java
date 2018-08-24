@@ -4407,10 +4407,10 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
          * calculating endpoints to stream current ranges to if needed
          * in some situations node will handle current ranges as part of the new ranges
          **/
-        public RangesByEndpoint calculateRangesToStreamWithPreferredEndpoints(RangesAtEndpoint streamRanges,
-                                                                              AbstractReplicationStrategy strat,
-                                                                              TokenMetadata tmdBefore,
-                                                                              TokenMetadata tmdAfter)
+        public RangesByEndpoint calculateRangesToStreamWithEndpoints(RangesAtEndpoint streamRanges,
+                                                                     AbstractReplicationStrategy strat,
+                                                                     TokenMetadata tmdBefore,
+                                                                     TokenMetadata tmdAfter)
         {
             RangesByEndpoint.Mutable endpointRanges = new RangesByEndpoint.Mutable();
             for (Replica toStream : streamRanges)
@@ -4515,7 +4515,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
 
                     Multimap<InetAddressAndPort, FetchReplica> workMap = calculateRangesToFetchWithPreferredEndpoints(strategy, streamAndFetchOwnRanges.right, keyspace);
 
-                    RangesByEndpoint endpointRanges = calculateRangesToStreamWithPreferredEndpoints(streamAndFetchOwnRanges.left, strategy, tokenMetaClone, tokenMetaCloneAllSettled);
+                    RangesByEndpoint endpointRanges = calculateRangesToStreamWithEndpoints(streamAndFetchOwnRanges.left, strategy, tokenMetaClone, tokenMetaCloneAllSettled);
 
                     logger.info("Endpoint ranges to stream to " + endpointRanges);
 

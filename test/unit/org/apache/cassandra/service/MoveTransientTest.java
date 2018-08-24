@@ -616,10 +616,10 @@ public class MoveTransientTest
     {
         DatabaseDescriptor.setTransientReplicationEnabledUnsafe(true);
         StorageService.RangeRelocator relocator = new StorageService.RangeRelocator();
-        RangesByEndpoint result = relocator.calculateRangesToStreamWithPreferredEndpoints(toStream,
-                simpleStrategy(tmds.left),
-                tmds.left,
-                tmds.right);
+        RangesByEndpoint result = relocator.calculateRangesToStreamWithEndpoints(toStream,
+                                                                                 simpleStrategy(tmds.left),
+                                                                                 tmds.left,
+                                                                                 tmds.right);
         logger.info("Ranges to stream by endpoint");
         logger.info(result.toString());
         assertMultimapEqualsIgnoreOrder(expectedResult, result);
