@@ -2728,22 +2728,22 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
      * @param newReplicas the ranges to find sources for
      * @return multimap of addresses to ranges the address is responsible for
      */
-    private Multimap<InetAddressAndPort, FetchReplica> getNewSourceReplicas(String keyspaceName, Set<LeavingReplica> newReplicas)
+    private Multimap<InetAddressAndPort, FetchReplica> getNewSourceReplicas(String keyspaceName, Set<LeavingReplica> leavingReplicas)
     {
         InetAddressAndPort myAddress = FBUtilities.getBroadcastAddressAndPort();
         EndpointsByRange rangeReplicas = Keyspace.open(keyspaceName).getReplicationStrategy().getRangeAddresses(tokenMetadata.cloneOnlyTokenMap());
         Multimap<InetAddressAndPort, FetchReplica> sourceRanges = HashMultimap.create();
         IFailureDetector failureDetector = FailureDetector.instance;
 
-        logger.debug("Getting new source replicas for {}", newReplicas);
+        logger.debug("Getting new source replicas for {}", leavingReplicas);
 
         // find alive sources for our new ranges
-        for (LeavingReplica leavingReplicaAndOurReplica : newReplicas)
+        for (LeavingReplica leaver : leavingReplicas)
         {
             //We need this to find the replicas from before leaving to supply the data
-            Replica leavingReplica = leavingReplicaAndOurReplica.getKey();
+            Replica leavingReplica = leaver.leavingReplica;
             //We need this to know what to fetch and what the transient status is
-            Replica ourReplica = leavingReplicaAndOurReplica.getValue();
+            Replica ourReplica = leaver.ourReplica;
             //If we are going to be a full replica only consider full replicas
             Predicate<Replica> replicaFilter = ourReplica.isFull() ? Replica::isFull : Predicates.alwaysTrue();
             Predicate<Replica> notSelf = replica -> !replica.endpoint().equals(myAddress);
@@ -2837,6 +2837,14 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
             int result = leavingReplica.hashCode();
             result = 31 * result + ourReplica.hashCode();
             return result;
+        }
+
+        public String toString()
+        {
+            return "LeavingReplica{" +
+                   "leavingReplica=" + leavingReplica +
+                   ", ourReplica=" + ourReplica +
+                   '}';
         }
     }
 
@@ -4459,7 +4467,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                         // Completely new range for this endpoint
                         if (toStream.isTransient() && updated.isFull())
                         {
-                            throw new AssertionError("not good");
+                            throw new AssertionError(String.format("Need to stream %s, but only have %s which is transient and not full", updated, toStream));
                         }
                         for (Range<Token> intersection : updated.range().intersectionWith(toStream.range()))
                         {
@@ -5375,7 +5383,6 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                 //Transitioning from transient to full means fetch everything so intersection doesn't matter.
                 if (r2.intersectsOnRange(r1) && !(r1.isTransient() && r2.isFull()))
                 {
-                    //For fetching we can afford to be strict, and whittle away
                     RangesAtEndpoint.Mutable oldRemainder = remainder;
                     remainder = new RangesAtEndpoint.Mutable();
                     if (oldRemainder != null)
