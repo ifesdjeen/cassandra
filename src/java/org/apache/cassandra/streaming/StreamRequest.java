@@ -41,10 +41,11 @@ public class StreamRequest
     public static final IVersionedSerializer<StreamRequest> serializer = new StreamRequestSerializer();
 
     public final String keyspace;
-    //Full replicas/transient replicas are not about the data to send, but about whether the requester
-    //Is going to fully or transiently replicate that range ultimately.
-    //This is necessary to disambiguate when enough data has been received for each range such as a fully replicated
-    //range where it will some of the time need to fetch both full and transient ranges
+    //Full replicas and transient replicas are split based on the transient status of the remote we are fetching
+    //from. We preserve this distinction so on completion we can log to a system table whether we got the data transiently
+    //or fully from some remote. This is an important distinction for resumable bootstrap. The Replicas in these collections
+    //are local replicas (or dummy if this is triggered by repair) and don't encode the necessary information about
+    //what the remote provided.
     public final RangesAtEndpoint fullReplicas;
     public final RangesAtEndpoint transientReplicas;
     public final Collection<String> columnFamilies = new HashSet<>();
