@@ -2817,6 +2817,8 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
 
         public LeavingReplica(Replica leavingReplica, Replica ourReplica)
         {
+            Preconditions.checkNotNull(leavingReplica);
+            Preconditions.checkNotNull(ourReplica);
             this.leavingReplica = leavingReplica;
             this.ourReplica = ourReplica;
         }

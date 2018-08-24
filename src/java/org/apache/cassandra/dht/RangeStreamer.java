@@ -100,8 +100,36 @@ public class RangeStreamer
 
         public FetchReplica(Replica local, Replica remote)
         {
+            Preconditions.checkNotNull(local);
+            Preconditions.checkNotNull(remote);
             this.local = local;
             this.remote = remote;
+        }
+
+        public String toString()
+        {
+            return "FetchReplica{" +
+                   "local=" + local +
+                   ", remote=" + remote +
+                   '}';
+        }
+
+        public boolean equals(Object o)
+        {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+
+            FetchReplica that = (FetchReplica) o;
+
+            if (!local.equals(that.local)) return false;
+            return remote.equals(that.remote);
+        }
+
+        public int hashCode()
+        {
+            int result = local.hashCode();
+            result = 31 * result + remote.hashCode();
+            return result;
         }
     }
 
