@@ -402,18 +402,19 @@ public class RangeStreamer
                             oldEndpoints = sorted.apply(oldEndpoints.filter(accept));
                         }
 
-                        sources = oldEndpoints;
+                        //Apply testSourceFilters that were given to us, and establish everything remaining is alive for the strict case
+                        sources = oldEndpoints.filter(testSourceFilters);
                     }
                     else
                     {
                         //Without strict consistency we have given up on correctness so no point in fetching from
                         //a random full + transient replica since it's also likely to lose data
-                        //TODO this is returning multiple replicas and we need to reduce it to just one
-                        sources = sorted.apply(rangeAddresses.get(range).filter(accept));
+                        //Also apply testSourceFilters that were given to us so we can safely select a single source
+                        sources = sorted.apply(rangeAddresses.get(range).filter(and(accept, testSourceFilters)));
+                        //Limit it to just the first possible source, we don't need more than one and downstream
+                        //will fetch from every source we supply
+                        sources = sources.size() > 0 ? sources.subList(0, 1) : sources;
                     }
-
-                    //Apply additional policy filters that were given to us, and establish everything remaining is alive for the strict case
-                    sources = sources.filter(testSourceFilters);
 
                     // storing range and preferred endpoint set
                     rangesToFetchWithPreferredEndpoints.putAll(toFetch, sources, Conflict.NONE);
