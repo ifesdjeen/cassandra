@@ -5284,7 +5284,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                     continue;
                 }
 
-                replicasPerEndpoint.put(remote.endpoint(), remote);
+                replicasPerEndpoint.put(remote.endpoint(), remote.decorateSubrange(local.range()));
             }
 
             sessionsToStreamByKeyspace.put(keyspace, replicasPerEndpoint.asImmutableView());
