@@ -125,12 +125,6 @@ public abstract class ReplicaLayout<E extends Endpoints<E>, L extends ReplicaLay
         return withSelected(selected.filter(replica -> endpointSet.contains(replica.endpoint())));
     }
 
-    public L forAllUncontacted()
-    {
-        // TODO: should this also be DC local
-        return withSelected(allReplicas().filter(r -> !selected.contains(r)));
-    }
-
     public L forNaturalUncontacted()
     {
         E more;

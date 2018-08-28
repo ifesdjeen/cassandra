@@ -230,6 +230,7 @@ public abstract class AbstractWriteResponseHandler<T> implements IAsyncCallbackW
 
     public void assureSufficientLiveNodes() throws UnavailableException
     {
+        // TODO: this check is rubbish, as it ignores pendingReplicas
         replicaLayout.consistencyLevel().assureSufficientLiveNodes(replicaLayout.keyspace(), replicaLayout.naturalReplicas().filter(isReplicaAlive));
     }
 
@@ -309,12 +310,12 @@ public abstract class AbstractWriteResponseHandler<T> implements IAsyncCallbackW
 
         try
         {
-            if(!condition.await(timeout, TimeUnit.NANOSECONDS))
+            if (!condition.await(timeout, TimeUnit.NANOSECONDS))
             {
                 for (ColumnFamilyStore cf : cfs)
                     cf.metric.additionalWritesOnUnavailable.inc();
 
-                writePerformer.apply(mutation, replicaLayout.forAllUncontacted(),
+                writePerformer.apply(mutation, replicaLayout.forNaturalUncontacted(),
                                      (AbstractWriteResponseHandler<IMutation>) this,
                                      localDC, replicaLayout.consistencyLevel());
             }
