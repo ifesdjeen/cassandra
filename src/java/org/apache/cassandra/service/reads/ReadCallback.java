@@ -51,7 +51,7 @@ public class ReadCallback<E extends Endpoints<E>, L extends ReplicaLayout<E, L>>
     public final ResponseResolver resolver;
     final SimpleCondition condition = new SimpleCondition();
     private final long queryStartNanoTime;
-    // TODO: move to replica plan as well?
+    // TODO: move to replica layout as well?
     final int blockfor;
     final L replicaLayout;
     private final ReadCommand command;
@@ -94,7 +94,7 @@ public class ReadCallback<E extends Endpoints<E>, L extends ReplicaLayout<E, L>>
     public void awaitResults() throws ReadFailureException, ReadTimeoutException
     {
         boolean signaled = await(command.getTimeout(), TimeUnit.MILLISECONDS);
-        boolean failed = failures > 0  && blockfor + failures > replicaLayout.selectedReplicas().size();
+        boolean failed = failures > 0 && blockfor + failures > replicaLayout.selectedReplicas().size();
         if (signaled && !failed)
             return;
 

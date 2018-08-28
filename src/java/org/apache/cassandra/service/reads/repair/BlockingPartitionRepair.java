@@ -193,7 +193,7 @@ public class BlockingPartitionRepair<E extends Endpoints<E>, L extends ReplicaLa
         if (awaitRepairs(timeout, timeoutUnit))
             return;
 
-        L newCandidates = replicaLayout.extend();
+        L newCandidates = replicaLayout.forNaturalUncontacted();
         if (newCandidates.selectedReplicas().isEmpty())
             return;
 

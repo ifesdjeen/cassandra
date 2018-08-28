@@ -198,11 +198,11 @@ public abstract class AbstractWriteResponseHandler<T> implements IAsyncCallbackW
     }
 
     /**
-     * @return the total number of endpoints the request has been sent to.
+     * @return the total number of endpoints the request can been sent to.
      */
     protected int totalEndpoints()
     {
-        return replicaLayout.naturalReplicas().size();
+        return replicaLayout.allReplicas().size();
     }
 
     public ConsistencyLevel consistencyLevel()
@@ -314,7 +314,7 @@ public abstract class AbstractWriteResponseHandler<T> implements IAsyncCallbackW
                 for (ColumnFamilyStore cf : cfs)
                     cf.metric.additionalWritesOnUnavailable.inc();
 
-                writePerformer.apply(mutation, replicaLayout.allUncontacted(),
+                writePerformer.apply(mutation, replicaLayout.forAllUncontacted(),
                                      (AbstractWriteResponseHandler<IMutation>) this,
                                      localDC, replicaLayout.consistencyLevel());
             }

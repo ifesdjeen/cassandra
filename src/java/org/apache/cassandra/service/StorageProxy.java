@@ -1059,7 +1059,7 @@ public class StorageProxy implements StorageProxyMBean
     {
         for (WriteResponseHandlerWrapper wrapper : wrappers)
         {
-            Replicas.assertFull(wrapper.handler.replicaLayout.naturalReplicas());
+            Replicas.assertFull(wrapper.handler.replicaLayout.allReplicas());
             ReplicaLayout.ForToken replicas = wrapper.handler.replicaLayout.withSelected(wrapper.handler.replicaLayout.allReplicas());
 
             sendToHintedReplicas(wrapper.mutation, replicas, wrapper.handler, localDataCenter, stage);
@@ -1963,7 +1963,7 @@ public class StorageProxy implements StorageProxyMBean
 
                 ReplicaLayout.ForRange next = ranges.peek();
 
-                EndpointsForRange merged = Replicas.keepEndpoints(current.naturalReplicas(), next.naturalReplicas().endpoints());
+                EndpointsForRange merged = Replicas.keepEndpoints(current.allReplicas(), next.allReplicas().endpoints());
 
                 // Check if there is enough endpoint for the merge to be possible.
                 if (!consistency.isSufficientLiveNodes(keyspace, merged))

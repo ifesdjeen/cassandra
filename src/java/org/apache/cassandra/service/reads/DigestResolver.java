@@ -40,6 +40,9 @@ import org.apache.cassandra.net.MessageIn;
 import org.apache.cassandra.service.reads.repair.PartitionIteratorMergeListener;
 import org.apache.cassandra.service.reads.repair.ReadRepair;
 
+import static com.google.common.collect.Iterables.filter;
+import static com.google.common.collect.Iterables.transform;
+
 public class DigestResolver<E extends Endpoints<E>, L extends ReplicaLayout<E, L>> extends ResponseResolver<E, L>
 {
     private volatile MessageIn<ReadResponse> dataResponse;
@@ -81,8 +84,9 @@ public class DigestResolver<E extends Endpoints<E>, L extends ReplicaLayout<E, L
             // This path can be triggered only if we've got responses from full replicas and they match, but
             // transient replica response still contains data, which needs to be reconciled.
             // Create data resolver that will forward data
-            L layout = replicaLayout.forResponded(Iterables.transform(Iterables.filter(responses, a -> a.payload.isDigestResponse()),
-                                                                      a -> a.from));
+            L layout = replicaLayout.forResponded(transform(
+                    filter(responses, a -> a.payload.isDigestResponse()),
+                    a -> a.from));
             DataResolver<E, L> dataResolver = new DataResolver<>(command,
                                                                  replicaLayout,
                                                                  new ForwardingReadRepair(replicaLayout.getReplicaFor(dataResponse.from),

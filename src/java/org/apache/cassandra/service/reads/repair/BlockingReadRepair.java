@@ -103,7 +103,6 @@ public class BlockingReadRepair<E extends Endpoints<E>, L extends ReplicaLayout<
     @Override
     public void repairPartition(Map<Replica, Mutation> mutations, L replicaLayout)
     {
-        // TODO BlockingPartitionRepair<E, L> blockingRepair = new BlockingPartitionRepair<E, L>(mutations, blockFor, replicaLayout.with(targets));
         BlockingPartitionRepair<E, L> blockingRepair = new BlockingPartitionRepair<>(mutations, blockFor, replicaLayout);
         blockingRepair.sendInitialRepairs();
         repairs.add(blockingRepair);

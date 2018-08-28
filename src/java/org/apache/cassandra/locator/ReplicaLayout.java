@@ -35,6 +35,7 @@ import org.apache.cassandra.db.PartitionPosition;
 import org.apache.cassandra.dht.AbstractBounds;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.exceptions.UnavailableException;
+import org.apache.cassandra.locator.ReplicaCollection.Mutable.Conflict;
 import org.apache.cassandra.net.IAsyncCallback;
 import org.apache.cassandra.service.StorageProxy;
 import org.apache.cassandra.service.StorageService;
@@ -44,6 +45,7 @@ import org.apache.cassandra.utils.FBUtilities;
 
 public abstract class ReplicaLayout<E extends Endpoints<E>, L extends ReplicaLayout<E, L>>
 {
+    protected volatile E all;
     protected final E natural;
     protected final E pending;
     protected final E selected;
@@ -53,12 +55,19 @@ public abstract class ReplicaLayout<E extends Endpoints<E>, L extends ReplicaLay
 
     private ReplicaLayout(Keyspace keyspace, ConsistencyLevel consistencyLevel, E natural, E pending, E selected)
     {
+        this(keyspace, consistencyLevel, natural, pending, selected, null);
+    }
+    private ReplicaLayout(Keyspace keyspace, ConsistencyLevel consistencyLevel, E natural, E pending, E selected, E all)
+    {
         if (selected == null) throw new RuntimeException();
         this.keyspace = keyspace;
         this.consistencyLevel = consistencyLevel;
         this.natural = natural;
         this.pending = pending;
         this.selected = selected;
+        if (all == null && pending == null)
+            all = natural;
+        this.all = all;
     }
 
     public Replica getReplicaFor(InetAddressAndPort endpoint)
@@ -73,7 +82,10 @@ public abstract class ReplicaLayout<E extends Endpoints<E>, L extends ReplicaLay
 
     public E allReplicas()
     {
-        return Endpoints.concat(natural, pending, ReplicaCollection.Mutable.Conflict.ALL);
+        E result = all;
+        if (result == null)
+            all = result = Endpoints.concat(natural, pending, Conflict.ALL);
+        return result;
     }
 
     public E selectedReplicas()
@@ -105,11 +117,6 @@ public abstract class ReplicaLayout<E extends Endpoints<E>, L extends ReplicaLay
 
     abstract public L withConsistencyLevel(ConsistencyLevel cl);
 
-    public L allUncontacted()
-    {
-        return withSelected(naturalReplicas().filter(r -> !selected.contains(r)));
-    }
-
     public L forResponded(Iterable<InetAddressAndPort> endpoints)
     {
         // Preserve insertion order
@@ -118,7 +125,13 @@ public abstract class ReplicaLayout<E extends Endpoints<E>, L extends ReplicaLay
         return withSelected(selected.filter(replica -> endpointSet.contains(replica.endpoint())));
     }
 
-    public L extend()
+    public L forAllUncontacted()
+    {
+        // TODO: should this also be DC local
+        return withSelected(allReplicas().filter(r -> !selected.contains(r)));
+    }
+
+    public L forNaturalUncontacted()
     {
         E more;
         if (consistencyLevel.isDatacenterLocal() && keyspace.getReplicationStrategy() instanceof NetworkTopologyStrategy)
@@ -172,6 +185,11 @@ public abstract class ReplicaLayout<E extends Endpoints<E>, L extends ReplicaLay
             super(keyspace, consistencyLevel, natural, pending, selected);
             this.token = token;
         }
+        public ForToken(Keyspace keyspace, ConsistencyLevel consistencyLevel, Token token, EndpointsForToken natural, EndpointsForToken pending, EndpointsForToken selected, EndpointsForToken all)
+        {
+            super(keyspace, consistencyLevel, natural, pending, selected, all);
+            this.token = token;
+        }
 
         public ForToken withSelected(EndpointsForToken newSelected)
         {
@@ -194,9 +212,9 @@ public abstract class ReplicaLayout<E extends Endpoints<E>, L extends ReplicaLay
     {
         private final int requiredParticipants;
 
-        private ForPaxos(Keyspace keyspace, ConsistencyLevel consistencyLevel, Token token, int requiredParticipants, EndpointsForToken natural, EndpointsForToken pending, EndpointsForToken selected)
+        private ForPaxos(Keyspace keyspace, ConsistencyLevel consistencyLevel, Token token, int requiredParticipants, EndpointsForToken natural, EndpointsForToken pending, EndpointsForToken selected, EndpointsForToken all)
         {
-            super(keyspace, consistencyLevel, token, natural, pending, selected);
+            super(keyspace, consistencyLevel, token, natural, pending, selected, all);
             this.requiredParticipants = requiredParticipants;
         }
 
@@ -206,13 +224,13 @@ public abstract class ReplicaLayout<E extends Endpoints<E>, L extends ReplicaLay
         }
     }
 
-    public static ForToken forSRP(Keyspace keyspace, Token token, Replica replica)
+    public static ForToken forSingleReplica(Keyspace keyspace, Token token, Replica replica)
     {
         EndpointsForToken singleReplica = EndpointsForToken.of(token, replica);
         return new ForToken(keyspace, ConsistencyLevel.ONE, token, singleReplica, EndpointsForToken.empty(token), singleReplica);
     }
 
-    public static ForRange forSRP(Keyspace keyspace, AbstractBounds<PartitionPosition> range, Replica replica)
+    public static ForRange forSingleReplica(Keyspace keyspace, AbstractBounds<PartitionPosition> range, Replica replica)
     {
         EndpointsForRange singleReplica = EndpointsForRange.of(replica);
         return new ForRange(keyspace, ConsistencyLevel.ONE, range, singleReplica, singleReplica);
@@ -275,11 +293,8 @@ public abstract class ReplicaLayout<E extends Endpoints<E>, L extends ReplicaLay
         int participants = pending.size() + natural.size();
         int requiredParticipants = participants / 2 + 1; // See CASSANDRA-8346, CASSANDRA-833
 
-        EndpointsForToken selected = Endpoints.concat(
-        natural.filter(IAsyncCallback.isReplicaAlive),
-        pending.filter(IAsyncCallback.isReplicaAlive),
-        ReplicaCollection.Mutable.Conflict.ALL
-        );
+        EndpointsForToken all = Endpoints.concat(natural, pending, Conflict.ALL);
+        EndpointsForToken selected = all.filter(IAsyncCallback.isReplicaAlive);
         if (selected.size() < requiredParticipants)
             throw new UnavailableException(consistencyForPaxos, requiredParticipants, selected.size());
 
@@ -292,7 +307,7 @@ public abstract class ReplicaLayout<E extends Endpoints<E>, L extends ReplicaLay
                                            participants + 1,
                                            selected.size());
 
-        return new ReplicaLayout.ForPaxos(keyspace, consistencyForPaxos, key.getToken(), requiredParticipants, natural, pending, selected);
+        return new ReplicaLayout.ForPaxos(keyspace, consistencyForPaxos, key.getToken(), requiredParticipants, natural, pending, selected, all);
     }
 
     /**
@@ -302,11 +317,12 @@ public abstract class ReplicaLayout<E extends Endpoints<E>, L extends ReplicaLay
     @VisibleForTesting
     public static ForToken forWrite(Keyspace keyspace, ConsistencyLevel consistencyLevel, Token token, int blockFor, EndpointsForToken natural, EndpointsForToken pending, Predicate<InetAddressAndPort> livePredicate) throws UnavailableException
     {
-        EndpointsForToken selected = Endpoints.concat(natural, pending, ReplicaCollection.Mutable.Conflict.DUPLICATE)
-                                              .select()
-                                              .add(r -> r.isFull() && livePredicate.test(r.endpoint()))
-                                              .add(r -> r.isTransient() && livePredicate.test(r.endpoint()), blockFor)
-                                              .get();
+        EndpointsForToken all = Endpoints.concat(natural, pending, Conflict.ALL);
+        EndpointsForToken selected = all
+                .select()
+                .add(r -> r.isFull() && livePredicate.test(r.endpoint()))
+                .add(r -> r.isTransient() && livePredicate.test(r.endpoint()), blockFor)
+                .get();
 
         if (selected.size() < blockFor)
             throw new UnavailableException(consistencyLevel, blockFor, selected.size());
@@ -314,7 +330,7 @@ public abstract class ReplicaLayout<E extends Endpoints<E>, L extends ReplicaLay
         if (selected.isEmpty() || selected.get(0).isTransient())
             throw new UnavailableException("At least one full replica required for writes", consistencyLevel, blockFor, 0);
 
-        return new ForToken(keyspace, consistencyLevel, token, natural, pending, selected);
+        return new ForToken(keyspace, consistencyLevel, token, natural, pending, selected, all);
     }
 
     public static ForToken forRead(Keyspace keyspace, Token token, ConsistencyLevel consistencyLevel, SpeculativeRetryPolicy retry)
@@ -335,7 +351,7 @@ public abstract class ReplicaLayout<E extends Endpoints<E>, L extends ReplicaLay
 
     public static ForToken forSpeculation(ForToken original)
     {
-        EndpointsForToken newSelection = original.naturalReplicas().subList(0, original.selectedReplicas().size() + 1);
+        EndpointsForToken newSelection = original.allReplicas().subList(0, original.selectedReplicas().size() + 1);
         return new ForToken(original.keyspace, ConsistencyLevel.ALL, original.token, original.natural, original.pending, newSelection);
     }
 

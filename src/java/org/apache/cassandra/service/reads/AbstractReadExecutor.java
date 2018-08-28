@@ -180,13 +180,13 @@ public abstract class AbstractReadExecutor
 
         // There are simply no extra replicas to speculate.
         // Handle this separately so it can log failed attempts to speculate due to lack of replicas
-        if (consistencyLevel.blockFor(keyspace) == replicaLayout.naturalReplicas().size())
+        if (consistencyLevel.blockFor(keyspace) == replicaLayout.allReplicas().size())
             return new NeverSpeculatingReadExecutor(cfs, command, replicaLayout, queryStartNanoTime, true);
 
         // If CL.ALL, upgrade to AlwaysSpeculating;
         // If We are going to contact every node anyway, ask for 2 full data requests instead of 1, for redundancy
         // (same amount of requests in total, but we turn 1 digest request into a full blown data request)
-        if (replicaLayout.naturalReplicas().size() == replicaLayout.selectedReplicas().size() || retry.equals(AlwaysSpeculativeRetryPolicy.INSTANCE))
+        if (replicaLayout.allReplicas().size() == replicaLayout.selectedReplicas().size() || retry.equals(AlwaysSpeculativeRetryPolicy.INSTANCE))
         {
             return new AlwaysSpeculatingReadExecutor(cfs, command, replicaLayout, queryStartNanoTime);
         }
@@ -205,11 +205,6 @@ public abstract class AbstractReadExecutor
             return false;
 
         return !handler.await(cfs.sampleReadLatencyNanos, TimeUnit.NANOSECONDS);
-    }
-
-    boolean speculated()
-    {
-        return false;
     }
 
     ReplicaLayout.ForToken replicaLayout()
@@ -301,7 +296,7 @@ public abstract class AbstractReadExecutor
                 replicaLayout = ReplicaLayout.forSpeculation(replicaLayout);
                 cfs.metric.speculativeRetries.inc();
                 // Could be waiting on the data, or on enough digests.
-                Replica extraReplica = Iterables.getLast(replicaLayout().selectedReplicas());
+                Replica extraReplica = replicaLayout().selectedReplicas().get(replicaLayout().selectedReplicas().size() - 1);
                 ReadCommand retryCommand = command;
 
                 if (handler.resolver.isDataPresent() && extraReplica.isFull())

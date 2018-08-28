@@ -130,7 +130,7 @@ public abstract class AbstractReadRepair<E extends Endpoints<E>, L extends Repli
 
         if (shouldSpeculate() && !repair.readCallback.await(cfs.sampleReadLatencyNanos, TimeUnit.NANOSECONDS))
         {
-            L uncontacted = replicaLayout.extend();
+            L uncontacted = replicaLayout.forNaturalUncontacted();
             if (uncontacted.selectedReplicas().isEmpty())
                 return;
 

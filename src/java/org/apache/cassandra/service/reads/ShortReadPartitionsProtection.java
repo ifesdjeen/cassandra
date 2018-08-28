@@ -18,6 +18,7 @@
 
 package org.apache.cassandra.service.reads;
 
+import org.apache.cassandra.locator.Endpoints;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -86,7 +87,7 @@ public class ShortReadPartitionsProtection extends Transformation<UnfilteredRowI
          * If we don't apply the transformation *after* extending the partition with MoreRows,
          * applyToRow() method of protection will not be called on the first row of the new extension iterator.
          */
-        ReplicaLayout.ForToken replicaLayout = ReplicaLayout.forSRP(Keyspace.open(command.metadata().keyspace), partition.partitionKey().getToken(), source);
+        ReplicaLayout.ForToken replicaLayout = ReplicaLayout.forSingleReplica(Keyspace.open(command.metadata().keyspace), partition.partitionKey().getToken(), source);
         ShortReadRowsProtection protection = new ShortReadRowsProtection(partition.partitionKey(),
                                                                          command, source,
                                                                          (cmd) -> executeReadCommand(cmd, replicaLayout),
@@ -168,14 +169,14 @@ public class ShortReadPartitionsProtection extends Transformation<UnfilteredRowI
                                                       : new ExcludingBounds<>(lastPartitionKey, bounds.right);
         DataRange newDataRange = cmd.dataRange().forSubRange(newBounds);
 
-        ReplicaLayout.ForRange replicaLayout = ReplicaLayout.forSRP(Keyspace.open(command.metadata().keyspace), cmd.dataRange().keyRange(), source);
+        ReplicaLayout.ForRange replicaLayout = ReplicaLayout.forSingleReplica(Keyspace.open(command.metadata().keyspace), cmd.dataRange().keyRange(), source);
         return executeReadCommand(cmd.withUpdatedLimitsAndDataRange(newLimits, newDataRange), replicaLayout);
     }
 
-    private UnfilteredPartitionIterator executeReadCommand(ReadCommand cmd, ReplicaLayout<?, ?> replicaLayout)
+    private <E extends Endpoints<E>, L extends ReplicaLayout<E, L>> UnfilteredPartitionIterator executeReadCommand(ReadCommand cmd, L replicaLayout)
     {
-        DataResolver<?, ?> resolver = new DataResolver(cmd, replicaLayout, NoopReadRepair.instance, queryStartNanoTime);
-        ReadCallback<?, ?> handler = new ReadCallback(resolver, replicaLayout.consistencyLevel().blockFor(replicaLayout.keyspace()), cmd, replicaLayout, queryStartNanoTime);
+        DataResolver<E, L> resolver = new DataResolver<>(cmd, replicaLayout, (NoopReadRepair<E, L>)NoopReadRepair.instance, queryStartNanoTime);
+        ReadCallback<E, L> handler = new ReadCallback<>(resolver, replicaLayout.consistencyLevel().blockFor(replicaLayout.keyspace()), cmd, replicaLayout, queryStartNanoTime);
 
         if (source.isLocal())
             StageManager.getStage(Stage.READ).maybeExecuteImmediately(new StorageProxy.LocalReadRunnable(cmd, handler));
