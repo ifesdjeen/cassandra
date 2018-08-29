@@ -525,7 +525,7 @@ public class RangeStreamer
         EndpointsByRange.Mutable unwrapped = new EndpointsByRange.Mutable();
         for (Map.Entry<Replica, Replica> entry : rangesWithSources.flattenEntries())
         {
-            Replicas.assertFull(entry.getValue());
+            Replicas.temporaryAssertFull(entry.getValue());
             unwrapped.put(entry.getKey().range(), entry.getValue());
         }
 

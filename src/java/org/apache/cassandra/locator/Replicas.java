@@ -29,25 +29,34 @@ public class Replicas
 {
 
     /**
-     * Basically a placeholder for places new logic for transient replicas should go
+     * A placeholder for areas of the code that cannot yet handle transient replicas, but should do so in future
      */
-    public static void assertFull(Replica replica)
+    public static void temporaryAssertFull(Replica replica)
     {
         if (!replica.isFull())
         {
-            // FIXME: add support for transient replicas
             throw new UnsupportedOperationException("transient replicas are currently unsupported: " + replica);
         }
     }
 
     /**
-     * Basically a placeholder for places new logic for transient replicas should go
+     * A placeholder for areas of the code that cannot yet handle transient replicas, but should do so in future
+     */
+    public static void temporaryAssertFull(Iterable<Replica> replicas)
+    {
+        if (!all(replicas, Replica::isFull))
+        {
+            throw new UnsupportedOperationException("transient replicas are currently unsupported: " + Iterables.toString(replicas));
+        }
+    }
+
+    /**
+     * For areas of the code that should never see a transient replica
      */
     public static void assertFull(Iterable<Replica> replicas)
     {
         if (!all(replicas, Replica::isFull))
         {
-            // FIXME: add support for transient replicas
             throw new UnsupportedOperationException("transient replicas are currently unsupported: " + Iterables.toString(replicas));
         }
     }

@@ -295,9 +295,10 @@ public abstract class ReplicaLayout<E extends Endpoints<E>, L extends ReplicaLay
             pending = Endpoints.resolveConflictsInPending(natural, pending);
         }
 
-        // TODO: test LWTs
-        Replicas.assertFull(natural);
-        Replicas.assertFull(pending);
+        // TODO CASSANDRA-14547
+        Replicas.temporaryAssertFull(natural);
+        Replicas.temporaryAssertFull(pending);
+
         if (consistencyForPaxos == ConsistencyLevel.LOCAL_SERIAL)
         {
             // Restrict natural and pending to node in the local DC only

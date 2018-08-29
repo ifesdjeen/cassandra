@@ -147,17 +147,15 @@ public class StorageProxy implements StorageProxyMBean
          */
         counterWritePerformer = (mutation, targets, responseHandler, localDataCenter) ->
         {
-            // TODO: test counters
             EndpointsForToken selected = targets.selected().withoutSelf();
-            Replicas.assertFull(selected);
+            Replicas.temporaryAssertFull(selected); // TODO CASSANDRA-14548
             counterWriteTask(mutation, selected, responseHandler, localDataCenter).run();
         };
 
         counterWriteOnCoordinatorPerformer = (mutation, targets, responseHandler, localDataCenter) ->
         {
-            // TODO: test counters
             EndpointsForToken selected = targets.selected().withoutSelf();
-            Replicas.assertFull(selected);
+            Replicas.temporaryAssertFull(selected); // TODO CASSANDRA-14548
             StageManager.getStage(Stage.COUNTER_MUTATION)
                         .execute(counterWriteTask(mutation, selected, responseHandler, localDataCenter));
         };
@@ -728,7 +726,7 @@ public class StorageProxy implements StorageProxyMBean
         // local writes can timeout, but cannot be dropped (see LocalMutationRunnable and CASSANDRA-6510),
         // so there is no need to hint or retry.
         EndpointsForToken replicasToHint = StorageService.instance.getNaturalAndPendingReplicasForToken(keyspaceName, token)
-                .filter(target -> !target.isLocal() && shouldHint(target));
+                .filter(StorageProxy::shouldHint);
 
         submitHint(mutation, replicasToHint, null);
     }
@@ -1042,7 +1040,7 @@ public class StorageProxy implements StorageProxyMBean
     {
         for (WriteResponseHandlerWrapper wrapper : wrappers)
         {
-            Replicas.assertFull(wrapper.handler.replicaLayout.all());
+            Replicas.temporaryAssertFull(wrapper.handler.replicaLayout.all());  // TODO: CASSANDRA-14549
             ReplicaLayout.ForToken replicas = wrapper.handler.replicaLayout.withSelected(wrapper.handler.replicaLayout.all());
 
             try
@@ -1061,7 +1059,7 @@ public class StorageProxy implements StorageProxyMBean
     {
         for (WriteResponseHandlerWrapper wrapper : wrappers)
         {
-            Replicas.assertFull(wrapper.handler.replicaLayout.all());
+            Replicas.temporaryAssertFull(wrapper.handler.replicaLayout.all()); // TODO: CASSANDRA-14549
             sendToHintedReplicas(wrapper.mutation, wrapper.handler.replicaLayout.all(), wrapper.handler, localDataCenter, stage);
         }
 
@@ -1352,8 +1350,8 @@ public class StorageProxy implements StorageProxyMBean
             messageIds[idIdx++] = id;
             logger.trace("Adding FWD message to {}@{}", id, destination);
         }
-        // TODO: test non-local DCs
-        Replicas.assertFull(targets);
+
+        Replicas.temporaryAssertFull(targets);
         message = message.withParameter(ParameterType.FORWARD_TO.FORWARD_TO, new ForwardToContainer(targets.endpoints(), messageIds));
         // send the combined message + forward headers
         int id = MessagingService.instance().sendWriteRR(message, target, handler, true);
@@ -2397,30 +2395,28 @@ public class StorageProxy implements StorageProxyMBean
 
     public static boolean shouldHint(Replica replica)
     {
-        if (DatabaseDescriptor.hintedHandoffEnabled())
-        {
-            Set<String> disabledDCs = DatabaseDescriptor.hintedHandoffDisabledDCs();
-            if (!disabledDCs.isEmpty())
-            {
-                final String dc = DatabaseDescriptor.getEndpointSnitch().getDatacenter(replica);
-                if (disabledDCs.contains(dc))
-                {
-                    Tracing.trace("Not hinting {} since its data center {} has been disabled {}", replica, dc, disabledDCs);
-                    return false;
-                }
-            }
-            boolean hintWindowExpired = Gossiper.instance.getEndpointDowntime(replica.endpoint()) > DatabaseDescriptor.getMaxHintWindow();
-            if (hintWindowExpired)
-            {
-                HintsService.instance.metrics.incrPastWindow(replica.endpoint());
-                Tracing.trace("Not hinting {} which has been down {} ms", replica, Gossiper.instance.getEndpointDowntime(replica.endpoint()));
-            }
-            return !hintWindowExpired;
-        }
-        else
-        {
+        if (!DatabaseDescriptor.hintedHandoffEnabled())
             return false;
+        if (replica.isTransient() || replica.isLocal())
+            return false;
+
+        Set<String> disabledDCs = DatabaseDescriptor.hintedHandoffDisabledDCs();
+        if (!disabledDCs.isEmpty())
+        {
+            final String dc = DatabaseDescriptor.getEndpointSnitch().getDatacenter(replica);
+            if (disabledDCs.contains(dc))
+            {
+                Tracing.trace("Not hinting {} since its data center {} has been disabled {}", replica, dc, disabledDCs);
+                return false;
+            }
         }
+        boolean hintWindowExpired = Gossiper.instance.getEndpointDowntime(replica.endpoint()) > DatabaseDescriptor.getMaxHintWindow();
+        if (hintWindowExpired)
+        {
+            HintsService.instance.metrics.incrPastWindow(replica.endpoint());
+            Tracing.trace("Not hinting {} which has been down {} ms", replica, Gossiper.instance.getEndpointDowntime(replica.endpoint()));
+        }
+        return !hintWindowExpired;
     }
 
     /**
@@ -2677,8 +2673,7 @@ public class StorageProxy implements StorageProxyMBean
                                           EndpointsForToken targets,
                                           AbstractWriteResponseHandler<IMutation> responseHandler)
     {
-        // TODO: test hints
-        Replicas.assertFull(targets);
+        Replicas.assertFull(targets); // hints should not be written for transient replicas
         HintRunnable runnable = new HintRunnable(targets)
         {
             public void runMayThrow()

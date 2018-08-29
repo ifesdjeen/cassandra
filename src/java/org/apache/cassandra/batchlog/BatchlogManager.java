@@ -459,10 +459,11 @@ public class BatchlogManager implements BatchlogManagerMBean
             Token tk = mutation.key().getToken();
 
             EndpointsForToken allReplicas = StorageService.instance.getNaturalAndPendingReplicasForToken(ks, tk);
+            Replicas.temporaryAssertFull(allReplicas); // TODO in CASSANDRA-14549
+
             EndpointsForToken.Builder liveReplicasBuilder = EndpointsForToken.builder(tk);
             for (Replica replica : allReplicas)
             {
-                Replicas.assertFull(replica);
                 if (replica.isLocal())
                 {
                     mutation.apply();
@@ -483,7 +484,7 @@ public class BatchlogManager implements BatchlogManagerMBean
             if (liveReplicas.isEmpty())
                 return null;
 
-            Replicas.assertFull(liveReplicas);
+            Replicas.temporaryAssertFull(liveReplicas);
             ReplayWriteResponseHandler<Mutation> handler = new ReplayWriteResponseHandler<>(keyspace, liveReplicas, System.nanoTime());
             MessageOut<Mutation> message = mutation.createMessage();
             for (Replica replica : liveReplicas)

@@ -5466,8 +5466,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                     {
                         Range<Token> range = entry.getKey();
                         EndpointsForRange replicas = entry.getValue();
-                        // TODO: test bulk load
-                        Replicas.assertFull(replicas);
+                        Replicas.temporaryAssertFull(replicas);
                         for (InetAddressAndPort endpoint : replicas.endpoints())
                             addRangeForEndpoint(range, endpoint);
                     }
