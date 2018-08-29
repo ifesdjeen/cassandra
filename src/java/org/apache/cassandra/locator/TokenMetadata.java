@@ -88,6 +88,7 @@ public class TokenMetadata
     // (don't need to record Token here since it's still part of tokenToEndpointMap until it's done leaving)
     private final Set<InetAddressAndPort> leavingEndpoints = new HashSet<>();
     // this is a cache of the calculation from {tokenToEndpointMap, bootstrapTokens, leavingEndpoints}
+    // NOTE: this may contain ranges that conflict with the those implied by sortedTokens when a range is changing its transient status
     private final ConcurrentMap<String, PendingRangeMaps> pendingRanges = new ConcurrentHashMap<String, PendingRangeMaps>();
 
     // nodes which are migrating to the new tokens in the ring
@@ -921,24 +922,26 @@ public class TokenMetadata
                 moveAffectedReplicas.add(replica);
             }
 
-            for(Replica replica : moveAffectedReplicas)
+            for (Replica replica : moveAffectedReplicas)
             {
                 Set<InetAddressAndPort> currentEndpoints = strategy.calculateNaturalReplicas(replica.range().right, metadata).endpoints();
                 Set<InetAddressAndPort> newEndpoints = strategy.calculateNaturalReplicas(replica.range().right, allLeftMetadata).endpoints();
                 Set<InetAddressAndPort> difference = Sets.difference(newEndpoints, currentEndpoints);
-                for(final InetAddressAndPort address : difference)
+                for (final InetAddressAndPort address : difference)
                 {
                     RangesAtEndpoint newReplicas = strategy.getAddressReplicas(allLeftMetadata, address);
                     RangesAtEndpoint oldReplicas = strategy.getAddressReplicas(metadata, address);
 
-                    //Filter out the things that are already replicated exactly the same
-                    //This does mean a transition like full -> transient will be pending
-                    //This is something we would like to refine later
-                    // Filter out the things that were already replicated
-                    newReplicas = newReplicas.filter(r -> !oldReplicas.ranges().contains(r.range()));
-                    for(Replica newReplica : newReplicas)
+                    // Filter out the things that are already replicated
+                    newReplicas = newReplicas.filter(r -> !oldReplicas.contains(r));
+                    for (Replica newReplica : newReplicas)
                     {
-                        for (Replica pendingReplica : newReplica.subtractByRange(oldReplicas))
+                        // for correctness on write, we need to treat ranges that are becoming full differently
+                        // to those that are presently transient; however reads must continue to use the current view
+                        // for ranges that are becoming transient. We could choose to ignore them here, but it's probably
+                        // cleaner to ensure this is dealt with at point of use, where we can make a conscious decision
+                        // about which to use
+                        for (Replica pendingReplica : newReplica.subtractSameReplication(oldReplicas))
                         {
                             newPendingRanges.addPendingRange(pendingReplica.range(), pendingReplica);
                         }
@@ -1221,9 +1224,15 @@ public class TokenMetadata
     /**
      * @deprecated retained for benefit of old tests
      */
-    public EndpointsForToken getWriteEndpoints(Token token, String keyspaceName, EndpointsForToken naturalEndpoints)
+    public EndpointsForToken getWriteEndpoints(Token token, String keyspaceName, EndpointsForToken natural)
     {
-        return Endpoints.concat(naturalEndpoints, pendingEndpointsForToken(token, keyspaceName), Conflict.ALL);
+        EndpointsForToken pending = pendingEndpointsForToken(token, keyspaceName);
+        if (Endpoints.haveConflicts(natural, pending))
+        {
+            natural = Endpoints.resolveConflictsInNatural(natural, pending);
+            pending = Endpoints.resolveConflictsInPending(natural, pending);
+        }
+        return Endpoints.concat(natural, pending);
     }
 
     /** @return an endpoint to token multimap representation of tokenToEndpointMap (a copy) */

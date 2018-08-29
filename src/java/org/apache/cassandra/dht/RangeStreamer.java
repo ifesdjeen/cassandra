@@ -415,7 +415,7 @@ public class RangeStreamer
                                 // include all our filters, to ensure we include a matching node
                                 Optional<Replica> fullReplica = Iterables.<Replica>tryFind(endpointsForRange, and(accept, testSourceFilters)).toJavaUtil();
                                 if (fullReplica.isPresent())
-                                    oldEndpoints = Endpoints.concat(oldEndpoints, EndpointsForRange.of(fullReplica.get()), Conflict.NONE);
+                                    oldEndpoints = Endpoints.concat(oldEndpoints, EndpointsForRange.of(fullReplica.get()));
                                 else
                                     throw new IllegalStateException("Couldn't find any matching sufficient replica out of " + endpointsForRange);
                             }

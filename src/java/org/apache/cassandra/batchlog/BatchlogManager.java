@@ -458,12 +458,10 @@ public class BatchlogManager implements BatchlogManagerMBean
             Keyspace keyspace = Keyspace.open(ks);
             Token tk = mutation.key().getToken();
 
-            // TODO: this should be done through adding "non-avlie" replicas to replica layout
             EndpointsForToken allReplicas = StorageService.instance.getNaturalAndPendingReplicasForToken(ks, tk);
             EndpointsForToken.Builder liveReplicasBuilder = EndpointsForToken.builder(tk);
             for (Replica replica : allReplicas)
             {
-                // TODO: surely we should be filtering out to only transient replicas, not asserting?
                 Replicas.assertFull(replica);
                 if (replica.isLocal())
                 {

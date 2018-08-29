@@ -2726,7 +2726,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
      * Finds living endpoints responsible for the given ranges
      *
      * @param keyspaceName the keyspace ranges belong to
-     * @param newReplicas the ranges to find sources for
+     * @param leavingReplicas the ranges to find sources for
      * @return multimap of addresses to ranges the address is responsible for
      */
     private Multimap<InetAddressAndPort, FetchReplica> getNewSourceReplicas(String keyspaceName, Set<LeavingReplica> leavingReplicas)
@@ -3983,7 +3983,12 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         // TODO: race condition to fetch these. impliciations??
         EndpointsForToken natural = getNaturalReplicasForToken(keyspaceName, token);
         EndpointsForToken pending = tokenMetadata.pendingEndpointsForToken(token, keyspaceName);
-        return Endpoints.concat(natural, pending, Conflict.ALL);
+        if (Endpoints.haveConflicts(natural, pending))
+        {
+            natural = Endpoints.resolveConflictsInNatural(natural, pending);
+            pending = Endpoints.resolveConflictsInPending(natural, pending);
+        }
+        return Endpoints.concat(natural, pending);
     }
 
     /**
@@ -4142,6 +4147,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                                                                     + keyspaceName + " (RF = " + rf + ", N = " + numNodes + ")."
                                                                     + " Perform a forceful decommission to ignore.");
                     }
+                    // TODO: do we care about fixing transient/full self-movements here? probably
                     if (tokenMetadata.getPendingRanges(keyspaceName, FBUtilities.getBroadcastAddressAndPort()).size() > 0)
                         throw new UnsupportedOperationException("data is currently moving to this node; unable to leave the ring");
                 }
@@ -4318,6 +4324,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         // checking if data is moving to this node
         for (String keyspaceName : keyspacesToProcess)
         {
+            // TODO: do we care about fixing transient/full self-movements here?
             if (tokenMetadata.getPendingRanges(keyspaceName, localAddress).size() > 0)
                 throw new UnsupportedOperationException("data is currently moving to this node; unable to leave the ring");
         }

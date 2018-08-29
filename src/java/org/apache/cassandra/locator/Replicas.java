@@ -43,7 +43,6 @@ public class Replicas
         return filterOnEndpoints(replicas, e -> !e.equals(local));
     }
 
-
     public static <C extends ReplicaCollection<? extends C>> C subtractEndpoints(C subtractFrom, Set<InetAddressAndPort> subtract)
     {
         return Replicas.filterOnEndpoints(subtractFrom, e -> !subtract.contains(e));

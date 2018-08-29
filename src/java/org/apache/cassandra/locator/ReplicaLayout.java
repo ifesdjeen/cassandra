@@ -35,7 +35,6 @@ import org.apache.cassandra.db.PartitionPosition;
 import org.apache.cassandra.dht.AbstractBounds;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.exceptions.UnavailableException;
-import org.apache.cassandra.locator.ReplicaCollection.Mutable.Conflict;
 import org.apache.cassandra.net.IAsyncCallback;
 import org.apache.cassandra.service.StorageProxy;
 import org.apache.cassandra.service.StorageService;
@@ -43,9 +42,22 @@ import org.apache.cassandra.service.reads.AlwaysSpeculativeRetryPolicy;
 import org.apache.cassandra.service.reads.SpeculativeRetryPolicy;
 import org.apache.cassandra.utils.FBUtilities;
 
+/**
+ * Encapsulates knowledge about the ring necessary for performing a specific operation, with static accessors
+ * for building the relevant layout.
+ *
+ * Constitutes:
+ *  - the 'natural' replicas replicating the range or token relevant for the operation
+ *  - if for performing a write, any 'pending' replicas that are taking ownership of the range, and must receive updates
+ *  - the 'selected' replicas, those that should be targeted for any operation
+ *  - 'all' replicas represents natural+pending
+ *
+ * @param <E> the type of Endpoints this ReplayLayout holds (either EndpointsForToken or EndpointsForRange)
+ * @param <L> the type of itself, including its type parameters, for return type of modifying methods
+ */
 public abstract class ReplicaLayout<E extends Endpoints<E>, L extends ReplicaLayout<E, L>>
 {
-    protected volatile E all;
+    private volatile E all;
     protected final E natural;
     protected final E pending;
     protected final E selected;
@@ -59,12 +71,14 @@ public abstract class ReplicaLayout<E extends Endpoints<E>, L extends ReplicaLay
     }
     private ReplicaLayout(Keyspace keyspace, ConsistencyLevel consistencyLevel, E natural, E pending, E selected, E all)
     {
-        if (selected == null) throw new RuntimeException();
+        assert selected != null;
+        assert pending == null || !Endpoints.haveConflicts(natural, pending);
         this.keyspace = keyspace;
         this.consistencyLevel = consistencyLevel;
         this.natural = natural;
         this.pending = pending;
         this.selected = selected;
+        // if we logically have no pending endpoints (they are null), then 'all' our endpoints are natural
         if (all == null && pending == null)
             all = natural;
         this.all = all;
@@ -84,7 +98,7 @@ public abstract class ReplicaLayout<E extends Endpoints<E>, L extends ReplicaLay
     {
         E result = all;
         if (result == null)
-            all = result = Endpoints.concat(natural, pending, Conflict.ALL);
+            all = result = Endpoints.concat(natural, pending);
         return result;
     }
 
@@ -93,6 +107,10 @@ public abstract class ReplicaLayout<E extends Endpoints<E>, L extends ReplicaLay
         return selected;
     }
 
+    /**
+     * @return the pending replicas - will be null for read layouts
+     * TODO: ideally we would enforce at compile time that read layouts have no pendingReplicas to access
+     */
     public E pendingReplicas()
     {
         return pending;
@@ -257,6 +275,11 @@ public abstract class ReplicaLayout<E extends Endpoints<E>, L extends ReplicaLay
     {
         EndpointsForToken natural = StorageService.getNaturalReplicasForToken(keyspace.getName(), token);
         EndpointsForToken pending = StorageService.instance.getTokenMetadata().pendingEndpointsForToken(token, keyspace.getName());
+        if (Endpoints.haveConflicts(natural, pending))
+        {
+            natural = Endpoints.resolveConflictsInNatural(natural, pending);
+            pending = Endpoints.resolveConflictsInPending(natural, pending);
+        }
 
         if (!keyspace.getReplicationStrategy().hasTransientReplicas())
         {
@@ -271,6 +294,12 @@ public abstract class ReplicaLayout<E extends Endpoints<E>, L extends ReplicaLay
         Token tk = key.getToken();
         EndpointsForToken natural = StorageService.getNaturalReplicasForToken(keyspace.getName(), tk);
         EndpointsForToken pending = StorageService.instance.getTokenMetadata().pendingEndpointsForToken(tk, keyspace.getName());
+        if (Endpoints.haveConflicts(natural, pending))
+        {
+            natural = Endpoints.resolveConflictsInNatural(natural, pending);
+            pending = Endpoints.resolveConflictsInPending(natural, pending);
+        }
+
         // TODO: test LWTs
         Replicas.assertFull(natural);
         Replicas.assertFull(pending);
@@ -284,10 +313,11 @@ public abstract class ReplicaLayout<E extends Endpoints<E>, L extends ReplicaLay
             natural = natural.filter(isLocalDc);
             pending = pending.filter(isLocalDc);
         }
+
         int participants = pending.size() + natural.size();
         int requiredParticipants = participants / 2 + 1; // See CASSANDRA-8346, CASSANDRA-833
 
-        EndpointsForToken all = Endpoints.concat(natural, pending, Conflict.ALL);
+        EndpointsForToken all = Endpoints.concat(natural, pending);
         EndpointsForToken selected = all.filter(IAsyncCallback.isReplicaAlive);
         if (selected.size() < requiredParticipants)
             throw new UnavailableException(consistencyForPaxos, requiredParticipants, selected.size());
@@ -311,7 +341,7 @@ public abstract class ReplicaLayout<E extends Endpoints<E>, L extends ReplicaLay
     @VisibleForTesting
     public static ForToken forWrite(Keyspace keyspace, ConsistencyLevel consistencyLevel, Token token, int blockFor, EndpointsForToken natural, EndpointsForToken pending, Predicate<InetAddressAndPort> livePredicate) throws UnavailableException
     {
-        EndpointsForToken all = Endpoints.concat(natural, pending, Conflict.ALL);
+        EndpointsForToken all = Endpoints.concat(natural, pending);
         EndpointsForToken selected = all
                 .select()
                 .add(r -> r.isFull() && livePredicate.test(r.endpoint()))
