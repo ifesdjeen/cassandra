@@ -25,7 +25,6 @@ import org.apache.cassandra.locator.ReplicaLayout;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.apache.cassandra.locator.Replica;
 import org.apache.cassandra.net.MessageIn;
 import org.apache.cassandra.db.WriteType;
 

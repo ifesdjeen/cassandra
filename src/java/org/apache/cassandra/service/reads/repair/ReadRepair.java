@@ -38,6 +38,11 @@ public interface ReadRepair<E extends Endpoints<E>, L extends ReplicaLayout<E, L
         <E extends Endpoints<E>, L extends ReplicaLayout<E, L>> ReadRepair<E, L> create(ReadCommand command, L replicaLayout, long queryStartNanoTime);
     }
 
+    static <E extends Endpoints<E>, L extends ReplicaLayout<E, L>> ReadRepair<E, L> create(ReadCommand command, L replicaPlan, long queryStartNanoTime)
+    {
+        return command.metadata().params.readRepair.create(command, replicaPlan, queryStartNanoTime);
+    }
+
     /**
      * Used by DataResolver to generate corrections as the partition iterator is consumed
      */

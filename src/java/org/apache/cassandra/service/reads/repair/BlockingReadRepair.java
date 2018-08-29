@@ -50,7 +50,7 @@ public class BlockingReadRepair<E extends Endpoints<E>, L extends ReplicaLayout<
     protected final Queue<BlockingPartitionRepair> repairs = new ConcurrentLinkedQueue<>();
     private final int blockFor;
 
-    public BlockingReadRepair(ReadCommand command, L replicaLayout, long queryStartNanoTime)
+    BlockingReadRepair(ReadCommand command, L replicaLayout, long queryStartNanoTime)
     {
         super(command, replicaLayout, queryStartNanoTime);
         this.blockFor = replicaLayout.consistencyLevel().blockFor(cfs.keyspace);

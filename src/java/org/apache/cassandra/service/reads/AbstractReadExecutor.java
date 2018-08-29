@@ -76,7 +76,7 @@ public abstract class AbstractReadExecutor
     {
         this.command = command;
         this.replicaLayout = replicaLayout;
-        this.readRepair = new BlockingReadRepair<>(command, replicaLayout, queryStartNanoTime);
+        this.readRepair = ReadRepair.create(command, replicaLayout, queryStartNanoTime);
         this.digestResolver = new DigestResolver<>(command, replicaLayout, readRepair, queryStartNanoTime);
         this.handler = new ReadCallback<>(digestResolver, replicaLayout.consistencyLevel().blockFor(replicaLayout.keyspace()), command, replicaLayout, queryStartNanoTime);
         this.cfs = cfs;

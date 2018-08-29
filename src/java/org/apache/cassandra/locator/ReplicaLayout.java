@@ -35,6 +35,7 @@ import org.apache.cassandra.db.PartitionPosition;
 import org.apache.cassandra.dht.AbstractBounds;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.exceptions.UnavailableException;
+import org.apache.cassandra.gms.FailureDetector;
 import org.apache.cassandra.net.IAsyncCallback;
 import org.apache.cassandra.service.StorageProxy;
 import org.apache.cassandra.service.StorageService;
@@ -241,7 +242,7 @@ public abstract class ReplicaLayout<E extends Endpoints<E>, L extends ReplicaLay
     public static ForToken forCounterWrite(Keyspace keyspace, Token token, Replica replica)
     {
         EndpointsForToken replicas = EndpointsForToken.of(token, replica);
-        return ReplicaLayout.forWrite(keyspace, ConsistencyLevel.ONE, token, replicas, EndpointsForToken.empty(token), replicas);
+        return ReplicaLayout.forWrite(keyspace, ConsistencyLevel.ONE, token, replicas, EndpointsForToken.empty(token));
     }
 
     public static ForToken forBatchlogWrite(Keyspace keyspace, Collection<InetAddressAndPort> endpoints) throws UnavailableException
@@ -250,20 +251,24 @@ public abstract class ReplicaLayout<E extends Endpoints<E>, L extends ReplicaLay
         Token token = DatabaseDescriptor.getPartitioner().getMinimumToken();
         EndpointsForToken natural = EndpointsForToken.copyOf(token, SystemReplicas.getSystemReplicas(endpoints));
         EndpointsForToken pending = EndpointsForToken.empty(token);
+        ConsistencyLevel consistencyLevel = natural.size() == 1 ? ConsistencyLevel.ONE : ConsistencyLevel.TWO;
 
-        return new ForToken(keyspace, ConsistencyLevel.ONE, token, natural, pending, natural);
+        return forWrite(keyspace, consistencyLevel, token, natural, pending);
     }
 
-    @VisibleForTesting
-    public static ForToken forWrite(Keyspace keyspace, ConsistencyLevel consistencyLevel, Token token, EndpointsForToken natural, EndpointsForToken pending, EndpointsForToken selected) throws UnavailableException
+    public static ForToken forWrite(Keyspace keyspace, ConsistencyLevel consistencyLevel, Token token, EndpointsForToken natural, EndpointsForToken pending) throws UnavailableException
     {
-        return new ForToken(keyspace, consistencyLevel, token, natural, pending, selected);
+        return forWrite(keyspace, consistencyLevel, token, natural, pending, FailureDetector.instance::isAlive);
     }
 
     public static ForToken forWrite(Keyspace keyspace, ConsistencyLevel consistencyLevel, Token token, Predicate<InetAddressAndPort> isAlive) throws UnavailableException
     {
         EndpointsForToken natural = StorageService.getNaturalReplicasForToken(keyspace.getName(), token);
         EndpointsForToken pending = StorageService.instance.getTokenMetadata().pendingEndpointsForToken(token, keyspace.getName());
+        return forWrite(keyspace, consistencyLevel, token, natural, pending, isAlive);
+    }
+    public static ForToken forWrite(Keyspace keyspace, ConsistencyLevel consistencyLevel, Token token, EndpointsForToken natural, EndpointsForToken pending, Predicate<InetAddressAndPort> isAlive) throws UnavailableException
+    {
         if (Endpoints.haveConflicts(natural, pending))
         {
             natural = Endpoints.resolveConflictsInNatural(natural, pending);

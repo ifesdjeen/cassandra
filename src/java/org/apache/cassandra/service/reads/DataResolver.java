@@ -82,9 +82,10 @@ public class DataResolver<E extends Endpoints<E>, L extends ReplicaLayout<E, L>>
         Collection<MessageIn<ReadResponse>> messages = responses.snapshot();
         assert !any(messages, msg -> msg.payload.isDigestResponse());
 
-        E replicas = replicaLayout.selected().keep(transform(messages, msg -> msg.from));
+        E replicas = replicaLayout.all().keep(transform(messages, msg -> msg.from));
         List<UnfilteredPartitionIterator> iters = new ArrayList<>(
                 Collections2.transform(messages, msg -> msg.payload.makeIterator(command)));
+        assert replicas.size() == iters.size();
 
         /*
          * Even though every response, individually, will honor the limit, it is possible that we will, after the merge,

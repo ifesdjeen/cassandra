@@ -533,16 +533,16 @@ public class StorageProxy implements StorageProxyMBean
         Token tk = proposal.update.partitionKey().getToken();
 
         AbstractWriteResponseHandler<Commit> responseHandler = null;
-        ReplicaLayout.ForToken replicareplicaLayout = ReplicaLayout.forWrite(keyspace, consistencyLevel, tk, FailureDetector.instance::isAlive);
+        ReplicaLayout.ForToken replicaLayout = ReplicaLayout.forWrite(keyspace, consistencyLevel, tk, FailureDetector.instance::isAlive);
         if (shouldBlock)
         {
             AbstractReplicationStrategy rs = keyspace.getReplicationStrategy();
-            responseHandler = rs.getWriteResponseHandler(replicareplicaLayout, null, WriteType.SIMPLE, queryStartNanoTime);
+            responseHandler = rs.getWriteResponseHandler(replicaLayout, null, WriteType.SIMPLE, queryStartNanoTime);
             responseHandler.setSupportsBackPressure(false);
         }
 
         MessageOut<Commit> message = new MessageOut<Commit>(MessagingService.Verb.PAXOS_COMMIT, proposal, Commit.serializer);
-        for (Replica replica : replicareplicaLayout.all())
+        for (Replica replica : replicaLayout.all())
         {
             InetAddressAndPort destination = replica.endpoint();
             checkHintOverload(replica);
@@ -1062,9 +1062,7 @@ public class StorageProxy implements StorageProxyMBean
         for (WriteResponseHandlerWrapper wrapper : wrappers)
         {
             Replicas.assertFull(wrapper.handler.replicaLayout.all());
-            ReplicaLayout.ForToken replicas = wrapper.handler.replicaLayout.withSelected(wrapper.handler.replicaLayout.all());
-
-            sendToHintedReplicas(wrapper.mutation, replicas.selected(), wrapper.handler, localDataCenter, stage);
+            sendToHintedReplicas(wrapper.mutation, wrapper.handler.replicaLayout.all(), wrapper.handler, localDataCenter, stage);
         }
 
 
@@ -1145,7 +1143,7 @@ public class StorageProxy implements StorageProxyMBean
         Keyspace keyspace = Keyspace.open(mutation.getKeyspaceName());
         AbstractReplicationStrategy rs = keyspace.getReplicationStrategy();
         Token tk = mutation.key().getToken();
-        ReplicaLayout.ForToken replicaLayout = ReplicaLayout.forWrite(keyspace, consistencyLevel, tk, naturalEndpoints, pendingEndpoints, naturalEndpoints);
+        ReplicaLayout.ForToken replicaLayout = ReplicaLayout.forWrite(keyspace, consistencyLevel, tk, naturalEndpoints, pendingEndpoints);
 
         AbstractWriteResponseHandler<IMutation> writeHandler = rs.getWriteResponseHandler(replicaLayout, () -> {
             long delay = Math.max(0, System.currentTimeMillis() - baseComplete.get());
@@ -2124,7 +2122,7 @@ public class StorageProxy implements StorageProxyMBean
         private SingleRangeResponse query(ReplicaLayout.ForRange replicaLayout, boolean isFirst)
         {
             PartitionRangeReadCommand rangeCommand = command.forSubRange(replicaLayout.range, isFirst);
-            ReadRepair<EndpointsForRange, ReplicaLayout.ForRange> readRepair = new BlockingReadRepair<>(command, replicaLayout, queryStartNanoTime);
+            ReadRepair<EndpointsForRange, ReplicaLayout.ForRange> readRepair = ReadRepair.create(command, replicaLayout, queryStartNanoTime);
             DataResolver<EndpointsForRange, ReplicaLayout.ForRange> resolver = new DataResolver<>(rangeCommand, replicaLayout, readRepair, queryStartNanoTime);
             Keyspace keyspace = Keyspace.open(command.metadata().keyspace);
 

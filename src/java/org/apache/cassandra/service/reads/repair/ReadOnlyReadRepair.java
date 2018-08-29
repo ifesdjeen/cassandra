@@ -35,7 +35,7 @@ import org.apache.cassandra.metrics.ReadRepairMetrics;
  */
 public class ReadOnlyReadRepair<E extends Endpoints<E>, L extends ReplicaLayout<E, L>> extends AbstractReadRepair<E, L>
 {
-    public ReadOnlyReadRepair(ReadCommand command, L replicaLayout, long queryStartNanoTime)
+    ReadOnlyReadRepair(ReadCommand command, L replicaLayout, long queryStartNanoTime)
     {
         super(command, replicaLayout, queryStartNanoTime);
     }
