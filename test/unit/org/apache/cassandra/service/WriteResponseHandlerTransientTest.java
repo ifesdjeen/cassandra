@@ -24,6 +24,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.function.Predicate;
 
+import com.google.common.base.Predicates;
 import com.google.common.collect.Sets;
 
 import org.apache.cassandra.dht.Murmur3Partitioner;
@@ -146,7 +147,7 @@ public class WriteResponseHandlerTransientTest
     {
         EndpointsForToken natural = EndpointsForToken.of(dummy.getToken(), full(EP1), full(EP2), trans(EP3));
         EndpointsForToken pending = EndpointsForToken.of(dummy.getToken(),full(EP4), full(EP5), trans(EP6));
-        ReplicaLayout.ForToken replicaLayout = ReplicaLayout.forWrite(ks, ConsistencyLevel.QUORUM, dummy.getToken(), natural, pending);
+        ReplicaLayout.ForToken replicaLayout = ReplicaLayout.forWriteWithDownNodes(ks, ConsistencyLevel.QUORUM, dummy.getToken(), natural, pending);
 
         Assert.assertEquals(EndpointsForRange.of(full(EP4), full(EP5), trans(EP6)), replicaLayout.pending());
     }

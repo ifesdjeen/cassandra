@@ -25,6 +25,7 @@ import java.util.Set;
 import java.util.function.Predicate;
 
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.base.Predicates;
 import com.google.common.collect.Iterables;
 
 import org.apache.cassandra.config.DatabaseDescriptor;
@@ -70,6 +71,7 @@ public abstract class ReplicaLayout<E extends Endpoints<E>, L extends ReplicaLay
     {
         this(keyspace, consistencyLevel, natural, pending, selected, null);
     }
+
     private ReplicaLayout(Keyspace keyspace, ConsistencyLevel consistencyLevel, E natural, E pending, E selected, E all)
     {
         assert selected != null;
@@ -148,9 +150,8 @@ public abstract class ReplicaLayout<E extends Endpoints<E>, L extends ReplicaLay
             String localDC = DatabaseDescriptor.getLocalDataCenter();
 
             more = natural.filter(replica -> !selected.contains(replica) &&
-                                             snitch.getDatacenter(replica).equals(localDC));
-        }
-        else
+                    snitch.getDatacenter(replica).equals(localDC));
+        } else
         {
             more = natural.filter(replica -> !selected.contains(replica));
         }
@@ -193,6 +194,7 @@ public abstract class ReplicaLayout<E extends Endpoints<E>, L extends ReplicaLay
             super(keyspace, consistencyLevel, natural, pending, selected);
             this.token = token;
         }
+
         public ForToken(Keyspace keyspace, ConsistencyLevel consistencyLevel, Token token, EndpointsForToken natural, EndpointsForToken pending, EndpointsForToken selected, EndpointsForToken all)
         {
             super(keyspace, consistencyLevel, natural, pending, selected, all);
@@ -201,7 +203,7 @@ public abstract class ReplicaLayout<E extends Endpoints<E>, L extends ReplicaLay
 
         public ForToken withSelected(EndpointsForToken newSelected)
         {
-            return new ForToken(keyspace, consistencyLevel,  token, natural, pending, newSelected);
+            return new ForToken(keyspace, consistencyLevel, token, natural, pending, newSelected);
         }
 
         @Override
@@ -230,7 +232,7 @@ public abstract class ReplicaLayout<E extends Endpoints<E>, L extends ReplicaLay
     public static ForToken forSingleReplica(Keyspace keyspace, Token token, Replica replica)
     {
         EndpointsForToken singleReplica = EndpointsForToken.of(token, replica);
-        return new ForToken(keyspace, ConsistencyLevel.ONE, token, singleReplica, EndpointsForToken.empty(token), singleReplica);
+        return new ForToken(keyspace, ConsistencyLevel.ONE, token, singleReplica, EndpointsForToken.empty(token), singleReplica, singleReplica);
     }
 
     public static ForRange forSingleReplica(Keyspace keyspace, AbstractBounds<PartitionPosition> range, Replica replica)
@@ -241,8 +243,7 @@ public abstract class ReplicaLayout<E extends Endpoints<E>, L extends ReplicaLay
 
     public static ForToken forCounterWrite(Keyspace keyspace, Token token, Replica replica)
     {
-        EndpointsForToken replicas = EndpointsForToken.of(token, replica);
-        return ReplicaLayout.forWrite(keyspace, ConsistencyLevel.ONE, token, replicas, EndpointsForToken.empty(token));
+        return forSingleReplica(keyspace, token, replica);
     }
 
     public static ForToken forBatchlogWrite(Keyspace keyspace, Collection<InetAddressAndPort> endpoints) throws UnavailableException
@@ -253,12 +254,12 @@ public abstract class ReplicaLayout<E extends Endpoints<E>, L extends ReplicaLay
         EndpointsForToken pending = EndpointsForToken.empty(token);
         ConsistencyLevel consistencyLevel = natural.size() == 1 ? ConsistencyLevel.ONE : ConsistencyLevel.TWO;
 
-        return forWrite(keyspace, consistencyLevel, token, natural, pending);
+        return forWriteWithDownNodes(keyspace, consistencyLevel, token, natural, pending);
     }
 
-    public static ForToken forWrite(Keyspace keyspace, ConsistencyLevel consistencyLevel, Token token, EndpointsForToken natural, EndpointsForToken pending) throws UnavailableException
+    public static ForToken forWriteWithDownNodes(Keyspace keyspace, ConsistencyLevel consistencyLevel, Token token) throws UnavailableException
     {
-        return forWrite(keyspace, consistencyLevel, token, natural, pending, FailureDetector.instance::isAlive);
+        return forWrite(keyspace, consistencyLevel, token, Predicates.alwaysTrue());
     }
 
     public static ForToken forWrite(Keyspace keyspace, ConsistencyLevel consistencyLevel, Token token, Predicate<InetAddressAndPort> isAlive) throws UnavailableException
@@ -267,6 +268,12 @@ public abstract class ReplicaLayout<E extends Endpoints<E>, L extends ReplicaLay
         EndpointsForToken pending = StorageService.instance.getTokenMetadata().pendingEndpointsForToken(token, keyspace.getName());
         return forWrite(keyspace, consistencyLevel, token, natural, pending, isAlive);
     }
+
+    public static ForToken forWriteWithDownNodes(Keyspace keyspace, ConsistencyLevel consistencyLevel, Token token, EndpointsForToken natural, EndpointsForToken pending) throws UnavailableException
+    {
+        return forWrite(keyspace, consistencyLevel, token, natural, pending, Predicates.alwaysTrue());
+    }
+
     public static ForToken forWrite(Keyspace keyspace, ConsistencyLevel consistencyLevel, Token token, EndpointsForToken natural, EndpointsForToken pending, Predicate<InetAddressAndPort> isAlive) throws UnavailableException
     {
         if (Endpoints.haveConflicts(natural, pending))

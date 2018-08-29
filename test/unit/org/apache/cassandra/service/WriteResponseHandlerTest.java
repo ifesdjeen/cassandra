@@ -24,6 +24,7 @@ import java.net.UnknownHostException;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
+import com.google.common.base.Predicates;
 import org.apache.cassandra.dht.Murmur3Partitioner;
 import org.apache.cassandra.locator.EndpointsForToken;
 import org.apache.cassandra.locator.ReplicaLayout;
@@ -235,7 +236,7 @@ public class WriteResponseHandlerTest
 
     private static AbstractWriteResponseHandler createWriteResponseHandler(ConsistencyLevel cl, ConsistencyLevel ideal, long queryStartTime)
     {
-        return ks.getReplicationStrategy().getWriteResponseHandler(ReplicaLayout.forWrite(ks, cl, targets.token(), targets, pending),
+        return ks.getReplicationStrategy().getWriteResponseHandler(ReplicaLayout.forWriteWithDownNodes(ks, cl, targets.token(), targets, pending),
                                                                    null, WriteType.SIMPLE, queryStartTime, ideal);
     }
 
