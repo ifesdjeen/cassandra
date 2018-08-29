@@ -24,7 +24,6 @@ import java.util.function.Consumer;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
-import com.google.common.collect.Iterables;
 
 import org.apache.cassandra.db.Mutation;
 import org.apache.cassandra.db.ReadCommand;
@@ -209,7 +208,7 @@ public class DigestResolver<E extends Endpoints<E>, L extends ReplicaLayout<E, L
             Preconditions.checkArgument(mutations.containsKey(from));
 
             Mutation mutation = mutations.get(from);
-            for (Replica digestSender: forwardTo.selectedReplicas())
+            for (Replica digestSender: forwardTo.selected())
             {
                 mutations.put(digestSender, mutation);
             }

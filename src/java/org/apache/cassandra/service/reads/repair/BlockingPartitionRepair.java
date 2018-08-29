@@ -63,7 +63,7 @@ public class BlockingPartitionRepair<E extends Endpoints<E>, L extends ReplicaLa
         // here we remove empty repair mutations from the block for total, since
         // we're not sending them mutations
         int blockFor = maxBlockFor;
-        for (Replica participant: replicaLayout.selectedReplicas())
+        for (Replica participant: replicaLayout.selected())
         {
             // remote dcs can sometimes get involved in dc-local reads. We want to repair
             // them if they do, but they shouldn't interfere with blocking the client read.
@@ -194,7 +194,7 @@ public class BlockingPartitionRepair<E extends Endpoints<E>, L extends ReplicaLa
             return;
 
         L newCandidates = replicaLayout.forNaturalUncontacted();
-        if (newCandidates.selectedReplicas().isEmpty())
+        if (newCandidates.selected().isEmpty())
             return;
 
         PartitionUpdate update = mergeUnackedUpdates();
@@ -207,7 +207,7 @@ public class BlockingPartitionRepair<E extends Endpoints<E>, L extends ReplicaLa
 
         Mutation[] versionedMutations = new Mutation[msgVersionIdx(MessagingService.current_version) + 1];
 
-        for (Replica replica : newCandidates.selectedReplicas())
+        for (Replica replica : newCandidates.selected())
         {
             int versionIdx = msgVersionIdx(MessagingService.instance().getVersion(replica.endpoint()));
 

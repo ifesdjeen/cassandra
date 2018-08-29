@@ -327,7 +327,7 @@ public class ActiveRepairService implements IEndpointStateChangeSubscriber, IFai
         if (rangeSuperSet == null || !replicaSets.containsKey(rangeSuperSet))
             return EndpointsForRange.empty(toRepair);
 
-        EndpointsForRange neighbors = Replicas.filterOutLocalEndpoint(replicaSets.get(rangeSuperSet));
+        EndpointsForRange neighbors = Replicas.withoutSelf(replicaSets.get(rangeSuperSet));
 
         if (dataCenters != null && !dataCenters.isEmpty())
         {

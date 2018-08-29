@@ -148,7 +148,7 @@ public class WriteResponseHandlerTransientTest
         EndpointsForToken pending = EndpointsForToken.of(dummy.getToken(),full(EP4), full(EP5), trans(EP6));
         ReplicaLayout.ForToken replicaLayout = ReplicaLayout.forWrite(ks, ConsistencyLevel.QUORUM, dummy.getToken(), natural, pending, natural);
 
-        Assert.assertEquals(EndpointsForRange.of(full(EP4), full(EP5), trans(EP6)), replicaLayout.pendingReplicas());
+        Assert.assertEquals(EndpointsForRange.of(full(EP4), full(EP5), trans(EP6)), replicaLayout.pending());
     }
 
     private static ReplicaLayout.ForToken expected(EndpointsForToken all, EndpointsForToken selected)
@@ -164,8 +164,8 @@ public class WriteResponseHandlerTransientTest
     private static void assertSpeculationReplicas(ReplicaLayout.ForToken expected, EndpointsForToken replicas, int blockFor, Predicate<InetAddressAndPort> livePredicate)
     {
         ReplicaLayout.ForToken actual = getSpeculationContext(replicas, blockFor, livePredicate);
-        Assert.assertEquals(expected.naturalReplicas(), actual.naturalReplicas());
-        Assert.assertEquals(expected.selectedReplicas(), actual.selectedReplicas());
+        Assert.assertEquals(expected.natural(), actual.natural());
+        Assert.assertEquals(expected.selected(), actual.selected());
     }
 
     private static Predicate<InetAddressAndPort> dead(InetAddressAndPort... endpoints)

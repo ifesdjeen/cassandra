@@ -135,7 +135,7 @@ public abstract class AbstractWriteResponseHandler<T> implements IAsyncCallbackW
     public void setIdealCLResponseHandler(AbstractWriteResponseHandler handler)
     {
         this.idealCLDelegate = handler;
-        idealCLDelegate.responsesAndExpirations = new AtomicInteger(replicaLayout.selectedReplicas().size());
+        idealCLDelegate.responsesAndExpirations = new AtomicInteger(replicaLayout.selected().size());
     }
 
     /**
@@ -194,7 +194,7 @@ public abstract class AbstractWriteResponseHandler<T> implements IAsyncCallbackW
         // During bootstrap, we have to include the pending endpoints or we may fail the consistency level
         // guarantees (see #833)
         // TODO: move block for?
-        return replicaLayout.consistencyLevel().blockFor(replicaLayout.keyspace()) + replicaLayout.pendingReplicas().size();
+        return replicaLayout.consistencyLevel().blockFor(replicaLayout.keyspace()) + replicaLayout.pending().size();
     }
 
     /**
@@ -202,7 +202,7 @@ public abstract class AbstractWriteResponseHandler<T> implements IAsyncCallbackW
      */
     protected int totalEndpoints()
     {
-        return replicaLayout.allReplicas().size();
+        return replicaLayout.all().size();
     }
 
     public ConsistencyLevel consistencyLevel()
@@ -230,8 +230,8 @@ public abstract class AbstractWriteResponseHandler<T> implements IAsyncCallbackW
 
     public void assureSufficientLiveNodes() throws UnavailableException
     {
-        // TODO: this check is rubbish, as it ignores pendingReplicas
-        replicaLayout.consistencyLevel().assureSufficientLiveNodes(replicaLayout.keyspace(), replicaLayout.naturalReplicas().filter(isReplicaAlive));
+        // TODO: this check is rubbish, as it ignores pending
+        replicaLayout.consistencyLevel().assureSufficientLiveNodes(replicaLayout.keyspace(), replicaLayout.natural().filter(isReplicaAlive));
     }
 
     protected void signal()
@@ -294,7 +294,7 @@ public abstract class AbstractWriteResponseHandler<T> implements IAsyncCallbackW
      */
     public void maybeTryAdditionalReplicas(IMutation mutation, StorageProxy.WritePerformer writePerformer, String localDC)
     {
-        if (replicaLayout.allReplicas().size() == replicaLayout.selectedReplicas().size())
+        if (replicaLayout.all().size() == replicaLayout.selected().size())
             return;
 
         long timeout = Long.MAX_VALUE;
@@ -317,7 +317,7 @@ public abstract class AbstractWriteResponseHandler<T> implements IAsyncCallbackW
 
                 writePerformer.apply(mutation, replicaLayout.forNaturalUncontacted(),
                                      (AbstractWriteResponseHandler<IMutation>) this,
-                                     localDC, replicaLayout.consistencyLevel());
+                                     localDC);
             }
         }
         catch (InterruptedException ex)

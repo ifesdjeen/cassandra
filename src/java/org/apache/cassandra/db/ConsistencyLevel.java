@@ -262,7 +262,7 @@ public enum ConsistencyLevel
                 }
                 // Fallthough on purpose for SimpleStrategy
             default:
-                return Iterables.size(liveReplicas) >= blockFor(keyspace);
+                return liveReplicas.size() >= blockFor(keyspace);
         }
     }
 
@@ -310,7 +310,7 @@ public enum ConsistencyLevel
                 }
                 // Fallthough on purpose for SimpleStrategy
             default:
-                int live = Iterables.size(liveReplicas);
+                int live = liveReplicas.size();
                 if (live < blockFor)
                 {
                     if (logger.isTraceEnabled())

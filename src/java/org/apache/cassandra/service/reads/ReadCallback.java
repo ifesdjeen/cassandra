@@ -72,7 +72,7 @@ public class ReadCallback<E extends Endpoints<E>, L extends ReplicaLayout<E, L>>
         this.replicaLayout = replicaLayout;
         this.failureReasonByEndpoint = new ConcurrentHashMap<>();
         // we don't support read repair (or rapid read protection) for range scans yet (CASSANDRA-6897)
-        assert !(command instanceof PartitionRangeReadCommand) || blockfor >= replicaLayout.selectedReplicas().size();
+        assert !(command instanceof PartitionRangeReadCommand) || blockfor >= replicaLayout.selected().size();
 
         if (logger.isTraceEnabled())
             logger.trace("Blockfor is {}; setting up requests to {}", blockfor, this.replicaLayout);
@@ -94,7 +94,7 @@ public class ReadCallback<E extends Endpoints<E>, L extends ReplicaLayout<E, L>>
     public void awaitResults() throws ReadFailureException, ReadTimeoutException
     {
         boolean signaled = await(command.getTimeout(), TimeUnit.MILLISECONDS);
-        boolean failed = failures > 0 && blockfor + failures > replicaLayout.selectedReplicas().size();
+        boolean failed = failures > 0 && blockfor + failures > replicaLayout.selected().size();
         if (signaled && !failed)
             return;
 
@@ -159,7 +159,7 @@ public class ReadCallback<E extends Endpoints<E>, L extends ReplicaLayout<E, L>>
 
     public void assureSufficientLiveNodes() throws UnavailableException
     {
-        replicaLayout.consistencyLevel().assureSufficientLiveNodes(replicaLayout.keyspace(), replicaLayout.selectedReplicas());
+        replicaLayout.consistencyLevel().assureSufficientLiveNodes(replicaLayout.keyspace(), replicaLayout.selected());
     }
 
     public boolean isLatencyForSnitch()
@@ -176,7 +176,7 @@ public class ReadCallback<E extends Endpoints<E>, L extends ReplicaLayout<E, L>>
 
         failureReasonByEndpoint.put(from, failureReason);
 
-        if (blockfor + n > replicaLayout.selectedReplicas().size())
+        if (blockfor + n > replicaLayout.selected().size())
             condition.signalAll();
     }
 }

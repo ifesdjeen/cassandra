@@ -45,7 +45,7 @@ public abstract class ResponseResolver<E extends Endpoints<E>, L extends Replica
         this.command = command;
         this.replicaLayout = replicaLayout;
         this.readRepair = readRepair;
-        this.responses = new Accumulator<>(replicaLayout.allReplicas().size()); // TODO: calculate max possible replicas for the query (e.g. local dc queries won't contact remotes)
+        this.responses = new Accumulator<>(replicaLayout.all().size()); // TODO: calculate max possible replicas for the query (e.g. local dc queries won't contact remotes)
         this.queryStartNanoTime = queryStartNanoTime;
     }
 
@@ -59,7 +59,7 @@ public abstract class ResponseResolver<E extends Endpoints<E>, L extends Replica
         }
         catch (IllegalStateException e)
         {
-            logger.error("Encountered error while trying to preprocess the message {}: %s in command {}, replicas: {}", message, command, readRepair, replicaLayout.consistencyLevel(), replicaLayout.selectedReplicas());
+            logger.error("Encountered error while trying to preprocess the message {}: %s in command {}, replicas: {}", message, command, readRepair, replicaLayout.consistencyLevel(), replicaLayout.selected());
             throw e;
         }
     }

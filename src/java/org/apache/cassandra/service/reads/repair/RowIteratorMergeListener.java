@@ -79,7 +79,7 @@ public class RowIteratorMergeListener implements UnfilteredRowIterators.MergeLis
         this.partitionKey = partitionKey;
         this.columns = columns;
         this.isReversed = isReversed;
-        Endpoints<?> sources = layout.selectedReplicas();
+        Endpoints<?> sources = layout.selected();
         this.sources = new Replica[sources.size()];
         for (int i = 0; i < sources.size(); i++)
             this.sources[i] = sources.get(i);

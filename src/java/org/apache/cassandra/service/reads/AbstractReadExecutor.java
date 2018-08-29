@@ -20,7 +20,6 @@ package org.apache.cassandra.service.reads;
 import java.util.concurrent.TimeUnit;
 
 import com.google.common.base.Preconditions;
-import com.google.common.collect.Iterables;
 
 import org.apache.cassandra.locator.ReplicaLayout;
 
@@ -90,7 +89,7 @@ public abstract class AbstractReadExecutor
         // TODO: we need this when talking with pre-3.0 nodes. So if we preserve the digest format moving forward, we can get rid of this once
         // we stop being compatible with pre-3.0 nodes.
         int digestVersion = MessagingService.current_version;
-        for (Replica replica : replicaLayout.selectedReplicas())
+        for (Replica replica : replicaLayout.selected())
             digestVersion = Math.min(digestVersion, MessagingService.instance().getVersion(replica.endpoint()));
         command.setDigestVersion(digestVersion);
     }
@@ -180,13 +179,13 @@ public abstract class AbstractReadExecutor
 
         // There are simply no extra replicas to speculate.
         // Handle this separately so it can log failed attempts to speculate due to lack of replicas
-        if (consistencyLevel.blockFor(keyspace) == replicaLayout.allReplicas().size())
+        if (consistencyLevel.blockFor(keyspace) == replicaLayout.all().size())
             return new NeverSpeculatingReadExecutor(cfs, command, replicaLayout, queryStartNanoTime, true);
 
         // If CL.ALL, upgrade to AlwaysSpeculating;
         // If We are going to contact every node anyway, ask for 2 full data requests instead of 1, for redundancy
         // (same amount of requests in total, but we turn 1 digest request into a full blown data request)
-        if (replicaLayout.allReplicas().size() == replicaLayout.selectedReplicas().size() || retry.equals(AlwaysSpeculativeRetryPolicy.INSTANCE))
+        if (replicaLayout.all().size() == replicaLayout.selected().size() || retry.equals(AlwaysSpeculativeRetryPolicy.INSTANCE))
         {
             return new AlwaysSpeculatingReadExecutor(cfs, command, replicaLayout, queryStartNanoTime);
         }
@@ -231,9 +230,9 @@ public abstract class AbstractReadExecutor
 
         public void executeAsync()
         {
-            makeDataRequests(replicaLayout().selectedReplicas().subList(0, 1));
-            if (replicaLayout().selectedReplicas().size() > 1)
-                makeDigestRequests(replicaLayout().selectedReplicas().subList(1, replicaLayout().selectedReplicas().size()));
+            makeDataRequests(replicaLayout().selected().subList(0, 1));
+            if (replicaLayout().selected().size() > 1)
+                makeDigestRequests(replicaLayout().selected().subList(1, replicaLayout().selected().size()));
         }
 
         public void maybeTryAdditionalReplicas()
@@ -266,7 +265,7 @@ public abstract class AbstractReadExecutor
 
         public void executeAsync()
         {
-            EndpointsForToken initialReplicas = replicaLayout().selectedReplicas();
+            EndpointsForToken initialReplicas = replicaLayout().selected();
 
             if (handler.blockfor < initialReplicas.size())
             {
@@ -296,7 +295,7 @@ public abstract class AbstractReadExecutor
                 replicaLayout = ReplicaLayout.forSpeculation(replicaLayout);
                 cfs.metric.speculativeRetries.inc();
                 // Could be waiting on the data, or on enough digests.
-                Replica extraReplica = replicaLayout().selectedReplicas().get(replicaLayout().selectedReplicas().size() - 1);
+                Replica extraReplica = replicaLayout().selected().get(replicaLayout().selected().size() - 1);
                 ReadCommand retryCommand = command;
 
                 if (handler.resolver.isDataPresent() && extraReplica.isFull())
@@ -337,9 +336,9 @@ public abstract class AbstractReadExecutor
         @Override
         public void executeAsync()
         {
-            makeDataRequests(replicaLayout().selectedReplicas().subList(0, replicaLayout().selectedReplicas().size() > 1 ? 2 : 1));
-            if (replicaLayout().selectedReplicas().size() > 2)
-                makeDigestRequests(replicaLayout().selectedReplicas().subList(2, replicaLayout().selectedReplicas().size()));
+            makeDataRequests(replicaLayout().selected().subList(0, replicaLayout().selected().size() > 1 ? 2 : 1));
+            if (replicaLayout().selected().size() > 2)
+                makeDigestRequests(replicaLayout().selected().subList(2, replicaLayout().selected().size()));
             cfs.metric.speculativeRetries.inc();
         }
 

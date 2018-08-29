@@ -94,7 +94,7 @@ public abstract class AbstractReadRepair<E extends Endpoints<E>, L extends Repli
 
         digestRepair = new DigestRepair(resolver, readCallback, resultConsumer);
 
-        for (Replica replica : replicaLayout.selectedReplicas())
+        for (Replica replica : replicaLayout.selected())
         {
             Tracing.trace("Enqueuing full data read to {}", replica);
             sendReadCommand(replica.endpoint(), readCallback);
@@ -131,10 +131,10 @@ public abstract class AbstractReadRepair<E extends Endpoints<E>, L extends Repli
         if (shouldSpeculate() && !repair.readCallback.await(cfs.sampleReadLatencyNanos, TimeUnit.NANOSECONDS))
         {
             L uncontacted = replicaLayout.forNaturalUncontacted();
-            if (uncontacted.selectedReplicas().isEmpty())
+            if (uncontacted.selected().isEmpty())
                 return;
 
-            Replica replica = uncontacted.selectedReplicas().iterator().next();
+            Replica replica = uncontacted.selected().iterator().next();
             Tracing.trace("Enqueuing speculative full data read to {}", replica);
             sendReadCommand(replica.endpoint(), repair.readCallback);
             ReadRepairMetrics.speculatedRead.mark();

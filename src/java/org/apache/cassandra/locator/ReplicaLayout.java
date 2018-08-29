@@ -89,12 +89,12 @@ public abstract class ReplicaLayout<E extends Endpoints<E>, L extends ReplicaLay
         return natural.byEndpoint().get(endpoint);
     }
 
-    public E naturalReplicas()
+    public E natural()
     {
         return natural;
     }
 
-    public E allReplicas()
+    public E all()
     {
         E result = all;
         if (result == null)
@@ -102,16 +102,16 @@ public abstract class ReplicaLayout<E extends Endpoints<E>, L extends ReplicaLay
         return result;
     }
 
-    public E selectedReplicas()
+    public E selected()
     {
         return selected;
     }
 
     /**
      * @return the pending replicas - will be null for read layouts
-     * TODO: ideally we would enforce at compile time that read layouts have no pendingReplicas to access
+     * TODO: ideally we would enforce at compile time that read layouts have no pending to access
      */
-    public E pendingReplicas()
+    public E pending()
     {
         return pending;
     }
@@ -127,11 +127,6 @@ public abstract class ReplicaLayout<E extends Endpoints<E>, L extends ReplicaLay
     }
 
     abstract public L withSelected(E replicas);
-
-    public L withSelected(List<Replica> replicas)
-    {
-        return withSelected(selected.snapshot(replicas));
-    }
 
     abstract public L withConsistencyLevel(ConsistencyLevel cl);
 
@@ -213,11 +208,6 @@ public abstract class ReplicaLayout<E extends Endpoints<E>, L extends ReplicaLay
         {
             return new ForToken(keyspace, cl, token, natural, pending, selected);
         }
-
-        public ForToken withoutLocal()
-        {
-            return new ForToken(keyspace, consistencyLevel, token, natural, pending, selected.filter((replica -> !replica.isLocal())));
-        }
     }
 
     public static class ForPaxos extends ForToken
@@ -261,8 +251,7 @@ public abstract class ReplicaLayout<E extends Endpoints<E>, L extends ReplicaLay
         EndpointsForToken natural = EndpointsForToken.copyOf(token, SystemReplicas.getSystemReplicas(endpoints));
         EndpointsForToken pending = EndpointsForToken.empty(token);
 
-        ConsistencyLevel consistencyLevel = natural.size() == 1 ? ConsistencyLevel.ONE : ConsistencyLevel.TWO;
-        return new ForToken(keyspace, consistencyLevel, token, natural, pending, natural);
+        return new ForToken(keyspace, ConsistencyLevel.ONE, token, natural, pending, natural);
     }
 
     @VisibleForTesting
@@ -283,7 +272,8 @@ public abstract class ReplicaLayout<E extends Endpoints<E>, L extends ReplicaLay
 
         if (!keyspace.getReplicationStrategy().hasTransientReplicas())
         {
-            return new ForToken(keyspace, consistencyLevel, token, natural, pending, natural);
+            EndpointsForToken selected = Endpoints.concat(natural, pending).filter(r -> isAlive.test(r.endpoint()));
+            return new ForToken(keyspace, consistencyLevel, token, natural, pending, selected);
         }
 
         return forWrite(keyspace, consistencyLevel, token, consistencyLevel.blockFor(keyspace), natural, pending, isAlive);
@@ -305,7 +295,7 @@ public abstract class ReplicaLayout<E extends Endpoints<E>, L extends ReplicaLay
         Replicas.assertFull(pending);
         if (consistencyForPaxos == ConsistencyLevel.LOCAL_SERIAL)
         {
-            // Restrict naturalReplicas and pendingReplicas to node in the local DC only
+            // Restrict natural and pending to node in the local DC only
             String localDc = DatabaseDescriptor.getEndpointSnitch().getDatacenter(FBUtilities.getBroadcastAddressAndPort());
             IEndpointSnitch snitch = DatabaseDescriptor.getEndpointSnitch();
             Predicate<Replica> isLocalDc = replica -> localDc.equals(snitch.getDatacenter(replica));
@@ -375,13 +365,13 @@ public abstract class ReplicaLayout<E extends Endpoints<E>, L extends ReplicaLay
 
     public static ForToken forSpeculation(ForToken original)
     {
-        EndpointsForToken newSelection = original.allReplicas().subList(0, original.selectedReplicas().size() + 1);
+        EndpointsForToken newSelection = original.all().subList(0, original.selected().size() + 1);
         return new ForToken(original.keyspace, ConsistencyLevel.ALL, original.token, original.natural, original.pending, newSelection);
     }
 
     public String toString()
     {
-        return "ReplicaLayout [ CL: " + consistencyLevel + " keyspace: " + keyspace + " natural: " + natural + " selected: " + selected + " ]";
+        return "ReplicaLayout [ CL: " + consistencyLevel + " keyspace: " + keyspace + " natural: " + natural + "pending: " + pending + " selected: " + selected + " ]";
     }
 }
 

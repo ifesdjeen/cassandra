@@ -509,7 +509,7 @@ public class BatchlogManager implements BatchlogManagerMBean
 
             ReplayWriteResponseHandler(Keyspace keyspace, EndpointsForToken writeReplicas, long queryStartNanoTime)
             {
-                super(ReplicaLayout.forWrite(keyspace, ConsistencyLevel.ALL, writeReplicas.token(), writeReplicas, EndpointsForToken.empty(writeReplicas.token()), writeReplicas),
+                super(ReplicaLayout.forWrite(keyspace, null, writeReplicas.token(), writeReplicas, EndpointsForToken.empty(writeReplicas.token()), writeReplicas),
                       null, WriteType.UNLOGGED_BATCH, queryStartNanoTime);
                 Iterables.addAll(undelivered, writeReplicas.endpoints());
             }
@@ -517,7 +517,7 @@ public class BatchlogManager implements BatchlogManagerMBean
             @Override
             protected int totalBlockFor()
             {
-                return this.replicaLayout.selectedReplicas().size();
+                return this.replicaLayout.selected().size();
             }
 
             @Override

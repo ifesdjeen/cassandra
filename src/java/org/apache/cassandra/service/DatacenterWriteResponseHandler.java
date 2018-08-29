@@ -56,7 +56,7 @@ public class DatacenterWriteResponseHandler<T> extends WriteResponseHandler<T>
     {
         // during bootstrap, include pending endpoints (only local here) in the count
         // or we may fail the consistency level guarantees (see #833, #8058)
-        return replicaLayout.consistencyLevel().blockFor(replicaLayout.keyspace()) + replicaLayout.consistencyLevel().countLocalEndpoints(replicaLayout.pendingReplicas());
+        return replicaLayout.consistencyLevel().blockFor(replicaLayout.keyspace()) + replicaLayout.consistencyLevel().countLocalEndpoints(replicaLayout.pending());
     }
 
     @Override
