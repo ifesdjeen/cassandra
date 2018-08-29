@@ -19,9 +19,11 @@ package org.apache.cassandra.service.reads;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.List;
 
 import com.google.common.base.Joiner;
+import com.google.common.collect.Collections2;
 import com.google.common.collect.Iterables;
 
 import org.apache.cassandra.db.DecoratedKey;
@@ -44,9 +46,12 @@ import org.apache.cassandra.locator.Endpoints;
 import org.apache.cassandra.locator.Replica;
 import org.apache.cassandra.locator.ReplicaCollection;
 import org.apache.cassandra.locator.ReplicaLayout;
+import org.apache.cassandra.locator.Replicas;
 import org.apache.cassandra.net.MessageIn;
 import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.service.reads.repair.ReadRepair;
+
+import static com.google.common.collect.Iterables.*;
 
 public class DataResolver<E extends Endpoints<E>, L extends ReplicaLayout<E, L>> extends ResponseResolver<E, L>
 {
@@ -60,7 +65,7 @@ public class DataResolver<E extends Endpoints<E>, L extends ReplicaLayout<E, L>>
 
     public PartitionIterator getData()
     {
-        ReadResponse response = responses.iterator().next().payload;
+        ReadResponse response = responses.get(0).payload;
         return UnfilteredPartitionIterators.filter(response.makeIterator(command), command.nowInSec());
     }
 
@@ -74,18 +79,12 @@ public class DataResolver<E extends Endpoints<E>, L extends ReplicaLayout<E, L>>
     {
         // We could get more responses while this method runs, which is ok (we're happy to ignore any response not here
         // at the beginning of this method), so grab the response count once and use that through the method.
-        int count = responses.size();
-        List<UnfilteredPartitionIterator> iters = new ArrayList<>(count);
-        ReplicaCollection.Mutable<E> replicas = replicaLayout.selected().newMutable(count);
+        Collection<MessageIn<ReadResponse>> messages = responses.snapshot();
+        assert !any(messages, msg -> msg.payload.isDigestResponse());
 
-        for (int i = 0; i < count; i++)
-        {
-            MessageIn<ReadResponse> msg = responses.get(i);
-            assert !msg.payload.isDigestResponse();
-
-            iters.add(msg.payload.makeIterator(command));
-            replicas.add(replicaLayout.getReplicaFor(msg.from));
-        }
+        E replicas = replicaLayout.selected().keep(transform(messages, msg -> msg.from));
+        List<UnfilteredPartitionIterator> iters = new ArrayList<>(
+                Collections2.transform(messages, msg -> msg.payload.makeIterator(command)));
 
         /*
          * Even though every response, individually, will honor the limit, it is possible that we will, after the merge,
@@ -104,7 +103,7 @@ public class DataResolver<E extends Endpoints<E>, L extends ReplicaLayout<E, L>>
             command.limits().newCounter(command.nowInSec(), true, command.selectsFullPartition(), enforceStrictLiveness);
 
         UnfilteredPartitionIterator merged = mergeWithShortReadProtection(iters,
-                                                                          replicaLayout.withSelected(replicas.asSnapshot()),
+                                                                          replicaLayout.withSelected(replicas),
                                                                           mergedResultCounter);
         FilteredPartitions filtered = FilteredPartitions.filter(merged, new Filter(command.nowInSec(), command.metadata().enforceStrictLiveness()));
         PartitionIterator counted = Transformation.apply(filtered, mergedResultCounter);
@@ -132,7 +131,7 @@ public class DataResolver<E extends Endpoints<E>, L extends ReplicaLayout<E, L>>
 
     private String makeResponsesDebugString(DecoratedKey partitionKey)
     {
-        return Joiner.on(",\n").join(Iterables.transform(getMessages(), m -> m.from + " => " + m.payload.toDebugString(command, partitionKey)));
+        return Joiner.on(",\n").join(transform(getMessages().snapshot(), m -> m.from + " => " + m.payload.toDebugString(command, partitionKey)));
     }
 
     private UnfilteredPartitionIterators.MergeListener wrapMergeListener(UnfilteredPartitionIterators.MergeListener partitionListener, L sources)
@@ -159,7 +158,7 @@ public class DataResolver<E extends Endpoints<E>, L extends ReplicaLayout<E, L>>
                             String details = String.format("Error merging partition level deletion on %s: merged=%s, versions=%s, sources={%s}, debug info:%n %s",
                                                            table,
                                                            mergedDeletion == null ? "null" : mergedDeletion.toString(),
-                                                           '[' + Joiner.on(", ").join(Iterables.transform(Arrays.asList(versions), rt -> rt == null ? "null" : rt.toString())) + ']',
+                                                           '[' + Joiner.on(", ").join(transform(Arrays.asList(versions), rt -> rt == null ? "null" : rt.toString())) + ']',
                                                            sources.selected(),
                                                            makeResponsesDebugString(partitionKey));
                             throw new AssertionError(details, e);
@@ -180,7 +179,7 @@ public class DataResolver<E extends Endpoints<E>, L extends ReplicaLayout<E, L>>
                             String details = String.format("Error merging rows on %s: merged=%s, versions=%s, sources={%s}, debug info:%n %s",
                                                            table,
                                                            merged == null ? "null" : merged.toString(table),
-                                                           '[' + Joiner.on(", ").join(Iterables.transform(Arrays.asList(versions), rt -> rt == null ? "null" : rt.toString(table))) + ']',
+                                                           '[' + Joiner.on(", ").join(transform(Arrays.asList(versions), rt -> rt == null ? "null" : rt.toString(table))) + ']',
                                                            sources.selected(),
                                                            makeResponsesDebugString(partitionKey));
                             throw new AssertionError(details, e);
@@ -206,7 +205,7 @@ public class DataResolver<E extends Endpoints<E>, L extends ReplicaLayout<E, L>>
                             String details = String.format("Error merging RTs on %s: merged=%s, versions=%s, sources={%s}, debug info:%n %s",
                                                            table,
                                                            merged == null ? "null" : merged.toString(table),
-                                                           '[' + Joiner.on(", ").join(Iterables.transform(Arrays.asList(versions), rt -> rt == null ? "null" : rt.toString(table))) + ']',
+                                                           '[' + Joiner.on(", ").join(transform(Arrays.asList(versions), rt -> rt == null ? "null" : rt.toString(table))) + ']',
                                                            sources.selected(),
                                                            makeResponsesDebugString(partitionKey));
                             throw new AssertionError(details, e);

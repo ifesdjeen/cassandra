@@ -20,39 +20,13 @@ package org.apache.cassandra.locator;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
-
-import com.google.common.base.Predicate;
 
 import com.google.common.collect.Iterables;
-import org.apache.cassandra.utils.FBUtilities;
 
 import static com.google.common.collect.Iterables.all;
 
 public class Replicas
 {
-
-    public static <C extends ReplicaCollection<? extends C>> C filterOnEndpoints(C source, Predicate<InetAddressAndPort> predicate)
-    {
-        return source.filter(r -> predicate.apply(r.endpoint()));
-    }
-
-    public static <C extends ReplicaCollection<? extends C>> C withoutSelf(C replicas)
-    {
-        InetAddressAndPort local = FBUtilities.getBroadcastAddressAndPort();
-        return filterOnEndpoints(replicas, e -> !e.equals(local));
-    }
-
-    public static <C extends ReplicaCollection<? extends C>> C subtractEndpoints(C subtractFrom, Set<InetAddressAndPort> subtract)
-    {
-        return Replicas.filterOnEndpoints(subtractFrom, e -> !subtract.contains(e));
-    }
-
-    public static <C extends ReplicaCollection<? extends C>> C keepEndpoints(C keepIn, Set<InetAddressAndPort> keep)
-    {
-        return Replicas.filterOnEndpoints(keepIn, keep::contains);
-    }
-
 
     /**
      * Basically a placeholder for places new logic for transient replicas should go

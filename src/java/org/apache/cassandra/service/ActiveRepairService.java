@@ -82,6 +82,9 @@ import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.Pair;
 import org.apache.cassandra.utils.UUIDGen;
 
+import static com.google.common.collect.Iterables.concat;
+import static com.google.common.collect.Iterables.transform;
+
 /**
  * ActiveRepairService is the starting point for manual "active" repairs.
  *
@@ -327,20 +330,14 @@ public class ActiveRepairService implements IEndpointStateChangeSubscriber, IFai
         if (rangeSuperSet == null || !replicaSets.containsKey(rangeSuperSet))
             return EndpointsForRange.empty(toRepair);
 
-        EndpointsForRange neighbors = Replicas.withoutSelf(replicaSets.get(rangeSuperSet));
+        EndpointsForRange neighbors = replicaSets.get(rangeSuperSet).withoutSelf();
 
         if (dataCenters != null && !dataCenters.isEmpty())
         {
             TokenMetadata.Topology topology = ss.getTokenMetadata().cloneOnlyTokenMap().getTopology();
-            Set<InetAddressAndPort> dcEndpoints = Sets.newHashSet();
-            Multimap<String,InetAddressAndPort> dcEndpointsMap = topology.getDatacenterEndpoints();
-            for (String dc : dataCenters)
-            {
-                Collection<InetAddressAndPort> c = dcEndpointsMap.get(dc);
-                if (c != null)
-                    dcEndpoints.addAll(c);
-            }
-            return Replicas.keepEndpoints(neighbors, dcEndpoints);
+            Multimap<String, InetAddressAndPort> dcEndpointsMap = topology.getDatacenterEndpoints();
+            Iterable<InetAddressAndPort> dcEndpoints = concat(transform(dataCenters, dcEndpointsMap::get));
+            return neighbors.keep(dcEndpoints);
         }
         else if (hosts != null && !hosts.isEmpty())
         {
@@ -371,7 +368,7 @@ public class ActiveRepairService implements IEndpointStateChangeSubscriber, IFai
             }
 
             specifiedHost.remove(FBUtilities.getBroadcastAddressAndPort());
-            return Replicas.keepEndpoints(neighbors, specifiedHost);
+            return neighbors.keep(specifiedHost);
         }
 
         return neighbors;
@@ -598,7 +595,7 @@ public class ActiveRepairService implements IEndpointStateChangeSubscriber, IFai
 
         public Set<TableId> getTableIds()
         {
-            return ImmutableSet.copyOf(Iterables.transform(getColumnFamilyStores(), cfs -> cfs.metadata.id));
+            return ImmutableSet.copyOf(transform(getColumnFamilyStores(), cfs -> cfs.metadata.id));
         }
 
         public Collection<Range<Token>> getRanges()

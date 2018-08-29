@@ -19,7 +19,10 @@
 package org.apache.cassandra.locator;
 
 import org.apache.cassandra.locator.ReplicaCollection.Mutable.Conflict;
+import org.apache.cassandra.utils.FBUtilities;
 
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -27,7 +30,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
-public abstract class Endpoints<C extends Endpoints<C>> extends AbstractReplicaCollection<C>
+public abstract class Endpoints<E extends Endpoints<E>> extends AbstractReplicaCollection<E>
 {
     static final Map<InetAddressAndPort, Replica> EMPTY_MAP = Collections.unmodifiableMap(new LinkedHashMap<>());
 
@@ -79,6 +82,35 @@ public abstract class Endpoints<C extends Endpoints<C>> extends AbstractReplicaC
         }
 
         return Collections.unmodifiableMap(byEndpoint);
+    }
+
+    public E withoutSelf()
+    {
+        InetAddressAndPort self = FBUtilities.getBroadcastAddressAndPort();
+        return filter(r -> !self.equals(r.endpoint()));
+    }
+
+    public E keep(Set<InetAddressAndPort> keep)
+    {
+        return filter(r -> keep.contains(r.endpoint()));
+    }
+
+    public E keep(Iterable<InetAddressAndPort> endpoints)
+    {
+        ReplicaCollection.Mutable<E> copy = newMutable(
+                endpoints instanceof Collection<?>
+                        ? ((Collection<InetAddressAndPort>) endpoints).size()
+                        : size()
+        );
+        Map<InetAddressAndPort, Replica> byEndpoint = byEndpoint();
+        for (InetAddressAndPort endpoint : endpoints)
+        {
+            Replica keep = byEndpoint.get(endpoint);
+            if (keep == null)
+                continue;
+            copy.add(keep, ReplicaCollection.Mutable.Conflict.DUPLICATE);
+        }
+        return copy.asSnapshot();
     }
 
     /**

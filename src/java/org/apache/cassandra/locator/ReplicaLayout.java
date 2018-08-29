@@ -135,7 +135,7 @@ public abstract class ReplicaLayout<E extends Endpoints<E>, L extends ReplicaLay
         // Preserve insertion order
         Set<InetAddressAndPort> endpointSet = new HashSet<>(Iterables.size(endpoints));
         Iterables.addAll(endpointSet, endpoints);
-        return withSelected(selected.filter(replica -> endpointSet.contains(replica.endpoint())));
+        return withSelected(selected.keep(endpointSet));
     }
 
     public L forNaturalUncontacted()

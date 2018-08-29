@@ -148,7 +148,7 @@ public class StorageProxy implements StorageProxyMBean
         counterWritePerformer = (mutation, targets, responseHandler, localDataCenter) ->
         {
             // TODO: test counters
-            EndpointsForToken selected = Replicas.withoutSelf(targets.selected());
+            EndpointsForToken selected = targets.selected().withoutSelf();
             Replicas.assertFull(selected);
             counterWriteTask(mutation, selected, responseHandler, localDataCenter).run();
         };
@@ -156,7 +156,7 @@ public class StorageProxy implements StorageProxyMBean
         counterWriteOnCoordinatorPerformer = (mutation, targets, responseHandler, localDataCenter) ->
         {
             // TODO: test counters
-            EndpointsForToken selected = Replicas.withoutSelf(targets.selected());
+            EndpointsForToken selected = targets.selected().withoutSelf();
             Replicas.assertFull(selected);
             StageManager.getStage(Stage.COUNTER_MUTATION)
                         .execute(counterWriteTask(mutation, selected, responseHandler, localDataCenter));
@@ -1965,7 +1965,7 @@ public class StorageProxy implements StorageProxyMBean
 
                 ReplicaLayout.ForRange next = ranges.peek();
 
-                EndpointsForRange merged = Replicas.keepEndpoints(current.all(), next.all().endpoints());
+                EndpointsForRange merged = current.all().keep(next.all().endpoints());
 
                 // Check if there is enough endpoint for the merge to be possible.
                 if (!consistency.isSufficientLiveNodes(keyspace, merged))

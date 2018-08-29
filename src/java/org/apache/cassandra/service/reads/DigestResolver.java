@@ -18,6 +18,7 @@
 package org.apache.cassandra.service.reads;
 
 import java.nio.ByteBuffer;
+import java.util.Collection;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
@@ -25,6 +26,7 @@ import java.util.function.Consumer;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
 
+import com.google.common.collect.Iterables;
 import org.apache.cassandra.db.Mutation;
 import org.apache.cassandra.db.ReadCommand;
 import org.apache.cassandra.db.ReadResponse;
@@ -39,13 +41,13 @@ import org.apache.cassandra.net.MessageIn;
 import org.apache.cassandra.service.reads.repair.PartitionIteratorMergeListener;
 import org.apache.cassandra.service.reads.repair.ReadRepair;
 
+import static com.google.common.collect.Iterables.any;
 import static com.google.common.collect.Iterables.filter;
 import static com.google.common.collect.Iterables.transform;
 
 public class DigestResolver<E extends Endpoints<E>, L extends ReplicaLayout<E, L>> extends ResponseResolver<E, L>
 {
     private volatile MessageIn<ReadResponse> dataResponse;
-    private volatile boolean hasTransientResponse = false;
 
     public DigestResolver(ReadCommand command, L replicas, ReadRepair<E, L> readRepair, long queryStartNanoTime)
     {
@@ -63,18 +65,32 @@ public class DigestResolver<E extends Endpoints<E>, L extends ReplicaLayout<E, L
         {
             dataResponse = message;
         }
-        else if (replica.isTransient())
+        else if (replica.isTransient() && message.payload.isDigestResponse())
         {
-            Preconditions.checkArgument(!message.payload.isDigestResponse(), "digest response received from transient replica");
-            hasTransientResponse = true;
+            throw new IllegalStateException("digest response received from transient replica");
         }
+    }
+
+    @VisibleForTesting
+    public boolean hasTransientResponse()
+    {
+        return hasTransientResponse(responses.snapshot());
+    }
+
+    private boolean hasTransientResponse(Collection<MessageIn<ReadResponse>> responses)
+    {
+        return any(responses,
+                msg -> !msg.payload.isDigestResponse()
+                        && replicaLayout.getReplicaFor(msg.from).isTransient());
     }
 
     public PartitionIterator getData()
     {
         assert isDataPresent();
 
-        if (!hasTransientResponse)
+        Collection<MessageIn<ReadResponse>> responses = this.responses.snapshot();
+
+        if (!hasTransientResponse(responses))
         {
             return UnfilteredPartitionIterators.filter(dataResponse.payload.makeIterator(command), command.nowInSec());
         }
@@ -83,13 +99,13 @@ public class DigestResolver<E extends Endpoints<E>, L extends ReplicaLayout<E, L
             // This path can be triggered only if we've got responses from full replicas and they match, but
             // transient replica response still contains data, which needs to be reconciled.
             // Create data resolver that will forward data
-            L layout = replicaLayout.forResponded(transform(
+            L responseLayout = replicaLayout.forResponded(transform(
                     filter(responses, a -> a.payload.isDigestResponse()),
                     a -> a.from));
             DataResolver<E, L> dataResolver = new DataResolver<>(command,
                                                                  replicaLayout,
                                                                  new ForwardingReadRepair(replicaLayout.getReplicaFor(dataResponse.from),
-                                                                                          layout),
+                                                                                          responseLayout),
                                                                  queryStartNanoTime);
 
             dataResolver.preprocess(dataResponse);
@@ -111,7 +127,7 @@ public class DigestResolver<E extends Endpoints<E>, L extends ReplicaLayout<E, L
 
         // validate digests against each other; return false immediately on mismatch.
         ByteBuffer digest = null;
-        for (MessageIn<ReadResponse> message : responses)
+        for (MessageIn<ReadResponse> message : responses.snapshot())
         {
             if (replicaLayout.getReplicaFor(message.from).isTransient())
                 continue;
@@ -133,12 +149,6 @@ public class DigestResolver<E extends Endpoints<E>, L extends ReplicaLayout<E, L
     public boolean isDataPresent()
     {
         return dataResponse != null;
-    }
-
-    @VisibleForTesting
-    public boolean hasTransientResponse()
-    {
-        return hasTransientResponse;
     }
 
     /**
@@ -216,4 +226,5 @@ public class DigestResolver<E extends Endpoints<E>, L extends ReplicaLayout<E, L
             readRepair.repairPartition(mutations, replicaLayout);
         }
     }
+
 }
