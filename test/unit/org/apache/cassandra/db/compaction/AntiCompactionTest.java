@@ -136,7 +136,7 @@ public class AntiCompactionTest
         {
             if (txn == null)
                 throw new IllegalStateException();
-            registerParentRepairSession(sessionID, ranges, FBUtilities.nowInSeconds(), sessionID);
+            registerParentRepairSession(sessionID, ranges.all(), FBUtilities.nowInSeconds(), sessionID);
             CompactionManager.instance.performAnticompaction(store, ranges, refs, txn, sessionID);
         }
 

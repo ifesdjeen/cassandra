@@ -731,12 +731,12 @@ public class CompactionManager implements CompactionManagerMBean
         {
             ActiveRepairService.ParentRepairSession prs = ActiveRepairService.instance.getParentRepairSession(sessionID);
             Preconditions.checkArgument(!prs.isPreview(), "Cannot anticompact for previews");
-            Preconditions.checkArgument(!ranges.full.isEmpty() || !ranges.trans.isEmpty(), "No ranges to anti-compact");
+            Preconditions.checkArgument(!ranges.isEmpty(), "No ranges to anti-compact");
 
             if (logger.isInfoEnabled())
                 logger.info("{} Starting anticompaction for {}.{} on {}/{} sstables", PreviewKind.NONE.logPrefix(sessionID), cfs.keyspace.getName(), cfs.getTableName(), validatedForRepair.size(), cfs.getLiveSSTables().size());
             if (logger.isTraceEnabled())
-                logger.trace("{} Starting anticompaction for ranges {}/{}", PreviewKind.NONE.logPrefix(sessionID), ranges.full, ranges.trans);
+                logger.trace("{} Starting anticompaction for ranges {}", PreviewKind.NONE.logPrefix(sessionID), ranges);
 
             Set<SSTableReader> sstables = new HashSet<>(validatedForRepair);
             validateSSTableBoundsForAnticompaction(sessionID, sstables, ranges);
@@ -761,7 +761,7 @@ public class CompactionManager implements CompactionManagerMBean
                                                        Collection<SSTableReader> sstables,
                                                        TokenRanges ranges)
     {
-        List<Range<Token>> normalizedRanges = Range.normalize(ranges);
+        List<Range<Token>> normalizedRanges = Range.normalize(ranges.all());
         for (SSTableReader sstable : sstables)
         {
             Bounds<Token> bounds = new Bounds<>(sstable.first.getToken(), sstable.last.getToken());
@@ -1462,7 +1462,7 @@ public class CompactionManager implements CompactionManagerMBean
                                  LifecycleTransaction txn,
                                  UUID pendingRepair)
     {
-        Preconditions.checkArgument(!ranges.full.isEmpty() || !ranges.trans.isEmpty(), "need at least one full or trans range");
+        Preconditions.checkArgument(!ranges.isEmpty(), "need at least one full or trans range");
         long groupMaxDataAge = -1;
 
         for (Iterator<SSTableReader> i = txn.originals().iterator(); i.hasNext();)

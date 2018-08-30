@@ -19,15 +19,15 @@
 package org.apache.cassandra.dht;
 
 import java.util.Collection;
-import java.util.Iterator;
 
+import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Iterators;
+import com.google.common.collect.Iterables;
 
 import org.apache.cassandra.locator.Replica;
 import org.apache.cassandra.locator.ReplicaCollection;
 
-public class TokenRanges implements Iterable<Range<Token>>
+public class TokenRanges
 {
     public final ImmutableSet<Range<Token>> full;
     public final ImmutableSet<Range<Token>> trans;
@@ -46,6 +46,7 @@ public class TokenRanges implements Iterable<Range<Token>>
     {
         this.full = ImmutableSet.copyOf(full);
         this.trans = ImmutableSet.copyOf(trans);
+        Preconditions.checkArgument(!Iterables.any(trans, full::contains), "full and trans must disjoint");
     }
 
     private TokenRanges(ReplicaCollection<?> replicas)
@@ -65,10 +66,14 @@ public class TokenRanges implements Iterable<Range<Token>>
         this.trans = fullBuilder.build();
     }
 
-    @Override
-    public Iterator<Range<Token>> iterator()
+    public Iterable<Range<Token>> all()
     {
-        return Iterators.concat(full.iterator(), trans.iterator());
+        return Iterables.concat(full, trans);
+    }
+
+    public boolean isEmpty()
+    {
+        return full.isEmpty() && trans.isEmpty();
     }
 
     public boolean isFull(Range<Token> range)
@@ -87,5 +92,11 @@ public class TokenRanges implements Iterable<Range<Token>>
 
         assert trans.contains(range) : "Range is not present in this collection";
         return false;
+    }
+
+    @Override
+    public String toString()
+    {
+        return String.format("{full:%s, trans:%s}", full, trans);
     }
 }
