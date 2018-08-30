@@ -103,6 +103,7 @@ public class RangeStreamer
         {
             Preconditions.checkNotNull(local);
             Preconditions.checkNotNull(remote);
+            assert local.isLocal() && !remote.isLocal();
             this.local = local;
             this.remote = remote;
         }
@@ -601,36 +602,26 @@ public class RangeStreamer
                 // filter out already streamed ranges
                 RangesAtEndpoint available = stateStore.getAvailableRanges(keyspace, StorageService.instance.getTokenMetadata().partitioner);
 
-                //It's a bit unpredictable as to whether we need to fetch a replica or not
-                //because some of the time we will need it both fully and transiently and we only store what we already
-                //have not what we need.
-                //However at this point we have already calculated what we need so it doesn't matter it's not stored
-                //we just need to check if we already fetched the data once the way we need it.
                 Predicate<FetchReplica> isAvailable = fetch -> {
-                    if (fetch.local.isFull() && fetch.remote.isFull())
-                    {
-                        return available.contains(fetch.local.range(), true);
-                    }
-                    else if (fetch.local.isFull() && fetch.remote.isTransient())
-                    {
-                        return available.contains(fetch.local.range(), false);
-                    }
-                    else if (fetch.local.isTransient())
-                    {
-                        return available.ranges().contains(fetch.local.range());
-                    }
-                    else
-                    {
-                        throw new AssertionError("Unreachable");
-                    }
+                    Replica availableRange =  available.byRange().get(fetch.local.range());
+                    if (availableRange == null)
+                        //Range is unavailable
+                        return false;
+                    if (fetch.local.isFull())
+                        //For full, pick only replicas with matching transientness
+                        return availableRange.isFull() == fetch.remote.isFull();
+
+                    // Any transient or full will do
+                    return true;
                 };
 
                 List<FetchReplica> remaining = fetchReplicas.stream().filter(not(isAvailable)).collect(Collectors.toList());
-                Iterator<FetchReplica> skipped = fetchReplicas.stream().filter(isAvailable).iterator();
-                if (!skipped.hasNext())
+
+                if (remaining.size() < available.size())
                 {
+                    List<FetchReplica> skipped = fetchReplicas.stream().filter(isAvailable).collect(Collectors.toList());
                     logger.info("Some ranges of {} are already available. Skipping streaming those ranges. Skipping {}. Fully available {} Transiently available {}",
-                            fetchReplicas, Iterators.toString(skipped), available.filter(Replica::isFull).ranges(), available.filter(Replica::isTransient).ranges());
+                                fetchReplicas, skipped, available.filter(Replica::isFull).ranges(), available.filter(Replica::isTransient).ranges());
                 }
 
                 if (logger.isTraceEnabled())

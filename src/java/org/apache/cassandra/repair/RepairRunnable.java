@@ -28,6 +28,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
+import com.google.common.collect.ImmutableCollection;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
@@ -138,56 +139,6 @@ public class RepairRunnable extends WrappedRunnable implements ProgressEventNoti
         recordFailure(message, completionMessage);
     }
 
-    /**
-     * Groups ranges with identical endpoints/transient endpoints
-     */
-    @VisibleForTesting
-    static class CommonRange
-    {
-        public final Set<InetAddressAndPort> endpoints;
-        public final Set<InetAddressAndPort> transEndpoints;
-        public final Collection<Range<Token>> ranges;
-
-        public CommonRange(Set<InetAddressAndPort> endpoints, Set<InetAddressAndPort> transEndpoints, Collection<Range<Token>> ranges)
-        {
-            this.endpoints = endpoints;
-            this.transEndpoints = transEndpoints;
-            Preconditions.checkArgument(endpoints != null && !endpoints.isEmpty());
-            Preconditions.checkArgument(transEndpoints != null);
-            Preconditions.checkArgument(endpoints.containsAll(transEndpoints), "transEndpoints must be a subset of endpoints");
-            Preconditions.checkArgument(ranges != null && !ranges.isEmpty());
-            this.ranges = ranges;
-        }
-
-        public boolean equals(Object o)
-        {
-            if (this == o) return true;
-            if (o == null || getClass() != o.getClass()) return false;
-
-            CommonRange that = (CommonRange) o;
-
-            if (!endpoints.equals(that.endpoints)) return false;
-            if (!transEndpoints.equals(that.transEndpoints)) return false;
-            return ranges.equals(that.ranges);
-        }
-
-        public int hashCode()
-        {
-            int result = endpoints.hashCode();
-            result = 31 * result + transEndpoints.hashCode();
-            result = 31 * result + ranges.hashCode();
-            return result;
-        }
-
-        public String toString()
-        {
-            return "CommonRange{" +
-                   "endpoints=" + endpoints +
-                   ", transEndpoints=" + transEndpoints +
-                   ", ranges=" + ranges +
-                   '}';
-        }
-    }
 
     protected void runMayThrow() throws Exception
     {
@@ -527,15 +478,13 @@ public class RepairRunnable extends WrappedRunnable implements ProgressEventNoti
         // we do endpoint filtering at the start of an incremental repair,
         // so repair sessions shouldn't also be checking liveness
         boolean force = options.isForcedRepair() && !isIncremental;
-        for (CommonRange cr : commonRanges)
+        for (CommonRange commonRange : commonRanges)
         {
-            logger.info("Starting RepairSession for {}", cr);
+            logger.info("Starting RepairSession for {}", commonRange);
             RepairSession session = ActiveRepairService.instance.submitRepairSession(parentSession,
-                                                                                     cr.ranges,
+                                                                                     commonRange,
                                                                                      keyspace,
                                                                                      options.getParallelism(),
-                                                                                     cr.endpoints,
-                                                                                     cr.transEndpoints,
                                                                                      isIncremental,
                                                                                      options.isPullRepair(),
                                                                                      force,
@@ -573,7 +522,7 @@ public class RepairRunnable extends WrappedRunnable implements ProgressEventNoti
         public void onSuccess(RepairSessionResult result)
         {
             String message = String.format("Repair session %s for range %s finished", session.getId(),
-                                           session.getRanges().toString());
+                                           session.ranges().toString());
             logger.info(message);
             fireProgressEvent(new ProgressEvent(ProgressEventType.PROGRESS,
                                                 progress.incrementAndGet(),
@@ -586,7 +535,7 @@ public class RepairRunnable extends WrappedRunnable implements ProgressEventNoti
             StorageMetrics.repairExceptions.inc();
 
             String message = String.format("Repair session %s for range %s failed with error %s",
-                                           session.getId(), session.getRanges().toString(), t.getMessage());
+                                           session.getId(), session.ranges().toString(), t.getMessage());
             logger.error(message, t);
             fireProgressEvent(new ProgressEvent(ProgressEventType.ERROR,
                                                 progress.incrementAndGet(),

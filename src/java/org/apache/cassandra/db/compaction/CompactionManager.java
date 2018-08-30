@@ -34,6 +34,8 @@ import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.*;
 import com.google.common.util.concurrent.*;
+
+import org.apache.cassandra.dht.TokenRanges;
 import org.apache.cassandra.locator.RangesAtEndpoint;
 import org.apache.cassandra.locator.Replica;
 import org.slf4j.Logger;
@@ -648,8 +650,7 @@ public class CompactionManager implements CompactionManagerMBean
      * Splits the given token ranges of the given sstables into a pending repair silo
      */
     public ListenableFuture<?> submitPendingAntiCompaction(ColumnFamilyStore cfs,
-                                                           Collection<Range<Token>> fullRanges,
-                                                           Collection<Range<Token>> transientRanges,
+                                                           TokenRanges tokenRanges,
                                                            Refs<SSTableReader> sstables,
                                                            LifecycleTransaction txn,
                                                            UUID sessionId)
@@ -660,7 +661,7 @@ public class CompactionManager implements CompactionManagerMBean
             {
                 try (TableMetrics.TableTimer.Context ctx = cfs.metric.anticompactionTime.time())
                 {
-                    performAnticompaction(cfs, fullRanges, transientRanges, sstables, txn, sessionId);
+                    performAnticompaction(cfs, tokenRanges, sstables, txn, sessionId);
                 }
             }
         };
@@ -714,16 +715,14 @@ public class CompactionManager implements CompactionManagerMBean
      * Caller must reference the validatedForRepair sstables (via ParentRepairSession.getActiveRepairedSSTableRefs(..)).
      *
      * @param cfs
-     * @param fullRanges full ranges to be repaired
-     * @param transRanges transient ranges to be repaired
+     * @param ranges token ranges to be repaired
      * @param validatedForRepair SSTables containing the repaired ranges. Should be referenced before passing them.
      * @param sessionID the repair session we're anti-compacting for
      * @throws InterruptedException
      * @throws IOException
      */
     public void performAnticompaction(ColumnFamilyStore cfs,
-                                      Collection<Range<Token>> fullRanges,
-                                      Collection<Range<Token>> transRanges,
+                                      TokenRanges ranges,
                                       Refs<SSTableReader> validatedForRepair,
                                       LifecycleTransaction txn,
                                       UUID sessionID) throws IOException
@@ -732,21 +731,21 @@ public class CompactionManager implements CompactionManagerMBean
         {
             ActiveRepairService.ParentRepairSession prs = ActiveRepairService.instance.getParentRepairSession(sessionID);
             Preconditions.checkArgument(!prs.isPreview(), "Cannot anticompact for previews");
-            Preconditions.checkArgument(!fullRanges.isEmpty() || !transRanges.isEmpty(), "No ranges to anti-compact");
+            Preconditions.checkArgument(!ranges.isEmpty(), "No ranges to anti-compact");
 
             if (logger.isInfoEnabled())
                 logger.info("{} Starting anticompaction for {}.{} on {}/{} sstables", PreviewKind.NONE.logPrefix(sessionID), cfs.keyspace.getName(), cfs.getTableName(), validatedForRepair.size(), cfs.getLiveSSTables().size());
             if (logger.isTraceEnabled())
-                logger.trace("{} Starting anticompaction for ranges {}/{}", PreviewKind.NONE.logPrefix(sessionID), fullRanges, transRanges);
+                logger.trace("{} Starting anticompaction for ranges {}", PreviewKind.NONE.logPrefix(sessionID), ranges);
 
             Set<SSTableReader> sstables = new HashSet<>(validatedForRepair);
-            validateSSTableBoundsForAnticompaction(sessionID, sstables, fullRanges, transRanges);
-            mutateFullyContainedSSTables(cfs, validatedForRepair, sstables.iterator(), fullRanges, txn, sessionID, false);
-            mutateFullyContainedSSTables(cfs, validatedForRepair, sstables.iterator(), transRanges, txn, sessionID, true);
+            validateSSTableBoundsForAnticompaction(sessionID, sstables, ranges);
+            mutateFullyContainedSSTables(cfs, validatedForRepair, sstables.iterator(), ranges.full, txn, sessionID, false);
+            mutateFullyContainedSSTables(cfs, validatedForRepair, sstables.iterator(), ranges.trans, txn, sessionID, true);
 
             assert txn.originals().equals(sstables);
             if (!sstables.isEmpty())
-                doAntiCompaction(cfs, fullRanges, transRanges, txn, sessionID);
+                doAntiCompaction(cfs, ranges, txn, sessionID);
             txn.finish();
         }
         finally
@@ -760,11 +759,9 @@ public class CompactionManager implements CompactionManagerMBean
 
     static void validateSSTableBoundsForAnticompaction(UUID sessionID,
                                                        Collection<SSTableReader> sstables,
-                                                       Collection<Range<Token>> fullRanges,
-                                                       Collection<Range<Token>> transRanges)
+                                                       TokenRanges ranges)
     {
-        Set<Range<Token>> allRanges = Sets.newHashSet(Iterables.concat(fullRanges, transRanges));
-        List<Range<Token>> normalizedRanges = Range.normalize(allRanges);
+        List<Range<Token>> normalizedRanges = Range.normalize(ranges.all());
         for (SSTableReader sstable : sstables)
         {
             Bounds<Token> bounds = new Bounds<>(sstable.first.getToken(), sstable.last.getToken());
@@ -1424,13 +1421,11 @@ public class CompactionManager implements CompactionManagerMBean
      * and subsequently deleted.
      * @param cfs
      * @param txn a transaction over the repaired sstables to anticompact
-     * @param fullRanges full ranges to be placed into one of the new sstables. The repaired table will be tracked via
+     * @param ranges full and transient ranges to be placed into one of the new sstables. The repaired table will be tracked via
      *   the {@link org.apache.cassandra.io.sstable.metadata.StatsMetadata#pendingRepair} field.
-     * @param transRanges transient ranges to be placed into one of the new sstables. The repaired table will be tracked via
-     *   the {@link org.apache.cassandra.io.sstable.metadata.StatsMetadata#isTransient} field.
      */
-    private void doAntiCompaction(ColumnFamilyStore cfs, Collection<Range<Token>> fullRanges,
-                                  Collection<Range<Token>> transRanges,
+    private void doAntiCompaction(ColumnFamilyStore cfs,
+                                  TokenRanges ranges,
                                   LifecycleTransaction txn,
                                   UUID pendingRepair)
     {
@@ -1453,7 +1448,7 @@ public class CompactionManager implements CompactionManagerMBean
         {
             try (LifecycleTransaction groupTxn = txn.split(sstableGroup))
             {
-                int antiCompacted = antiCompactGroup(cfs, fullRanges, transRanges, groupTxn, pendingRepair);
+                int antiCompacted = antiCompactGroup(cfs, ranges, groupTxn, pendingRepair);
                 antiCompactedSSTableCount += antiCompacted;
             }
         }
@@ -1463,12 +1458,11 @@ public class CompactionManager implements CompactionManagerMBean
     }
 
     private int antiCompactGroup(ColumnFamilyStore cfs,
-                                 Collection<Range<Token>> fullRanges,
-                                 Collection<Range<Token>> transRanges,
+                                 TokenRanges ranges,
                                  LifecycleTransaction txn,
                                  UUID pendingRepair)
     {
-        Preconditions.checkArgument(!fullRanges.isEmpty() || !transRanges.isEmpty(), "need at least one full or transient range");
+        Preconditions.checkArgument(!ranges.isEmpty(), "need at least one full or transient range");
         long groupMaxDataAge = -1;
 
         for (Iterator<SSTableReader> i = txn.originals().iterator(); i.hasNext();)
@@ -1505,8 +1499,8 @@ public class CompactionManager implements CompactionManagerMBean
             transWriter.switchWriter(CompactionManager.createWriterForAntiCompaction(cfs, destination, expectedBloomFilterSize, UNREPAIRED_SSTABLE, pendingRepair, true, sstableAsSet, txn));
             unrepairedWriter.switchWriter(CompactionManager.createWriterForAntiCompaction(cfs, destination, expectedBloomFilterSize, UNREPAIRED_SSTABLE, NO_PENDING_REPAIR, false, sstableAsSet, txn));
 
-            Predicate<Token> fullChecker = !fullRanges.isEmpty() ? new Range.OrderedRangeContainmentChecker(fullRanges) : t -> false;
-            Predicate<Token> transChecker = !transRanges.isEmpty() ? new Range.OrderedRangeContainmentChecker(transRanges) : t -> false;
+            Predicate<Token> fullChecker = !ranges.full.isEmpty() ? new Range.OrderedRangeContainmentChecker(ranges.full) : t -> false;
+            Predicate<Token> transChecker = !ranges.trans.isEmpty() ? new Range.OrderedRangeContainmentChecker(ranges.trans) : t -> false;
             while (ci.hasNext())
             {
                 try (UnfilteredRowIterator partition = ci.next())

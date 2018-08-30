@@ -21,14 +21,12 @@ package org.apache.cassandra.db.repair;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
-import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
-import com.google.common.collect.Sets;
 import com.google.common.util.concurrent.AsyncFunction;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
@@ -44,6 +42,7 @@ import org.apache.cassandra.db.compaction.OperationType;
 import org.apache.cassandra.db.lifecycle.LifecycleTransaction;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
+import org.apache.cassandra.dht.TokenRanges;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.apache.cassandra.utils.concurrent.Refs;
 
@@ -83,10 +82,10 @@ public class PendingAntiCompaction
     static class AcquisitionCallable implements Callable<AcquireResult>
     {
         private final ColumnFamilyStore cfs;
-        private final Collection<Range<Token>> ranges;
+        private final Iterable<Range<Token>> ranges;
         private final UUID sessionID;
 
-        public AcquisitionCallable(ColumnFamilyStore cfs, Collection<Range<Token>> ranges, UUID sessionID)
+        public AcquisitionCallable(ColumnFamilyStore cfs, Iterable<Range<Token>> ranges, UUID sessionID)
         {
             this.cfs = cfs;
             this.ranges = ranges;
@@ -128,19 +127,17 @@ public class PendingAntiCompaction
     static class AcquisitionCallback implements AsyncFunction<List<AcquireResult>, Object>
     {
         private final UUID parentRepairSession;
-        private final Collection<Range<Token>> fullRanges;
-        private final Collection<Range<Token>> transRanges;
+        private final TokenRanges tokenRanges;
 
-        public AcquisitionCallback(UUID parentRepairSession, Collection<Range<Token>> fullRanges, Collection<Range<Token>> transRanges)
+        public AcquisitionCallback(UUID parentRepairSession, TokenRanges tokenRanges)
         {
             this.parentRepairSession = parentRepairSession;
-            this.fullRanges = fullRanges;
-            this.transRanges = transRanges;
+            this.tokenRanges = tokenRanges;
         }
 
         ListenableFuture<?> submitPendingAntiCompaction(AcquireResult result)
         {
-            return CompactionManager.instance.submitPendingAntiCompaction(result.cfs, fullRanges, transRanges, result.refs, result.txn, parentRepairSession);
+            return CompactionManager.instance.submitPendingAntiCompaction(result.cfs, tokenRanges, result.refs, result.txn, parentRepairSession);
         }
 
         public ListenableFuture apply(List<AcquireResult> results) throws Exception
@@ -181,20 +178,17 @@ public class PendingAntiCompaction
 
     private final UUID prsId;
     private final Collection<ColumnFamilyStore> tables;
-    private final Collection<Range<Token>> fullRanges;
-    private final Collection<Range<Token>> transRanges;
+    private final TokenRanges tokenRanges;
     private final ExecutorService executor;
 
     public PendingAntiCompaction(UUID prsId,
                                  Collection<ColumnFamilyStore> tables,
-                                 Collection<Range<Token>> fullRanges,
-                                 Collection<Range<Token>> transRanges,
+                                 TokenRanges tokenRanges,
                                  ExecutorService executor)
     {
         this.prsId = prsId;
         this.tables = tables;
-        this.fullRanges = fullRanges;
-        this.transRanges = transRanges;
+        this.tokenRanges = tokenRanges;
         this.executor = executor;
     }
 
@@ -204,13 +198,12 @@ public class PendingAntiCompaction
         for (ColumnFamilyStore cfs : tables)
         {
             cfs.forceBlockingFlush();
-            Set<Range<Token>> allRanges = Sets.newHashSet(Iterables.concat(fullRanges, transRanges));
-            ListenableFutureTask<AcquireResult> task = ListenableFutureTask.create(new AcquisitionCallable(cfs, allRanges, prsId));
+            ListenableFutureTask<AcquireResult> task = ListenableFutureTask.create(new AcquisitionCallable(cfs, tokenRanges.all(), prsId));
             executor.submit(task);
             tasks.add(task);
         }
         ListenableFuture<List<AcquireResult>> acquisitionResults = Futures.successfulAsList(tasks);
-        ListenableFuture compactionResult = Futures.transformAsync(acquisitionResults, new AcquisitionCallback(prsId, fullRanges, transRanges), MoreExecutors.directExecutor());
+        ListenableFuture compactionResult = Futures.transformAsync(acquisitionResults, new AcquisitionCallback(prsId, tokenRanges), MoreExecutors.directExecutor());
         return compactionResult;
     }
 }
