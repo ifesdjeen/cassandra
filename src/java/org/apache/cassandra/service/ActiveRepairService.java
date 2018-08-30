@@ -68,6 +68,8 @@ import org.apache.cassandra.net.IAsyncCallbackWithFailure;
 import org.apache.cassandra.net.MessageIn;
 import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
+import org.apache.cassandra.repair.CommonRange;
+import org.apache.cassandra.repair.RepairRunnable;
 import org.apache.cassandra.streaming.PreviewKind;
 import org.apache.cassandra.repair.RepairJobDesc;
 import org.apache.cassandra.repair.RepairParallelism;
@@ -208,11 +210,9 @@ public class ActiveRepairService implements IEndpointStateChangeSubscriber, IFai
      * @return Future for asynchronous call or null if there is no need to repair
      */
     public RepairSession submitRepairSession(UUID parentRepairSession,
-                                             Collection<Range<Token>> range,
+                                             CommonRange range,
                                              String keyspace,
                                              RepairParallelism parallelismDegree,
-                                             Set<InetAddressAndPort> endpoints,
-                                             Set<InetAddressAndPort> transEndpoints,
                                              boolean isIncremental,
                                              boolean pullRepair,
                                              boolean force,
@@ -221,18 +221,15 @@ public class ActiveRepairService implements IEndpointStateChangeSubscriber, IFai
                                              ListeningExecutorService executor,
                                              String... cfnames)
     {
-        if (endpoints.isEmpty())
+        if (range.endpoints.isEmpty())
             return null;
-
-        Preconditions.checkArgument(endpoints.containsAll(transEndpoints), "transEndpoints must be a subset of endpoints");
 
         if (cfnames.length == 0)
             return null;
 
-
         final RepairSession session = new RepairSession(parentRepairSession, UUIDGen.getTimeUUID(), range, keyspace,
-                                                        parallelismDegree, endpoints, transEndpoints, isIncremental,
-                                                        pullRepair, force, previewKind, optimiseStreams, cfnames);
+                                                        parallelismDegree, isIncremental, pullRepair, force,
+                                                        previewKind, optimiseStreams, cfnames);
 
         sessions.put(session.getId(), session);
         // register listeners
@@ -598,7 +595,7 @@ public class ActiveRepairService implements IEndpointStateChangeSubscriber, IFai
             return ImmutableSet.copyOf(transform(getColumnFamilyStores(), cfs -> cfs.metadata.id));
         }
 
-        public Collection<Range<Token>> getRanges()
+        public Set<Range<Token>> getRanges()
         {
             return ImmutableSet.copyOf(ranges);
         }

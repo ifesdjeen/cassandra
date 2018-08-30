@@ -399,13 +399,8 @@ class PendingRepairManager
         if (!sstable.isPendingRepair())
             return false;
 
-        for (Map.Entry<UUID, AbstractCompactionStrategy> entry: strategies.entrySet())
-        {
-            if (entry.getKey().equals(sstable.getPendingRepair()) && entry.getValue().getSSTables().contains(sstable))
-                return true;
-
-        }
-        return false;
+        AbstractCompactionStrategy strategy = strategies.get(sstable.getPendingRepair());
+        return strategy != null && strategy.getSSTables().contains(sstable);
     }
 
     public Collection<AbstractCompactionTask> createUserDefinedTasks(Collection<SSTableReader> sstables, int gcBefore)

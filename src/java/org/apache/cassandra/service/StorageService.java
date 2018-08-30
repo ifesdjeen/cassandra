@@ -4394,9 +4394,6 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
 
         /**
          * Wrapper that supplies accessors to the real implementations of the various dependencies for this method
-         * @param strategy
-         * @param fetchRanges
-         * @return
          */
         private Multimap<InetAddressAndPort, FetchReplica> calculateRangesToFetchWithPreferredEndpoints(AbstractReplicationStrategy strategy, RangesAtEndpoint fetchRanges, String keyspace)
         {
