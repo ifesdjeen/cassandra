@@ -139,56 +139,6 @@ public class RepairRunnable extends WrappedRunnable implements ProgressEventNoti
         recordFailure(message, completionMessage);
     }
 
-    /**
-     * Groups ranges with identical endpoints/transient endpoints
-     */
-    public static class CommonRange
-    {
-        public final ImmutableSet<InetAddressAndPort> endpoints;
-        public final ImmutableSet<InetAddressAndPort> transEndpoints;
-        public final ImmutableCollection<Range<Token>> ranges;
-
-        public CommonRange(Set<InetAddressAndPort> endpoints, Set<InetAddressAndPort> transEndpoints, Collection<Range<Token>> ranges)
-        {
-            Preconditions.checkArgument(endpoints != null && !endpoints.isEmpty());
-            Preconditions.checkArgument(transEndpoints != null);
-            Preconditions.checkArgument(endpoints.containsAll(transEndpoints), "transEndpoints must be a subset of endpoints");
-            Preconditions.checkArgument(ranges != null && !ranges.isEmpty());
-
-            this.endpoints = ImmutableSet.copyOf(endpoints);
-            this.transEndpoints = ImmutableSet.copyOf(transEndpoints);
-            this.ranges = ImmutableList.copyOf(ranges);
-        }
-
-        public boolean equals(Object o)
-        {
-            if (this == o) return true;
-            if (o == null || getClass() != o.getClass()) return false;
-
-            CommonRange that = (CommonRange) o;
-
-            if (!endpoints.equals(that.endpoints)) return false;
-            if (!transEndpoints.equals(that.transEndpoints)) return false;
-            return ranges.equals(that.ranges);
-        }
-
-        public int hashCode()
-        {
-            int result = endpoints.hashCode();
-            result = 31 * result + transEndpoints.hashCode();
-            result = 31 * result + ranges.hashCode();
-            return result;
-        }
-
-        public String toString()
-        {
-            return "CommonRange{" +
-                   "endpoints=" + endpoints +
-                   ", transEndpoints=" + transEndpoints +
-                   ", ranges=" + ranges +
-                   '}';
-        }
-    }
 
     protected void runMayThrow() throws Exception
     {
@@ -528,11 +478,11 @@ public class RepairRunnable extends WrappedRunnable implements ProgressEventNoti
         // we do endpoint filtering at the start of an incremental repair,
         // so repair sessions shouldn't also be checking liveness
         boolean force = options.isForcedRepair() && !isIncremental;
-        for (CommonRange cr : commonRanges)
+        for (CommonRange commonRange : commonRanges)
         {
-            logger.info("Starting RepairSession for {}", cr);
+            logger.info("Starting RepairSession for {}", commonRange);
             RepairSession session = ActiveRepairService.instance.submitRepairSession(parentSession,
-                                                                                     cr,
+                                                                                     commonRange,
                                                                                      keyspace,
                                                                                      options.getParallelism(),
                                                                                      isIncremental,

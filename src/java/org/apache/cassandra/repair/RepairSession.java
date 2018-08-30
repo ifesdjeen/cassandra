@@ -94,7 +94,7 @@ public class RepairSession extends AbstractFuture<RepairSessionResult> implement
     public final boolean skippedReplicas;
 
     /** Range to repair */
-    public final RepairRunnable.CommonRange commonRange;
+    public final CommonRange commonRange;
     public final boolean isIncremental;
     public final PreviewKind previewKind;
 
@@ -124,7 +124,7 @@ public class RepairSession extends AbstractFuture<RepairSessionResult> implement
      */
     public RepairSession(UUID parentRepairSession,
                          UUID id,
-                         RepairRunnable.CommonRange commonRange,
+                         CommonRange commonRange,
                          String keyspace,
                          RepairParallelism parallelismDegree,
                          boolean isIncremental,
@@ -163,7 +163,7 @@ public class RepairSession extends AbstractFuture<RepairSessionResult> implement
                 forceSkippedReplicas = true;
                 Set<InetAddressAndPort> filteredEndpoints = new HashSet<>(commonRange.endpoints);
                 filteredEndpoints.removeAll(removeCandidates);
-                commonRange = new RepairRunnable.CommonRange(filteredEndpoints, commonRange.transEndpoints, commonRange.ranges);
+                commonRange = new CommonRange(filteredEndpoints, commonRange.transEndpoints, commonRange.ranges);
             }
         }
 
