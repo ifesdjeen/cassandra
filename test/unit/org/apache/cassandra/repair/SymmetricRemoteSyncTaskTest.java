@@ -18,10 +18,7 @@
 
 package org.apache.cassandra.repair;
 
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
-import java.util.function.Predicate;
 
 import com.google.common.collect.ImmutableList;
 import org.junit.Assert;
@@ -30,22 +27,21 @@ import org.junit.Test;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.locator.InetAddressAndPort;
-import org.apache.cassandra.repair.messages.AsymmetricSyncRequest;
 import org.apache.cassandra.repair.messages.RepairMessage;
 import org.apache.cassandra.repair.messages.SyncRequest;
 import org.apache.cassandra.streaming.PreviewKind;
 import org.apache.cassandra.utils.UUIDGen;
 
-public class RemoteSyncTaskTest extends AbstractRepairTest
+public class SymmetricRemoteSyncTaskTest extends AbstractRepairTest
 {
     private static final RepairJobDesc DESC = new RepairJobDesc(UUIDGen.getTimeUUID(), UUIDGen.getTimeUUID(), "ks", "tbl", ALL_RANGES);
     private static final List<Range<Token>> RANGE_LIST = ImmutableList.of(RANGE1);
 
-    private static class InstrumentedRemoteSyncTask extends RemoteSyncTask
+    private static class InstrumentedSymmetricRemoteSyncTask extends SymmetricRemoteSyncTask
     {
-        public InstrumentedRemoteSyncTask(InetAddressAndPort e1, InetAddressAndPort e2, Predicate<InetAddressAndPort> isTransient)
+        public InstrumentedSymmetricRemoteSyncTask(InetAddressAndPort e1, InetAddressAndPort e2)
         {
-            super(DESC, new TreeResponse(e1, null), new TreeResponse(e2, null), isTransient, PreviewKind.NONE);
+            super(DESC, new TreeResponse(e1, null), new TreeResponse(e2, null), PreviewKind.NONE);
         }
 
         RepairMessage sentMessage = null;
@@ -65,44 +61,11 @@ public class RemoteSyncTaskTest extends AbstractRepairTest
     @Test
     public void normalSync()
     {
-        InstrumentedRemoteSyncTask syncTask = new InstrumentedRemoteSyncTask(PARTICIPANT1,  PARTICIPANT2, e -> false);
+        InstrumentedSymmetricRemoteSyncTask syncTask = new InstrumentedSymmetricRemoteSyncTask(PARTICIPANT1, PARTICIPANT2);
         syncTask.startSync(RANGE_LIST);
 
         Assert.assertNotNull(syncTask.sentMessage);
         Assert.assertSame(SyncRequest.class, syncTask.sentMessage.getClass());
         Assert.assertEquals(PARTICIPANT1, syncTask.sentTo);
-    }
-
-    @Test
-    public void transientSync()
-    {
-        InstrumentedRemoteSyncTask syncTask;
-
-        // r1 is transient
-        syncTask = new InstrumentedRemoteSyncTask(PARTICIPANT1, PARTICIPANT2, PARTICIPANT1::equals);
-        syncTask.startSync(RANGE_LIST);
-
-        Assert.assertNotNull(syncTask.sentMessage);
-        Assert.assertSame(AsymmetricSyncRequest.class, syncTask.sentMessage.getClass());
-        Assert.assertEquals(PARTICIPANT2, syncTask.sentTo);
-
-
-        // r2 is transient
-        syncTask = new InstrumentedRemoteSyncTask(PARTICIPANT1, PARTICIPANT2, PARTICIPANT2::equals);
-        syncTask.startSync(RANGE_LIST);
-
-        Assert.assertNotNull(syncTask.sentMessage);
-        Assert.assertSame(AsymmetricSyncRequest.class, syncTask.sentMessage.getClass());
-        Assert.assertEquals(PARTICIPANT1, syncTask.sentTo);
-    }
-
-    /**
-     * If both endpoints are transient, we should throw an exception
-     */
-    @Test (expected = IllegalStateException.class)
-    public void invalidTransientSync()
-    {
-        InstrumentedRemoteSyncTask syncTask = new InstrumentedRemoteSyncTask(PARTICIPANT1,  PARTICIPANT2, e -> true);
-        syncTask.startSync(RANGE_LIST);
     }
 }
