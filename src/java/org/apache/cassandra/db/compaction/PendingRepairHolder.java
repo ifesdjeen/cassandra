@@ -20,6 +20,7 @@ package org.apache.cassandra.db.compaction;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
 
@@ -147,7 +148,23 @@ public class PendingRepairHolder extends AbstractStrategyHolder
         return tasks;
     }
 
-    public ArrayList<TaskSupplier> getRepairFinishedTaskSuppliers()
+    AbstractCompactionTask getNextRepairFinishedTask()
+    {
+        List<TaskSupplier> repairFinishedSuppliers = getRepairFinishedTaskSuppliers();
+        if (!repairFinishedSuppliers.isEmpty())
+        {
+            Collections.sort(repairFinishedSuppliers);
+            for (TaskSupplier supplier : repairFinishedSuppliers)
+            {
+                AbstractCompactionTask task = supplier.getTask();
+                if (task != null)
+                    return task;
+            }
+        }
+        return null;
+    }
+
+    private ArrayList<TaskSupplier> getRepairFinishedTaskSuppliers()
     {
         ArrayList<TaskSupplier> suppliers = new ArrayList<>(managers.size());
         for (PendingRepairManager manager : managers)

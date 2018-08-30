@@ -175,27 +175,10 @@ public class CompactionStrategyManager implements INotificationConsumer
         reload(cfs.metadata().params.compaction);
     }
 
-    private AbstractCompactionTask getNextRepairFinishedTask(PendingRepairHolder holder)
-    {
-        List<TaskSupplier> repairFinishedSuppliers = holder.getRepairFinishedTaskSuppliers();
-        if (!repairFinishedSuppliers.isEmpty())
-        {
-            Collections.sort(repairFinishedSuppliers);
-            for (TaskSupplier supplier : repairFinishedSuppliers)
-            {
-                AbstractCompactionTask task = supplier.getTask();
-                if (task != null)
-                    return task;
-            }
-        }
-        return null;
-    }
-
     /**
      * Return the next background task
      *
      * Returns a task for the compaction strategy that needs it the most (most estimated remaining tasks)
-     *
      */
     public AbstractCompactionTask getNextBackgroundTask(int gcBefore)
     {
@@ -210,11 +193,11 @@ public class CompactionStrategyManager implements INotificationConsumer
 
             // first try to promote/demote sstables from completed repairs
             AbstractCompactionTask repairFinishedTask;
-            repairFinishedTask = getNextRepairFinishedTask(pendingRepairs);
+            repairFinishedTask = pendingRepairs.getNextRepairFinishedTask();
             if (repairFinishedTask != null)
                 return repairFinishedTask;
 
-            repairFinishedTask = getNextRepairFinishedTask(transientRepairs);
+            repairFinishedTask = transientRepairs.getNextRepairFinishedTask();
             if (repairFinishedTask != null)
                 return repairFinishedTask;
 
