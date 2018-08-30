@@ -28,6 +28,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
+import com.google.common.collect.ImmutableCollection;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
@@ -141,22 +142,22 @@ public class RepairRunnable extends WrappedRunnable implements ProgressEventNoti
     /**
      * Groups ranges with identical endpoints/transient endpoints
      */
-    @VisibleForTesting
-    static class CommonRange
+    public static class CommonRange
     {
-        public final Set<InetAddressAndPort> endpoints;
-        public final Set<InetAddressAndPort> transEndpoints;
-        public final Collection<Range<Token>> ranges;
+        public final ImmutableSet<InetAddressAndPort> endpoints;
+        public final ImmutableSet<InetAddressAndPort> transEndpoints;
+        public final ImmutableCollection<Range<Token>> ranges;
 
         public CommonRange(Set<InetAddressAndPort> endpoints, Set<InetAddressAndPort> transEndpoints, Collection<Range<Token>> ranges)
         {
-            this.endpoints = endpoints;
-            this.transEndpoints = transEndpoints;
             Preconditions.checkArgument(endpoints != null && !endpoints.isEmpty());
             Preconditions.checkArgument(transEndpoints != null);
             Preconditions.checkArgument(endpoints.containsAll(transEndpoints), "transEndpoints must be a subset of endpoints");
             Preconditions.checkArgument(ranges != null && !ranges.isEmpty());
-            this.ranges = ranges;
+
+            this.endpoints = ImmutableSet.copyOf(endpoints);
+            this.transEndpoints = ImmutableSet.copyOf(transEndpoints);
+            this.ranges = ImmutableList.copyOf(ranges);
         }
 
         public boolean equals(Object o)
@@ -530,11 +531,9 @@ public class RepairRunnable extends WrappedRunnable implements ProgressEventNoti
         {
             logger.info("Starting RepairSession for {}", cr);
             RepairSession session = ActiveRepairService.instance.submitRepairSession(parentSession,
-                                                                                     cr.ranges,
+                                                                                     cr,
                                                                                      keyspace,
                                                                                      options.getParallelism(),
-                                                                                     cr.endpoints,
-                                                                                     cr.transEndpoints,
                                                                                      isIncremental,
                                                                                      options.isPullRepair(),
                                                                                      force,
@@ -572,7 +571,7 @@ public class RepairRunnable extends WrappedRunnable implements ProgressEventNoti
         public void onSuccess(RepairSessionResult result)
         {
             String message = String.format("Repair session %s for range %s finished", session.getId(),
-                                           session.getRanges().toString());
+                                           session.ranges().toString());
             logger.info(message);
             fireProgressEvent(new ProgressEvent(ProgressEventType.PROGRESS,
                                                 progress.incrementAndGet(),
@@ -585,7 +584,7 @@ public class RepairRunnable extends WrappedRunnable implements ProgressEventNoti
             StorageMetrics.repairExceptions.inc();
 
             String message = String.format("Repair session %s for range %s failed with error %s",
-                                           session.getId(), session.getRanges().toString(), t.getMessage());
+                                           session.getId(), session.ranges().toString(), t.getMessage());
             logger.error(message, t);
             fireProgressEvent(new ProgressEvent(ProgressEventType.ERROR,
                                                 progress.incrementAndGet(),
