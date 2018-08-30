@@ -77,13 +77,11 @@ import org.apache.cassandra.metrics.TableMetrics;
 import org.apache.cassandra.schema.CompactionParams.TombstoneOption;
 import org.apache.cassandra.service.ActiveRepairService;
 import org.apache.cassandra.service.StorageService;
-import org.apache.cassandra.service.TokenRange;
 import org.apache.cassandra.streaming.PreviewKind;
 import org.apache.cassandra.utils.*;
 import org.apache.cassandra.utils.Throwables;
 import org.apache.cassandra.utils.concurrent.Refs;
 
-import static java.util.Collections.replaceAll;
 import static java.util.Collections.singleton;
 import static org.apache.cassandra.service.ActiveRepairService.NO_PENDING_REPAIR;
 import static org.apache.cassandra.service.ActiveRepairService.UNREPAIRED_SSTABLE;
