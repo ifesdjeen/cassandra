@@ -598,7 +598,7 @@ public class ActiveRepairService implements IEndpointStateChangeSubscriber, IFai
             return ImmutableSet.copyOf(transform(getColumnFamilyStores(), cfs -> cfs.metadata.id));
         }
 
-        public Collection<Range<Token>> getRanges()
+        public Set<Range<Token>> getRanges()
         {
             return ImmutableSet.copyOf(ranges);
         }

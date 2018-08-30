@@ -22,7 +22,6 @@ import java.io.IOException;
 import java.net.UnknownHostException;
 import java.nio.ByteBuffer;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Date;
 import java.util.HashMap;
@@ -48,14 +47,14 @@ import com.google.common.primitives.Ints;
 import com.google.common.util.concurrent.FutureCallback;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
-import org.apache.cassandra.locator.EndpointsForRange;
+
+import org.apache.cassandra.dht.TokenRanges;
 import org.apache.cassandra.locator.RangesAtEndpoint;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.ColumnFamilyStore;
-import org.apache.cassandra.locator.Replica;
 import org.apache.cassandra.repair.KeyspaceRepairManager;
 import org.apache.cassandra.schema.Schema;
 import org.apache.cassandra.db.marshal.UTF8Type;
@@ -87,7 +86,6 @@ import org.apache.cassandra.schema.TableId;
 import org.apache.cassandra.service.ActiveRepairService;
 import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.utils.FBUtilities;
-import org.apache.cassandra.utils.Pair;
 
 import static org.apache.cassandra.repair.consistent.ConsistentSession.State.*;
 
@@ -551,44 +549,19 @@ public class LocalSessions
     ListenableFuture prepareSession(KeyspaceRepairManager repairManager,
                                     UUID sessionID,
                                     Collection<ColumnFamilyStore> tables,
-                                    Collection<Range<Token>> fullRanges,
-                                    Collection<Range<Token>> transRanges,
+                                    TokenRanges tokenRanges,
                                     ExecutorService executor)
     {
-        return repairManager.prepareIncrementalRepair(sessionID, tables, fullRanges, transRanges, executor);
+        return repairManager.prepareIncrementalRepair(sessionID, tables, tokenRanges, executor);
     }
 
-    Pair<Collection<Range<Token>>, Collection<Range<Token>>> splitRanges(String keyspace, Collection<Range<Token>> ranges)
+    TokenRanges splitRanges(String keyspace, Set<Range<Token>> ranges)
     {
-        List<Range<Token>> fullRanges = new ArrayList<>();
-        List<Range<Token>> transRanges = new ArrayList<>();
+        RangesAtEndpoint localReplicas = StorageService.instance.getLocalReplicas(keyspace)
+                                                                .filter(r -> ranges.contains(r.range()));
 
-        RangesAtEndpoint localReplicas = StorageService.instance.getLocalReplicas(keyspace);
-        for (Range<Token> range: ranges)
-        {
-            for (Replica replica: localReplicas)
-            {
-                if (replica.range().contains(range))
-                {
-                    if (replica.isFull())
-                    {
-                        fullRanges.add(range);
-                    }
-                    else
-                    {
-                        transRanges.add(range);
-                    }
-                }
-                else
-                {
-                    // sanity check that the ranges we're suppose to split match
-                    // up with the ranges replicated by this node
-                    Preconditions.checkState(!replica.range().intersects(range));
-                }
-            }
-        }
+        return TokenRanges.from(localReplicas);
 
-        return Pair.create(fullRanges, transRanges);
     }
 
     /**
@@ -625,8 +598,8 @@ public class LocalSessions
         ExecutorService executor = Executors.newFixedThreadPool(parentSession.getColumnFamilyStores().size());
 
         KeyspaceRepairManager repairManager = parentSession.getKeyspace().getRepairManager();
-        Pair<Collection<Range<Token>>, Collection<Range<Token>>> rangePair = splitRanges(parentSession.getKeyspace().getName(), parentSession.getRanges());
-        ListenableFuture repairPreparation = prepareSession(repairManager, sessionID, parentSession.getColumnFamilyStores(), rangePair.left, rangePair.right, executor);
+        TokenRanges tokenRanges = splitRanges(parentSession.getKeyspace().getName(), parentSession.getRanges());
+        ListenableFuture repairPreparation = prepareSession(repairManager, sessionID, parentSession.getColumnFamilyStores(), tokenRanges, executor);
 
         Futures.addCallback(repairPreparation, new FutureCallback<Object>()
         {
