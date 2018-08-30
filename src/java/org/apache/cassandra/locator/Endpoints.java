@@ -21,7 +21,6 @@ package org.apache.cassandra.locator;
 import org.apache.cassandra.locator.ReplicaCollection.Mutable.Conflict;
 import org.apache.cassandra.utils.FBUtilities;
 
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedHashMap;
