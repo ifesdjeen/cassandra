@@ -352,6 +352,8 @@ public abstract class ReplicaLayout<E extends Endpoints<E>, L extends ReplicaLay
                 .add(r -> r.isTransient() && livePredicate.test(r.endpoint()), blockFor)
                 .get();
 
+        consistencyLevel.assureSufficientLiveNodesForWrite(keyspace, selected, pending);
+
         return new ForToken(keyspace, consistencyLevel, token, natural, pending, selected, all);
     }
 
