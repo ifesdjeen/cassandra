@@ -101,4 +101,5 @@ public class DatacenterSyncWriteResponseHandler<T> extends AbstractWriteResponse
     {
         return false;
     }
+
 }
