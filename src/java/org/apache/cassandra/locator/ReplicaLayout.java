@@ -324,7 +324,7 @@ public abstract class ReplicaLayout<E extends Endpoints<E>, L extends ReplicaLay
         EndpointsForToken all = Endpoints.concat(natural, pending);
         EndpointsForToken selected = all.filter(IAsyncCallback.isReplicaAlive);
         if (selected.size() < requiredParticipants)
-            throw new UnavailableException(consistencyForPaxos, requiredParticipants, selected.size());
+            throw UnavailableException.create(consistencyForPaxos, requiredParticipants, selected.size());
 
         // We cannot allow CAS operations with 2 or more pending endpoints, see #8346.
         // Note that we fake an impossible number of required nodes in the unavailable exception
