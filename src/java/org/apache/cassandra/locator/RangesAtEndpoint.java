@@ -137,7 +137,7 @@ public class RangesAtEndpoint extends AbstractReplicaCollection<RangesAtEndpoint
 
     public Collection<Range<Token>> fullRanges()
     {
-        return fullRanges.ranges();
+        return full().ranges();
     }
 
     public Collection<Range<Token>> transientRanges()
