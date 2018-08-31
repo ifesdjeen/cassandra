@@ -51,7 +51,7 @@ public enum ConsistencyLevel
     SERIAL      (8),
     LOCAL_SERIAL(9),
     LOCAL_ONE   (10, true),
-    NODELOCAL   (11, true);
+    NODE_LOCAL  (11, true);
 
     private static final Logger logger = LoggerFactory.getLogger(ConsistencyLevel.class);
 

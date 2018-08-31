@@ -203,11 +203,11 @@ public class QueryProcessor implements QueryHandler
         statement.validate(clientState);
 
         ResultMessage result;
-        if (options.getConsistency() == ConsistencyLevel.NODELOCAL)
+        if (options.getConsistency() == ConsistencyLevel.NODE_LOCAL)
         {
             assert Boolean.getBoolean("cassandra.enable_nodelocal_queries") : "Node local consistency level is highly dangerous and should be used only for debugging purposes";
             assert statement instanceof SelectStatement : "Only SELECT statements are permitted for node-local execution";
-            logger.info("Statement {} executed with NODELOCAL consistency level.", statement);
+            logger.info("Statement {} executed with NODE_LOCAL consistency level.", statement);
             result = statement.executeLocally(queryState, options);
         }
         else
