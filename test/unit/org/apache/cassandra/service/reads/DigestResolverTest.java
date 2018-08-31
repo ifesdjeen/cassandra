@@ -18,12 +18,10 @@
 
 package org.apache.cassandra.service.reads;
 
-import com.google.common.collect.Iterables;
 import org.junit.Assert;
 import org.junit.Test;
 
 import org.apache.cassandra.db.ConsistencyLevel;
-import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.SimpleBuilders;
 import org.apache.cassandra.db.SinglePartitionReadCommand;
 import org.apache.cassandra.db.partitions.PartitionUpdate;
@@ -137,36 +135,6 @@ public class DigestResolverTest extends AbstractReadResponseTest
         resolver.preprocess(response(command, EP2, iter(response2), false));
         Assert.assertFalse(resolver.isDataPresent());
         Assert.assertTrue(resolver.hasTransientResponse());
-    }
-
-    /**
-     * If data from a transient replica causes us to send repairs to the node we received
-     * the data response from, we should forward those repairs to the nodes that returned
-     * digest responses agreeing with the data response.
-     */
-    @Test
-    public void transientRepairsForwarding()
-    {
-        SinglePartitionReadCommand command = SinglePartitionReadCommand.fullPartitionRead(cfm, nowInSec, dk);
-        EndpointsForToken targetReplicas = EndpointsForToken.of(dk.getToken(), full(EP1), full(EP2), trans(EP3));
-        TestableReadRepair<?, ?> readRepair = new TestableReadRepair(command, ConsistencyLevel.QUORUM);
-        DigestResolver resolver = new DigestResolver(command, plan(ConsistencyLevel.QUORUM, targetReplicas), readRepair, 0);
-
-        PartitionUpdate fullData = update(row(1000, 4, 4), row(1000, 5, 5)).build();
-        PartitionUpdate transData = update(row(1000, 6, 6)).build();
-
-        Assert.assertFalse(resolver.isDataPresent());
-        resolver.preprocess(response(command, EP1, iter(fullData), false));
-        resolver.preprocess(response(command, EP2, iter(fullData), true));
-        resolver.preprocess(response(command, EP3, iter(transData), false));
-        Assert.assertTrue(resolver.isDataPresent());
-        Assert.assertTrue(resolver.responsesMatch());
-        Assert.assertTrue(resolver.hasTransientResponse());
-
-        consume(resolver.getData());
-        assertPartitionsEqual(transData.unfilteredIterator(), Iterables.getOnlyElement(readRepair.sent.get(EP1).getPartitionUpdates()).unfilteredIterator());
-        assertPartitionsEqual(transData.unfilteredIterator(), Iterables.getOnlyElement(readRepair.sent.get(EP2).getPartitionUpdates()).unfilteredIterator());
-        Assert.assertFalse(readRepair.sent.containsKey(EP3));
     }
 
     private ReplicaLayout.ForToken plan(ConsistencyLevel consistencyLevel, EndpointsForToken replicas)
