@@ -119,6 +119,13 @@ public abstract class ReplicaLayout<E extends Endpoints<E>, L extends ReplicaLay
         return pending;
     }
 
+    public int blockFor()
+    {
+        return pending == null
+                ? consistencyLevel.blockFor(keyspace)
+                : consistencyLevel.blockForWrite(keyspace, pending);
+    }
+
     public Keyspace keyspace()
     {
         return keyspace;
@@ -371,15 +378,15 @@ public abstract class ReplicaLayout<E extends Endpoints<E>, L extends ReplicaLay
         return new ForToken(keyspace, consistencyLevel, token, natural, null, selected);
     }
 
+    public static ForToken forExtendedRead(ForToken extend, Replica with)
+    {
+        EndpointsForToken single = EndpointsForToken.of(extend.selected.token(), with);
+        return extend.withSelected(Endpoints.concat(extend.selected(), single));
+    }
+
     public static ForRange forRangeRead(Keyspace keyspace, ConsistencyLevel consistencyLevel, AbstractBounds<PartitionPosition> range, EndpointsForRange natural, EndpointsForRange selected)
     {
         return new ForRange(keyspace, consistencyLevel, range, natural, selected);
-    }
-
-    public static ForToken forSpeculation(ForToken original)
-    {
-        EndpointsForToken newSelection = original.all().subList(0, original.selected().size() + 1);
-        return new ForToken(original.keyspace, ConsistencyLevel.ALL, original.token, original.natural, original.pending, newSelection);
     }
 
     public String toString()

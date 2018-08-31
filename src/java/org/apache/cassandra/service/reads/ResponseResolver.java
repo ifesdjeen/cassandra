@@ -45,7 +45,8 @@ public abstract class ResponseResolver<E extends Endpoints<E>, L extends Replica
         this.command = command;
         this.replicaLayout = replicaLayout;
         this.readRepair = readRepair;
-        this.responses = new Accumulator<>(replicaLayout.all().size()); // TODO: calculate max possible replicas for the query (e.g. local dc queries won't contact remotes)
+        // TODO: calculate max possible replicas for the query (e.g. local dc queries won't contact remotes)
+        this.responses = new Accumulator<>(replicaLayout.all().size());
         this.queryStartNanoTime = queryStartNanoTime;
     }
 

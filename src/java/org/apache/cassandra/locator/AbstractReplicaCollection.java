@@ -102,12 +102,18 @@ public abstract class AbstractReplicaCollection<C extends AbstractReplicaCollect
 
     public final C filter(Predicate<Replica> predicate)
     {
+        return filter(predicate, Integer.MAX_VALUE);
+    }
+
+    public final C filter(Predicate<Replica> predicate, int limit)
+    {
         if (isEmpty())
             return snapshot();
 
         List<Replica> copy = null;
         int beginRun = -1, endRun = -1;
-        for (int i = 0 ; i < list.size() ; ++i)
+        int i = 0;
+        for (; i < list.size() ; ++i)
         {
             Replica replica = list.get(i);
             if (predicate.test(replica))
@@ -118,10 +124,15 @@ public abstract class AbstractReplicaCollection<C extends AbstractReplicaCollect
                     beginRun = i;
                 else if (endRun > 0)
                 {
-                    copy = new ArrayList<>((list.size() - i) + (endRun - beginRun));
+                    copy = new ArrayList<>(Math.min(limit, (list.size() - i) + (endRun - beginRun)));
                     for (int j = beginRun ; j < endRun ; ++j)
                         copy.add(list.get(j));
                     copy.add(list.get(i));
+                }
+                if (--limit == 0)
+                {
+                    ++i;
+                    break;
                 }
             }
             else if (beginRun >= 0 && endRun < 0)
@@ -131,7 +142,7 @@ public abstract class AbstractReplicaCollection<C extends AbstractReplicaCollect
         if (beginRun < 0)
             beginRun = endRun = 0;
         if (endRun < 0)
-            endRun = size();
+            endRun = i;
         if (copy == null)
             return subList(beginRun, endRun);
         return snapshot(copy);

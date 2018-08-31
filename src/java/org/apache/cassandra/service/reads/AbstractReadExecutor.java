@@ -49,6 +49,9 @@ import org.apache.cassandra.service.StorageProxy.LocalReadRunnable;
 import org.apache.cassandra.tracing.TraceState;
 import org.apache.cassandra.tracing.Tracing;
 
+import static com.google.common.collect.Iterables.all;
+import static com.google.common.collect.Iterables.tryFind;
+
 /**
  * Sends a read request to the replicas needed to satisfy a given ConsistencyLevel.
  *
@@ -62,19 +65,21 @@ public abstract class AbstractReadExecutor
     private static final Logger logger = LoggerFactory.getLogger(AbstractReadExecutor.class);
 
     protected final ReadCommand command;
-    private final ReplicaLayout.ForToken replicaLayout;
+    private   final ReplicaLayout.ForToken replicaLayout;
     protected final ReadRepair<EndpointsForToken, ReplicaLayout.ForToken> readRepair;
     protected final DigestResolver<EndpointsForToken, ReplicaLayout.ForToken> digestResolver;
     protected final ReadCallback<EndpointsForToken, ReplicaLayout.ForToken> handler;
     protected final TraceState traceState;
     protected final ColumnFamilyStore cfs;
     protected final long queryStartNanoTime;
+    private   final int initialDataRequestCount;
     protected volatile PartitionIterator result = null;
 
-    AbstractReadExecutor(ColumnFamilyStore cfs, ReadCommand command, ReplicaLayout.ForToken replicaLayout, long queryStartNanoTime)
+    AbstractReadExecutor(ColumnFamilyStore cfs, ReadCommand command, ReplicaLayout.ForToken replicaLayout, int initialDataRequestCount, long queryStartNanoTime)
     {
         this.command = command;
         this.replicaLayout = replicaLayout;
+        this.initialDataRequestCount = initialDataRequestCount;
         this.readRepair = ReadRepair.create(command, replicaLayout, queryStartNanoTime);
         this.digestResolver = new DigestResolver<>(command, replicaLayout, readRepair, queryStartNanoTime);
         this.handler = new ReadCallback<>(digestResolver, replicaLayout.consistencyLevel().blockFor(replicaLayout.keyspace()), command, replicaLayout, queryStartNanoTime);
@@ -105,18 +110,22 @@ public abstract class AbstractReadExecutor
         return readRepair;
     }
 
-    protected void makeDataRequests(ReplicaCollection<?> replicas)
+    protected void makeFullDataRequests(ReplicaCollection<?> replicas)
     {
-        // TODO: would be better to ensure we only ever supply isFull replicas here
+        assert all(replicas, Replica::isFull);
         makeRequests(command, replicas.filter(Replica::isFull));
-        makeRequests(command.copyAsTransientQuery(), replicas.filter(Replica::isTransient));
+    }
+
+    protected void makeTransientDataRequests(ReplicaCollection<?> replicas)
+    {
+        makeRequests(command.copyAsTransientQuery(), replicas);
     }
 
     protected void makeDigestRequests(ReplicaCollection<?> replicas)
     {
+        assert all(replicas, Replica::isFull);
         // only send digest requests to full replicas, send data requests instead to the transient replicas
-        makeRequests(command.copyAsDigestQuery(), replicas.filter(Replica::isFull));
-        makeRequests(command.copyAsTransientQuery(), replicas.filter(Replica::isTransient));
+        makeRequests(command.copyAsDigestQuery(), replicas);
     }
 
     private void makeRequests(ReadCommand readCommand, ReplicaCollection<?> replicas)
@@ -157,7 +166,16 @@ public abstract class AbstractReadExecutor
     /**
      * send the initial set of requests
      */
-    public abstract void executeAsync();
+    public void executeAsync()
+    {
+        EndpointsForToken selected = replicaLayout().selected();
+        EndpointsForToken transientData = selected.filter(Replica::isTransient);
+        EndpointsForToken fullData = selected.filter(Replica::isFull, Math.max(1, initialDataRequestCount - transientData.size()));
+        EndpointsForToken digest = selected.filter(r -> r.isFull() && !fullData.contains(r));
+        makeFullDataRequests(fullData);
+        makeTransientDataRequests(transientData);
+        makeDigestRequests(digest);
+    }
 
     /**
      * @return an executor appropriate for the configured speculative read policy
@@ -225,15 +243,8 @@ public abstract class AbstractReadExecutor
 
         public NeverSpeculatingReadExecutor(ColumnFamilyStore cfs, ReadCommand command, ReplicaLayout.ForToken replicaLayout, long queryStartNanoTime, boolean logFailedSpeculation)
         {
-            super(cfs, command, replicaLayout, queryStartNanoTime);
+            super(cfs, command, replicaLayout, 1, queryStartNanoTime);
             this.logFailedSpeculation = logFailedSpeculation;
-        }
-
-        public void executeAsync()
-        {
-            makeDataRequests(replicaLayout().selected().subList(0, 1));
-            if (replicaLayout().selected().size() > 1)
-                makeDigestRequests(replicaLayout().selected().subList(1, replicaLayout().selected().size()));
         }
 
         public void maybeTryAdditionalReplicas()
@@ -247,7 +258,6 @@ public abstract class AbstractReadExecutor
 
     static class SpeculatingReadExecutor extends AbstractReadExecutor
     {
-        private volatile ReplicaLayout.ForToken replicaLayout;
         private volatile boolean speculated = false;
 
         public SpeculatingReadExecutor(ColumnFamilyStore cfs,
@@ -255,36 +265,7 @@ public abstract class AbstractReadExecutor
                                        ReplicaLayout.ForToken replicaLayout,
                                        long queryStartNanoTime)
         {
-            super(cfs, command, replicaLayout, queryStartNanoTime);
-            this.replicaLayout = replicaLayout;
-        }
-
-        public ReplicaLayout.ForToken replicaLayout()
-        {
-            return replicaLayout;
-        }
-
-        public void executeAsync()
-        {
-            EndpointsForToken initialReplicas = replicaLayout().selected();
-
-            if (handler.blockfor < initialReplicas.size())
-            {
-                // We're hitting additional targets for read repair.  Since our "extra" replica is the least-
-                // preferred by the snitch, we do an extra data read to start with against a replica more
-                // likely to reply; better to let RR fail than the entire query.
-                makeDataRequests(initialReplicas.subList(0, 2));
-                if (initialReplicas.size() > 2)
-                    makeDigestRequests(initialReplicas.subList(2, initialReplicas.size()));
-            }
-            else
-            {
-                // not doing read repair; all replies are important, so it doesn't matter which nodes we
-                // perform data reads against vs digest.
-                makeDataRequests(initialReplicas.subList(0, 1));
-                if (initialReplicas.size() > 1)
-                    makeDigestRequests(initialReplicas.subList(1, initialReplicas.size()));
-            }
+            super(cfs, command, replicaLayout, replicaLayout.blockFor() < replicaLayout.selected().size() ? 2 : 1, queryStartNanoTime);
         }
 
         public void maybeTryAdditionalReplicas()
@@ -292,15 +273,32 @@ public abstract class AbstractReadExecutor
             if (shouldSpeculateAndMaybeWait())
             {
                 //Handle speculation stats first in case the callback fires immediately
-                speculated = true;
-                replicaLayout = ReplicaLayout.forSpeculation(replicaLayout);
                 cfs.metric.speculativeRetries.inc();
-                // Could be waiting on the data, or on enough digests.
-                Replica extraReplica = replicaLayout().selected().get(replicaLayout().selected().size() - 1);
-                ReadCommand retryCommand = command;
+                speculated = true;
 
-                if (handler.resolver.isDataPresent() && extraReplica.isFull())
-                    retryCommand = command.copyAsDigestQuery();
+                ReadCommand retryCommand = command;
+                Replica extraReplica;
+                if (handler.resolver.isDataPresent())
+                {
+                    extraReplica = tryFind(replicaLayout().all(),
+                            r -> !replicaLayout().selected().contains(r)).orNull();
+                    assert extraReplica != null;
+
+                    retryCommand = extraReplica.isTransient()
+                            ? command.copyAsTransientQuery()
+                            : command.copyAsDigestQuery();
+                }
+                else
+                {
+                    extraReplica = tryFind(replicaLayout().all(),
+                            r -> r.isFull() && !replicaLayout().selected().contains(r)).orNull();
+                    if (extraReplica == null)
+                    {
+                        // cannot safely speculate a new data request, without more work - requests assumed to be
+                        // unique per endpoint, and we have no full nodes left to speculate against
+                        return;
+                    }
+                }
 
                 if (traceState != null)
                     traceState.trace("speculating read retry on {}", extraReplica);
@@ -323,10 +321,10 @@ public abstract class AbstractReadExecutor
     {
         public AlwaysSpeculatingReadExecutor(ColumnFamilyStore cfs,
                                              ReadCommand command,
-                                             ReplicaLayout.ForToken targetReplicas,
+                                             ReplicaLayout.ForToken replicaLayout,
                                              long queryStartNanoTime)
         {
-            super(cfs, command, targetReplicas, queryStartNanoTime);
+            super(cfs, command, replicaLayout, replicaLayout.selected().size() > 1 ? 2 : 1, queryStartNanoTime);
         }
 
         public void maybeTryAdditionalReplicas()
@@ -337,9 +335,7 @@ public abstract class AbstractReadExecutor
         @Override
         public void executeAsync()
         {
-            makeDataRequests(replicaLayout().selected().subList(0, replicaLayout().selected().size() > 1 ? 2 : 1));
-            if (replicaLayout().selected().size() > 2)
-                makeDigestRequests(replicaLayout().selected().subList(2, replicaLayout().selected().size()));
+            super.executeAsync();
             cfs.metric.speculativeRetries.inc();
         }
 

@@ -212,12 +212,12 @@ public enum ConsistencyLevel
         return dcEndpoints;
     }
 
-    public <E extends Endpoints<? extends E>> E filterForQuery(Keyspace keyspace, E liveReplicas)
+    public <E extends Endpoints<E>> E filterForQuery(Keyspace keyspace, E liveReplicas)
     {
         return filterForQuery(keyspace, liveReplicas, false);
     }
 
-    public <E extends Endpoints<? extends E>> E filterForQuery(Keyspace keyspace, E liveReplicas, boolean alwaysSpeculate)
+    public <E extends Endpoints<E>> E filterForQuery(Keyspace keyspace, E liveReplicas, boolean alwaysSpeculate)
     {
         /*
          * If we are doing an each quorum query, we have to make sure that the endpoints we select
@@ -241,7 +241,7 @@ public enum ConsistencyLevel
         return liveReplicas.subList(0, Math.min(liveReplicas.size(), blockFor(keyspace) + (alwaysSpeculate ? 1 : 0)));
     }
 
-    private <C extends ReplicaCollection<? extends C>> C filterForEachQuorum(Keyspace keyspace, C liveReplicas)
+    private <E extends Endpoints<E>> E filterForEachQuorum(Keyspace keyspace, E liveReplicas)
     {
         NetworkTopologyStrategy strategy = (NetworkTopologyStrategy) keyspace.getReplicationStrategy();
         Map<String, Integer> dcsReplicas = new HashMap<>();
