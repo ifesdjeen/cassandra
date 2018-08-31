@@ -72,13 +72,12 @@ public class StreamPlan
      *
      * @param from endpoint address to fetch data from.
      * @param keyspace name of keyspace
-     * @param fullRanges ranges to fetch that from provides the full version of
-     * @param transientRanges ranges to fetch that from provides only transient data of
+     * @param ranges ranges to fetch that from provides the full/transient version of
      * @return this object for chaining
      */
-    public StreamPlan requestRanges(InetAddressAndPort from, String keyspace, RangesAtEndpoint fullRanges, RangesAtEndpoint transientRanges)
+    public StreamPlan requestRanges(InetAddressAndPort from, String keyspace, RangesAtEndpoint ranges)
     {
-        return requestRanges(from, keyspace, fullRanges, transientRanges, EMPTY_COLUMN_FAMILIES);
+        return requestRanges(from, keyspace, ranges, EMPTY_COLUMN_FAMILIES);
     }
 
     /**
@@ -86,20 +85,17 @@ public class StreamPlan
      *
      * @param from endpoint address to fetch data from.
      * @param keyspace name of keyspace
-     * @param fullRanges ranges to fetch that from provides the full data for
-     * @param transientRanges ranges to fetch that from provides only transient data for
+     * @param ranges ranges to fetch that from provides the full/transient data for
      * @param columnFamilies specific column families
      * @return this object for chaining
      */
-    public StreamPlan requestRanges(InetAddressAndPort from, String keyspace, RangesAtEndpoint fullRanges, RangesAtEndpoint transientRanges, String... columnFamilies)
+    public StreamPlan requestRanges(InetAddressAndPort from, String keyspace, RangesAtEndpoint ranges, String... columnFamilies)
     {
         //It should either be a dummy address for repair or if it's a bootstrap/move/rebuild it should be this node
-        assert all(fullRanges, Replica::isLocal) || all(fullRanges, range -> range.endpoint().getHostAddress(true).equals("0.0.0.0:0")) :
-             fullRanges.toString();
-        assert all(transientRanges, Replica::isLocal) || all(transientRanges, range -> range.endpoint().getHostAddress(true).equals("0.0.0.0:0")) :
-        transientRanges.toString();
+        assert all(ranges, Replica::isLocal) || all(ranges, range -> range.endpoint().getHostAddress(true).equals("0.0.0.0:0")) :
+             ranges.toString();
         StreamSession session = coordinator.getOrCreateNextSession(from);
-        session.addStreamRequest(keyspace, fullRanges, transientRanges, Arrays.asList(columnFamilies));
+        session.addStreamRequest(keyspace, ranges, Arrays.asList(columnFamilies));
         return this;
     }
 
