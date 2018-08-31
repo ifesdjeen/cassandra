@@ -204,8 +204,8 @@ public class TableMetrics
     public final Counter speculativeInsufficientReplicas;
     public final Gauge<Long> speculativeSampleLatencyNanos;
 
-    public final Counter cheapQuorumUpgrades;
-    public final Gauge<Long> cheapQuorumUpdgradesSampleWriteLatencyNanos;
+    public final Counter speculativeWrites;
+    public final Gauge<Long> speculativeWriteLatencyNanos;
 
     public final static LatencyMetrics globalReadLatency = new LatencyMetrics(globalFactory, globalAliasFactory, "Read");
     public final static LatencyMetrics globalWriteLatency = new LatencyMetrics(globalFactory, globalAliasFactory, "Write");
@@ -772,8 +772,8 @@ public class TableMetrics
         speculativeInsufficientReplicas = createTableCounter("SpeculativeInsufficientReplicas");
         speculativeSampleLatencyNanos = createTableGauge("SpeculativeSampleLatencyNanos", () -> cfs.sampleReadLatencyNanos);
 
-        cheapQuorumUpgrades = createTableCounter("CheapQuorumUpgradesAttempted");
-        cheapQuorumUpdgradesSampleWriteLatencyNanos = createTableGauge("CheapQuorumUpgradesSampleWriteLatencyNanos", () -> cfs.cheapQuorumUpgradesSampleWriteLatencyNanos);
+        speculativeWrites = createTableCounter("SpeculativeWrites");
+        speculativeWriteLatencyNanos = createTableGauge("SpeculativeWriteLatencyNanos", () -> cfs.speculativeWriteLatencyNanos);
 
         keyCacheHitRate = Metrics.register(factory.createMetricName("KeyCacheHitRate"),
                                            aliasFactory.createMetricName("KeyCacheHitRate"),

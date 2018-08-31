@@ -102,8 +102,8 @@ public class KeyspaceMetrics
     public final Counter speculativeFailedRetries;
     /** Needed to speculate, but didn't have enough replicas **/
     public final Counter speculativeInsufficientReplicas;
-    /** Cheap Quorum Upgrades **/
-    public final Counter cheapQuorumUpgrades;
+    /** Needed to write to a transient replica to satisfy quorum **/
+    public final Counter speculativeWrites;
     /** Number of started repairs as coordinator on this keyspace */
     public final Counter repairsStarted;
     /** Number of completed repairs as coordinator on this keyspace */
@@ -273,7 +273,7 @@ public class KeyspaceMetrics
         speculativeRetries = createKeyspaceCounter("SpeculativeRetries", metric -> metric.speculativeRetries.getCount());
         speculativeFailedRetries = createKeyspaceCounter("SpeculativeFailedRetries", metric -> metric.speculativeFailedRetries.getCount());
         speculativeInsufficientReplicas = createKeyspaceCounter("SpeculativeInsufficientReplicas", metric -> metric.speculativeInsufficientReplicas.getCount());
-        cheapQuorumUpgrades = createKeyspaceCounter("CheapQuorumUpgrades", metric -> metric.cheapQuorumUpgrades.getCount());
+        speculativeWrites = createKeyspaceCounter("SpeculativeWrites", metric -> metric.speculativeWrites.getCount());
         repairsStarted = createKeyspaceCounter("RepairJobsStarted", metric -> metric.repairsStarted.getCount());
         repairsCompleted = createKeyspaceCounter("RepairJobsCompleted", metric -> metric.repairsCompleted.getCount());
         repairTime = Metrics.timer(factory.createMetricName("RepairTime"));

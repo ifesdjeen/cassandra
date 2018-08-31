@@ -72,7 +72,7 @@ public class BlockingReadRepair<E extends Endpoints<E>, L extends ReplicaLayout<
     {
         for (BlockingPartitionRepair repair: repairs)
         {
-            repair.maybeSendAdditionalWrites(cfs.cheapQuorumUpgradesSampleWriteLatencyNanos, TimeUnit.NANOSECONDS);
+            repair.maybeSendAdditionalWrites(cfs.speculativeWriteLatencyNanos, TimeUnit.NANOSECONDS);
         }
     }
 
