@@ -464,7 +464,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
         try
         {
             sampleReadLatencyNanos = metadata().params.speculativeRetry.calculateThreshold(metric.coordinatorReadLatency);
-            sampleWriteLatencyNanos = metadata().params.speculativeRetry.calculateThreshold(metric.coordinatorWriteLatency);
+            sampleWriteLatencyNanos = metadata().params.upgradeCheapQuorum.calculateThreshold(metric.coordinatorWriteLatency);
         }
         catch (Throwable e)
         {

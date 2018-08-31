@@ -137,6 +137,7 @@ public final class SchemaKeyspace
               + "min_index_interval int,"
               + "read_repair_chance double," // no longer used, left for drivers' sake
               + "speculative_retry text,"
+              + "upgrade_cheap_quorum text,"
               + "cdc boolean,"
               + "read_repair text,"
               + "PRIMARY KEY ((keyspace_name), table_name))");
@@ -203,6 +204,7 @@ public final class SchemaKeyspace
               + "min_index_interval int,"
               + "read_repair_chance double," // no longer used, left for drivers' sake
               + "speculative_retry text,"
+              + "upgrade_cheap_quorum text,"
               + "cdc boolean,"
               + "read_repair text,"
               + "PRIMARY KEY ((keyspace_name), view_name))");
@@ -563,6 +565,7 @@ public final class SchemaKeyspace
                .add("min_index_interval", params.minIndexInterval)
                .add("read_repair_chance", 0.0) // no longer used, left for drivers' sake
                .add("speculative_retry", params.speculativeRetry.toString())
+               .add("upgrade_cheap_quorum", params.upgradeCheapQuorum.toString())
                .add("crc_check_chance", params.crcCheckChance)
                .add("caching", params.caching.asMap())
                .add("compaction", params.compaction.asMap())
@@ -991,6 +994,7 @@ public final class SchemaKeyspace
                           .minIndexInterval(row.getInt("min_index_interval"))
                           .crcCheckChance(row.getDouble("crc_check_chance"))
                           .speculativeRetry(SpeculativeRetryPolicy.fromString(row.getString("speculative_retry")))
+                          .upgradeCheapQuorum(SpeculativeRetryPolicy.fromString(row.getString("upgrade_cheap_quorum")))
                           .cdc(row.has("cdc") && row.getBoolean("cdc"))
                           .readRepair(getReadRepairStrategy(row))
                           .build();

@@ -834,6 +834,12 @@ public final class TableMetadata
             return this;
         }
 
+        public Builder upgradeCheapQuorum(SpeculativeRetryPolicy val)
+        {
+            params.upgradeCheapQuorum(val);
+            return this;
+        }
+
         public Builder extensions(Map<String, ByteBuffer> val)
         {
             params.extensions(val);
