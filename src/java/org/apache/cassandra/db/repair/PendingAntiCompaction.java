@@ -42,8 +42,8 @@ import org.apache.cassandra.db.compaction.OperationType;
 import org.apache.cassandra.db.lifecycle.LifecycleTransaction;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
-import org.apache.cassandra.dht.TokenRanges;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
+import org.apache.cassandra.locator.RangesAtEndpoint;
 import org.apache.cassandra.utils.concurrent.Refs;
 
 /**
@@ -127,9 +127,9 @@ public class PendingAntiCompaction
     static class AcquisitionCallback implements AsyncFunction<List<AcquireResult>, Object>
     {
         private final UUID parentRepairSession;
-        private final TokenRanges tokenRanges;
+        private final RangesAtEndpoint tokenRanges;
 
-        public AcquisitionCallback(UUID parentRepairSession, TokenRanges tokenRanges)
+        public AcquisitionCallback(UUID parentRepairSession, RangesAtEndpoint tokenRanges)
         {
             this.parentRepairSession = parentRepairSession;
             this.tokenRanges = tokenRanges;
@@ -178,12 +178,12 @@ public class PendingAntiCompaction
 
     private final UUID prsId;
     private final Collection<ColumnFamilyStore> tables;
-    private final TokenRanges tokenRanges;
+    private final RangesAtEndpoint tokenRanges;
     private final ExecutorService executor;
 
     public PendingAntiCompaction(UUID prsId,
                                  Collection<ColumnFamilyStore> tables,
-                                 TokenRanges tokenRanges,
+                                 RangesAtEndpoint tokenRanges,
                                  ExecutorService executor)
     {
         this.prsId = prsId;
@@ -198,7 +198,7 @@ public class PendingAntiCompaction
         for (ColumnFamilyStore cfs : tables)
         {
             cfs.forceBlockingFlush();
-            ListenableFutureTask<AcquireResult> task = ListenableFutureTask.create(new AcquisitionCallable(cfs, tokenRanges.all(), prsId));
+            ListenableFutureTask<AcquireResult> task = ListenableFutureTask.create(new AcquisitionCallable(cfs, tokenRanges.ranges(), prsId));
             executor.submit(task);
             tasks.add(task);
         }

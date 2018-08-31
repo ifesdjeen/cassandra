@@ -32,10 +32,8 @@ import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.locator.RangesAtEndpoint;
 import org.apache.cassandra.locator.Replica;
-import org.apache.cassandra.locator.ReplicaCollection;
 import org.apache.cassandra.net.CompactEndpointSerializationHelper;
 import org.apache.cassandra.net.MessagingService;
-import org.apache.hadoop.mapred.JobTracker;
 
 public class StreamRequest
 {
@@ -65,13 +63,13 @@ public class StreamRequest
             out.writeInt(request.columnFamilies.size());
             CompactEndpointSerializationHelper.streamingInstance.serialize(request.replicas.endpoint(), out, version);
 
-            serializeReplicas(request.replicas.fullRanges(), out, version);
-            serializeReplicas(request.replicas.transientRanges(), out, version);
+            serializeRanges(request.replicas.fullRanges(), out, version);
+            serializeRanges(request.replicas.transientRanges(), out, version);
             for (String cf : request.columnFamilies)
                 out.writeUTF(cf);
         }
 
-        private void serializeReplicas(Collection<Range<Token>> ranges, DataOutputPlus out, int version) throws IOException
+        private void serializeRanges(Collection<Range<Token>> ranges, DataOutputPlus out, int version) throws IOException
         {
             out.writeInt(ranges.size());
 
@@ -89,8 +87,8 @@ public class StreamRequest
             int cfCount = in.readInt();
             InetAddressAndPort endpoint = CompactEndpointSerializationHelper.streamingInstance.deserialize(in, version);
             RangesAtEndpoint.Builder builder = RangesAtEndpoint.builder(endpoint);
-            deserializeReplicas(in, version, builder, endpoint, true);
-            deserializeReplicas(in, version, builder, endpoint, false);
+            deserializeRanges(in, version, builder, endpoint, true);
+            deserializeRanges(in, version, builder, endpoint, false);
 
             List<String> columnFamilies = new ArrayList<>(cfCount);
             for (int i = 0; i < cfCount; i++)
@@ -98,7 +96,7 @@ public class StreamRequest
             return new StreamRequest(keyspace, builder.build(), columnFamilies);
         }
 
-        void deserializeReplicas(DataInputPlus in, int version, RangesAtEndpoint.Builder replicas, InetAddressAndPort endpoint, boolean isFull) throws IOException
+        void deserializeRanges(DataInputPlus in, int version, RangesAtEndpoint.Builder replicas, InetAddressAndPort endpoint, boolean isFull) throws IOException
         {
             int replicaCount = in.readInt();
 
@@ -119,14 +117,14 @@ public class StreamRequest
             size += TypeSizes.sizeof(request.columnFamilies.size());
             size += CompactEndpointSerializationHelper.streamingInstance.serializedSize(request.replicas.endpoint(), version);
 
-            size += replicasSerializedSize(request.replicas.fullRanges(), version);
-            size += replicasSerializedSize(request.replicas.transientRanges(), version);
+            size += rangesSerializedSize(request.replicas.fullRanges(), version);
+            size += rangesSerializedSize(request.replicas.transientRanges(), version);
             for (String cf : request.columnFamilies)
                 size += TypeSizes.sizeof(cf);
             return size;
         }
 
-        private long replicasSerializedSize(Collection<Range<Token>> ranges, int version)
+        private long rangesSerializedSize(Collection<Range<Token>> ranges, int version)
         {
             long size = 0;
             size += TypeSizes.sizeof(ranges.size());

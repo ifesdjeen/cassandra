@@ -48,7 +48,6 @@ import com.google.common.util.concurrent.FutureCallback;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 
-import org.apache.cassandra.dht.TokenRanges;
 import org.apache.cassandra.locator.RangesAtEndpoint;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -549,19 +548,16 @@ public class LocalSessions
     ListenableFuture prepareSession(KeyspaceRepairManager repairManager,
                                     UUID sessionID,
                                     Collection<ColumnFamilyStore> tables,
-                                    TokenRanges tokenRanges,
+                                    RangesAtEndpoint tokenRanges,
                                     ExecutorService executor)
     {
         return repairManager.prepareIncrementalRepair(sessionID, tables, tokenRanges, executor);
     }
 
-    TokenRanges splitRanges(String keyspace, Set<Range<Token>> ranges)
+    RangesAtEndpoint filterLocalRanges(String keyspace, Set<Range<Token>> ranges)
     {
-        RangesAtEndpoint localReplicas = StorageService.instance.getLocalReplicas(keyspace)
-                                                                .filter(r -> ranges.contains(r.range()));
-
-        return TokenRanges.from(localReplicas);
-
+        return StorageService.instance.getLocalReplicas(keyspace)
+                                      .filter(r -> ranges.contains(r.range()));
     }
 
     /**
@@ -598,7 +594,7 @@ public class LocalSessions
         ExecutorService executor = Executors.newFixedThreadPool(parentSession.getColumnFamilyStores().size());
 
         KeyspaceRepairManager repairManager = parentSession.getKeyspace().getRepairManager();
-        TokenRanges tokenRanges = splitRanges(parentSession.getKeyspace().getName(), parentSession.getRanges());
+        RangesAtEndpoint tokenRanges = filterLocalRanges(parentSession.getKeyspace().getName(), parentSession.getRanges());
         ListenableFuture repairPreparation = prepareSession(repairManager, sessionID, parentSession.getColumnFamilyStores(), tokenRanges, executor);
 
         Futures.addCallback(repairPreparation, new FutureCallback<Object>()

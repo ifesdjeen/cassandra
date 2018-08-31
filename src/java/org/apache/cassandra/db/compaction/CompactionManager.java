@@ -35,7 +35,6 @@ import com.google.common.base.Preconditions;
 import com.google.common.collect.*;
 import com.google.common.util.concurrent.*;
 
-import org.apache.cassandra.dht.TokenRanges;
 import org.apache.cassandra.locator.RangesAtEndpoint;
 import org.apache.cassandra.locator.Replica;
 import org.slf4j.Logger;
@@ -650,7 +649,7 @@ public class CompactionManager implements CompactionManagerMBean
      * Splits the given token ranges of the given sstables into a pending repair silo
      */
     public ListenableFuture<?> submitPendingAntiCompaction(ColumnFamilyStore cfs,
-                                                           TokenRanges tokenRanges,
+                                                           RangesAtEndpoint tokenRanges,
                                                            Refs<SSTableReader> sstables,
                                                            LifecycleTransaction txn,
                                                            UUID sessionId)
@@ -722,7 +721,7 @@ public class CompactionManager implements CompactionManagerMBean
      * @throws IOException
      */
     public void performAnticompaction(ColumnFamilyStore cfs,
-                                      TokenRanges ranges,
+                                      RangesAtEndpoint ranges,
                                       Refs<SSTableReader> validatedForRepair,
                                       LifecycleTransaction txn,
                                       UUID sessionID) throws IOException
@@ -740,8 +739,8 @@ public class CompactionManager implements CompactionManagerMBean
 
             Set<SSTableReader> sstables = new HashSet<>(validatedForRepair);
             validateSSTableBoundsForAnticompaction(sessionID, sstables, ranges);
-            mutateFullyContainedSSTables(cfs, validatedForRepair, sstables.iterator(), ranges.full, txn, sessionID, false);
-            mutateFullyContainedSSTables(cfs, validatedForRepair, sstables.iterator(), ranges.trans, txn, sessionID, true);
+            mutateFullyContainedSSTables(cfs, validatedForRepair, sstables.iterator(), ranges.fullRanges(), txn, sessionID, false);
+            mutateFullyContainedSSTables(cfs, validatedForRepair, sstables.iterator(), ranges.transientRanges(), txn, sessionID, true);
 
             assert txn.originals().equals(sstables);
             if (!sstables.isEmpty())
@@ -759,9 +758,9 @@ public class CompactionManager implements CompactionManagerMBean
 
     static void validateSSTableBoundsForAnticompaction(UUID sessionID,
                                                        Collection<SSTableReader> sstables,
-                                                       TokenRanges ranges)
+                                                       RangesAtEndpoint ranges)
     {
-        List<Range<Token>> normalizedRanges = Range.normalize(ranges.all());
+        List<Range<Token>> normalizedRanges = Range.normalize(ranges.ranges());
         for (SSTableReader sstable : sstables)
         {
             Bounds<Token> bounds = new Bounds<>(sstable.first.getToken(), sstable.last.getToken());
@@ -1431,7 +1430,7 @@ public class CompactionManager implements CompactionManagerMBean
      *   the {@link org.apache.cassandra.io.sstable.metadata.StatsMetadata#pendingRepair} field.
      */
     private void doAntiCompaction(ColumnFamilyStore cfs,
-                                  TokenRanges ranges,
+                                  RangesAtEndpoint ranges,
                                   LifecycleTransaction txn,
                                   UUID pendingRepair)
     {
@@ -1464,7 +1463,7 @@ public class CompactionManager implements CompactionManagerMBean
     }
 
     private int antiCompactGroup(ColumnFamilyStore cfs,
-                                 TokenRanges ranges,
+                                 RangesAtEndpoint ranges,
                                  LifecycleTransaction txn,
                                  UUID pendingRepair)
     {
@@ -1505,8 +1504,8 @@ public class CompactionManager implements CompactionManagerMBean
             transWriter.switchWriter(CompactionManager.createWriterForAntiCompaction(cfs, destination, expectedBloomFilterSize, UNREPAIRED_SSTABLE, pendingRepair, true, sstableAsSet, txn));
             unrepairedWriter.switchWriter(CompactionManager.createWriterForAntiCompaction(cfs, destination, expectedBloomFilterSize, UNREPAIRED_SSTABLE, NO_PENDING_REPAIR, false, sstableAsSet, txn));
 
-            Predicate<Token> fullChecker = !ranges.full.isEmpty() ? new Range.OrderedRangeContainmentChecker(ranges.full) : t -> false;
-            Predicate<Token> transChecker = !ranges.trans.isEmpty() ? new Range.OrderedRangeContainmentChecker(ranges.trans) : t -> false;
+            Predicate<Token> fullChecker = !ranges.fullRanges().isEmpty() ? new Range.OrderedRangeContainmentChecker(ranges.fullRanges()) : t -> false;
+            Predicate<Token> transChecker = !ranges.transientRanges().isEmpty() ? new Range.OrderedRangeContainmentChecker(ranges.transientRanges()) : t -> false;
             while (ci.hasNext())
             {
                 try (UnfilteredRowIterator partition = ci.next())

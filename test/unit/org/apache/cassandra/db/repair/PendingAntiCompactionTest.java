@@ -18,6 +18,7 @@
 
 package org.apache.cassandra.db.repair;
 
+import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -42,7 +43,8 @@ import org.slf4j.LoggerFactory;
 import org.apache.cassandra.SchemaLoader;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.compaction.CompactionManager;
-import org.apache.cassandra.dht.TokenRanges;
+import org.apache.cassandra.locator.RangesAtEndpoint;
+import org.apache.cassandra.locator.Replica;
 import org.apache.cassandra.schema.TableId;
 import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.schema.Schema;
@@ -66,6 +68,7 @@ public class PendingAntiCompactionTest
     private static final Logger logger = LoggerFactory.getLogger(PendingAntiCompactionTest.class);
     private static final Collection<Range<Token>> FULL_RANGE;
     private static final Collection<Range<Token>> NO_RANGES = Collections.emptyList();
+    private static InetAddressAndPort local;
 
     static
     {
@@ -80,9 +83,10 @@ public class PendingAntiCompactionTest
     private ColumnFamilyStore cfs;
 
     @BeforeClass
-    public static void setupClass()
+    public static void setupClass() throws Throwable
     {
         SchemaLoader.prepareServer();
+        local = InetAddressAndPort.getByName("127.0.0.1");
     }
 
     @Before
@@ -92,6 +96,7 @@ public class PendingAntiCompactionTest
         cfm = CreateTableStatement.parse(String.format("CREATE TABLE %s.%s (k INT PRIMARY KEY, v INT)", ks, tbl), ks).build();
         SchemaLoader.createKeyspace(ks, KeyspaceParams.simple(1), cfm);
         cfs = Schema.instance.getColumnFamilyStoreInstance(cfm.id);
+
     }
 
     private void makeSSTables(int num)
@@ -108,7 +113,7 @@ public class PendingAntiCompactionTest
 
     private static class InstrumentedAcquisitionCallback extends PendingAntiCompaction.AcquisitionCallback
     {
-        public InstrumentedAcquisitionCallback(UUID parentRepairSession, TokenRanges ranges)
+        public InstrumentedAcquisitionCallback(UUID parentRepairSession, RangesAtEndpoint ranges)
         {
             super(parentRepairSession, ranges);
         }
@@ -158,7 +163,7 @@ public class PendingAntiCompactionTest
         ExecutorService executor = Executors.newSingleThreadExecutor();
         try
         {
-            pac = new PendingAntiCompaction(sessionID, tables, TokenRanges.from(ranges, NO_RANGES), executor);
+            pac = new PendingAntiCompaction(sessionID, tables, atEndpoint(ranges, NO_RANGES), executor);
             pac.run().get();
         }
         finally
@@ -287,7 +292,7 @@ public class PendingAntiCompactionTest
         PendingAntiCompaction.AcquireResult result = acquisitionCallable.call();
         Assert.assertNotNull(result);
 
-        InstrumentedAcquisitionCallback cb = new InstrumentedAcquisitionCallback(UUIDGen.getTimeUUID(), TokenRanges.from(FULL_RANGE, NO_RANGES));
+        InstrumentedAcquisitionCallback cb = new InstrumentedAcquisitionCallback(UUIDGen.getTimeUUID(), atEndpoint(FULL_RANGE, NO_RANGES));
         Assert.assertTrue(cb.submittedCompactions.isEmpty());
         cb.apply(Lists.newArrayList(result));
 
@@ -311,7 +316,7 @@ public class PendingAntiCompactionTest
         Assert.assertNotNull(result);
         Assert.assertEquals(Transactional.AbstractTransactional.State.IN_PROGRESS, result.txn.state());
 
-        InstrumentedAcquisitionCallback cb = new InstrumentedAcquisitionCallback(UUIDGen.getTimeUUID(), TokenRanges.from(FULL_RANGE, Collections.emptyList()));
+        InstrumentedAcquisitionCallback cb = new InstrumentedAcquisitionCallback(UUIDGen.getTimeUUID(), atEndpoint(FULL_RANGE, Collections.emptyList()));
         Assert.assertTrue(cb.submittedCompactions.isEmpty());
         cb.apply(Lists.newArrayList(result, null));
 
@@ -336,7 +341,7 @@ public class PendingAntiCompactionTest
         ColumnFamilyStore cfs2 = Schema.instance.getColumnFamilyStoreInstance(Schema.instance.getTableMetadata("system", "peers").id);
         PendingAntiCompaction.AcquireResult fakeResult = new PendingAntiCompaction.AcquireResult(cfs2, null, null);
 
-        InstrumentedAcquisitionCallback cb = new InstrumentedAcquisitionCallback(UUIDGen.getTimeUUID(), TokenRanges.from(FULL_RANGE, NO_RANGES));
+        InstrumentedAcquisitionCallback cb = new InstrumentedAcquisitionCallback(UUIDGen.getTimeUUID(), atEndpoint(FULL_RANGE, NO_RANGES));
         Assert.assertTrue(cb.submittedCompactions.isEmpty());
         cb.apply(Lists.newArrayList(result, fakeResult));
 
@@ -362,7 +367,19 @@ public class PendingAntiCompactionTest
                                                                  true,0,
                                                                  true,
                                                                  PreviewKind.NONE);
-        CompactionManager.instance.performAnticompaction(result.cfs, TokenRanges.from(FULL_RANGE, NO_RANGES), result.refs, result.txn, sessionID);
+        CompactionManager.instance.performAnticompaction(result.cfs, atEndpoint(FULL_RANGE, NO_RANGES), result.refs, result.txn, sessionID);
 
+    }
+
+    private static RangesAtEndpoint atEndpoint(Collection<Range<Token>> full, Collection<Range<Token>> trans)
+    {
+        RangesAtEndpoint.Builder builder = RangesAtEndpoint.builder(local);
+        for (Range<Token> range : full)
+            builder.add(new Replica(local, range, true));
+
+        for (Range<Token> range : trans)
+            builder.add(new Replica(local, range, false));
+
+        return builder.build();
     }
 }
