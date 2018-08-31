@@ -140,15 +140,13 @@ public class DiskBoundaryManager
         Splitter splitter = partitioner.splitter().get();
         boolean dontSplitRanges = DatabaseDescriptor.getNumTokens() > 1;
 
-        List<Splitter.WeightedRange> weightedRanges = new ArrayList<>(fullRanges.size() + (transientRanges != null ? transientRanges.size() : 0));
+        List<Splitter.WeightedRange> weightedRanges = new ArrayList<>(fullRanges.size() + transientRanges.size());
         for (Range<Token> r : fullRanges)
             weightedRanges.add(new Splitter.WeightedRange(1.0, r));
 
-        if (transientRanges != null)
-        {
-            for (Range<Token> r : transientRanges)
-                weightedRanges.add(new Splitter.WeightedRange(0.1, r));
-        }
+        for (Range<Token> r : transientRanges)
+            weightedRanges.add(new Splitter.WeightedRange(0.1, r));
+
         weightedRanges.sort(Comparator.comparing(Splitter.WeightedRange::left));
 
         List<Token> boundaries = splitter.splitOwnedRanges(dataDirectories.length, weightedRanges, dontSplitRanges);
@@ -162,6 +160,4 @@ public class DiskBoundaryManager
         diskBoundaries.add(partitioner.getMaximumToken().maxKeyBound());
         return diskBoundaries;
     }
-
-
 }
