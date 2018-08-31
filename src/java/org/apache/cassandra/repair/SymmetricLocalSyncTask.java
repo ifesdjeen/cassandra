@@ -68,7 +68,8 @@ public class SymmetricLocalSyncTask extends SymmetricSyncTask implements StreamE
                           .listeners(this)
                           .flushBeforeTransfer(pendingRepair == null)
                           // see comment on RangesAtEndpoint.toDummyList for why we synthesize replicas here
-                          .requestRanges(dst, desc.keyspace, RangesAtEndpoint.toDummyList(differences), desc.columnFamily);  // request ranges from the remote node
+                          .requestRanges(dst, desc.keyspace, RangesAtEndpoint.toDummyList(differences),
+                                  RangesAtEndpoint.toDummyList(Collections.emptyList()), desc.columnFamily);  // request ranges from the remote node
 
         if (!pullRepair && !remoteIsTransient)
         {

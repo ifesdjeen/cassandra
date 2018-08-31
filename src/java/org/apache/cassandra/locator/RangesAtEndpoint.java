@@ -49,8 +49,8 @@ public class RangesAtEndpoint extends AbstractReplicaCollection<RangesAtEndpoint
 
     private final InetAddressAndPort endpoint;
     private volatile Map<Range<Token>, Replica> byRange;
-    private volatile Collection<Range<Token>> fullRanges;
-    private volatile Collection<Range<Token>> transRanges;
+    private volatile RangesAtEndpoint fullRanges;
+    private volatile RangesAtEndpoint transRanges;
 
     private RangesAtEndpoint(InetAddressAndPort endpoint, List<Replica> list, boolean isSnapshot)
     {
@@ -119,20 +119,30 @@ public class RangesAtEndpoint extends AbstractReplicaCollection<RangesAtEndpoint
                         replica);
     }
 
+    public RangesAtEndpoint full()
+    {
+        RangesAtEndpoint coll = fullRanges;
+        if (fullRanges == null)
+            fullRanges = coll = filter(Replica::isFull);
+        return coll;
+    }
+
+    public RangesAtEndpoint trans()
+    {
+        RangesAtEndpoint coll = transRanges;
+        if (transRanges == null)
+            transRanges = coll = filter(Replica::isTransient);
+        return coll;
+    }
+
     public Collection<Range<Token>> fullRanges()
     {
-        Collection<Range<Token>> coll = fullRanges;
-        if (fullRanges == null)
-            fullRanges = coll = filter(Replica::isFull).ranges();
-        return coll;
+        return fullRanges.ranges();
     }
 
     public Collection<Range<Token>> transientRanges()
     {
-        Collection<Range<Token>> coll = transRanges;
-        if (transRanges == null)
-            transRanges = coll = filter(Replica::isTransient).ranges();
-        return coll;
+        return trans().ranges();
     }
 
     public boolean contains(Range<Token> range, boolean isFull)

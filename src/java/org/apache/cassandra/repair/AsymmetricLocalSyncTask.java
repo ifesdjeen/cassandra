@@ -57,7 +57,8 @@ public class AsymmetricLocalSyncTask extends AsymmetricSyncTask implements Strea
                           .listeners(this)
                           .flushBeforeTransfer(pendingRepair == null)
                           // request ranges from the remote node, see comment on RangesAtEndpoint.toDummyList for why we synthesize replicas here
-                          .requestRanges(fetchFrom, desc.keyspace, RangesAtEndpoint.toDummyList(rangesToFetch), desc.columnFamily);
+                          .requestRanges(fetchFrom, desc.keyspace, RangesAtEndpoint.toDummyList(rangesToFetch),
+                                  RangesAtEndpoint.toDummyList(Collections.emptyList()), desc.columnFamily);
         plan.execute();
 
     }
