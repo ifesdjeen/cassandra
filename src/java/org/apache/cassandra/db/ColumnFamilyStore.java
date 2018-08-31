@@ -1314,11 +1314,11 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
         List<AbstractBounds<PartitionPosition>> bounds = new ArrayList<>();
         DecoratedKey first = null, last = null;
         /*
-        normalizeByRange the intervals covered by the sstables
+        normalize the intervals covered by the sstables
         assume we have sstables like this (brackets representing first/last key in the sstable);
         [   ] [   ]    [   ]   [  ]
            [   ]         [       ]
-        then we can, instead of searching the interval tree 6 times, normalizeByRange the intervals and
+        then we can, instead of searching the interval tree 6 times, normalize the intervals and
         only query the tree 2 times, for these intervals;
         [         ]    [          ]
          */
