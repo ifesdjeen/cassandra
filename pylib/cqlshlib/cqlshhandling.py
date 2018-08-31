@@ -112,7 +112,7 @@ cqlsh_consistency_level_syntax_rules = r'''
                      | "SERIAL"
                      | "LOCAL_SERIAL"
                      | "LOCAL_ONE"
-                     | "NODELOCAL"
+                     | "NODE_LOCAL"
                      ;
 '''
 

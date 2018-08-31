@@ -378,12 +378,6 @@ public abstract class ReplicaLayout<E extends Endpoints<E>, L extends ReplicaLay
         return new ForToken(keyspace, consistencyLevel, token, natural, null, selected);
     }
 
-    public static ForToken forExtendedRead(ForToken extend, Replica with)
-    {
-        EndpointsForToken single = EndpointsForToken.of(extend.selected.token(), with);
-        return extend.withSelected(Endpoints.concat(extend.selected(), single));
-    }
-
     public static ForRange forRangeRead(Keyspace keyspace, ConsistencyLevel consistencyLevel, AbstractBounds<PartitionPosition> range, EndpointsForRange natural, EndpointsForRange selected)
     {
         return new ForRange(keyspace, consistencyLevel, range, natural, selected);
