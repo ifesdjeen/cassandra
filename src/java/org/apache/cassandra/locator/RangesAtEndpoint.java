@@ -117,6 +117,16 @@ public class RangesAtEndpoint extends AbstractReplicaCollection<RangesAtEndpoint
                         replica);
     }
 
+    public Collection<Range<Token>> fullRanges()
+    {
+        return filter(Replica::isFull).ranges();
+    }
+
+    public Collection<Range<Token>> transientRanges()
+    {
+        return filter(Replica::isTransient).ranges();
+    }
+
     public boolean contains(Range<Token> range, boolean isFull)
     {
         Replica replica = byRange().get(range);
