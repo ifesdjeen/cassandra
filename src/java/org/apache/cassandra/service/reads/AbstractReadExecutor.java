@@ -294,6 +294,7 @@ public abstract class AbstractReadExecutor
                             r -> r.isFull() && !replicaLayout().selected().contains(r)).orNull();
                     if (extraReplica == null)
                     {
+                        cfs.metric.speculativeInsufficientReplicas.inc();
                         // cannot safely speculate a new data request, without more work - requests assumed to be
                         // unique per endpoint, and we have no full nodes left to speculate against
                         return;
