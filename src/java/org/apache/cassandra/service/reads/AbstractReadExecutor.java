@@ -169,12 +169,10 @@ public abstract class AbstractReadExecutor
     public void executeAsync()
     {
         EndpointsForToken selected = replicaLayout().selected();
-        EndpointsForToken transientData = selected.filter(Replica::isTransient);
-        EndpointsForToken fullData = selected.filter(Replica::isFull, Math.max(1, initialDataRequestCount - transientData.size()));
-        EndpointsForToken digest = selected.filter(r -> r.isFull() && !fullData.contains(r));
-        makeFullDataRequests(fullData);
-        makeTransientDataRequests(transientData);
-        makeDigestRequests(digest);
+        EndpointsForToken fullDataRequests = selected.filter(Replica::isFull, initialDataRequestCount);
+        makeFullDataRequests(fullDataRequests);
+        makeTransientDataRequests(selected.filter(Replica::isTransient));
+        makeDigestRequests(selected.filter(r -> r.isFull() && !fullDataRequests.contains(r)));
     }
 
     /**
