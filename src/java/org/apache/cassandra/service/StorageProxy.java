@@ -1183,7 +1183,7 @@ public class StorageProxy implements StorageProxyMBean
             if (consistencyLevel == ConsistencyLevel.ANY)
                 return Collections.singleton(FBUtilities.getBroadcastAddressAndPort());
 
-            throw new UnavailableException(ConsistencyLevel.ONE, 1, 0);
+            throw UnavailableException.create(ConsistencyLevel.ONE, 1, 0);
         }
 
         return chosenEndpoints;
@@ -1471,7 +1471,7 @@ public class StorageProxy implements StorageProxyMBean
 
         // TODO have a way to compute the consistency level
         if (replicas.isEmpty())
-            throw new UnavailableException(cl, cl.blockFor(keyspace), 0);
+            throw UnavailableException.create(cl, cl.blockFor(keyspace), 0);
 
         List<Replica> localReplicas = new ArrayList<>(replicas.size());
 
@@ -1483,7 +1483,7 @@ public class StorageProxy implements StorageProxyMBean
         {
             // If the consistency required is local then we should not involve other DCs
             if (cl.isDatacenterLocal())
-                throw new UnavailableException(cl, cl.blockFor(keyspace), 0);
+                throw UnavailableException.create(cl, cl.blockFor(keyspace), 0);
 
             // No endpoint in local DC, pick the closest endpoint according to the snitch
             replicas = snitch.sortedByProximity(FBUtilities.getBroadcastAddressAndPort(), replicas);
@@ -1962,7 +1962,7 @@ public class StorageProxy implements StorageProxyMBean
                 EndpointsForRange merged = current.all().keep(next.all().endpoints());
 
                 // Check if there is enough endpoint for the merge to be possible.
-                if (!consistency.isSufficientLiveNodes(keyspace, merged))
+                if (!consistency.isSufficientLiveNodesForRead(keyspace, merged))
                     break;
 
                 EndpointsForRange filteredMerged = consistency.filterForQuery(keyspace, merged);
@@ -2435,7 +2435,7 @@ public class StorageProxy implements StorageProxyMBean
             // invoked by an admin, for simplicity we require that all nodes are up
             // to perform the operation.
             int liveMembers = Gossiper.instance.getLiveMembers().size();
-            throw new UnavailableException(ConsistencyLevel.ALL, liveMembers + Gossiper.instance.getUnreachableMembers().size(), liveMembers);
+            throw UnavailableException.create(ConsistencyLevel.ALL, liveMembers + Gossiper.instance.getUnreachableMembers().size(), liveMembers);
         }
 
         Set<InetAddressAndPort> allEndpoints = StorageService.instance.getLiveRingMembers(true);

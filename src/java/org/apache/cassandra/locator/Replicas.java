@@ -28,6 +28,15 @@ import static com.google.common.collect.Iterables.all;
 public class Replicas
 {
 
+    public static int countFull(ReplicaCollection<?> liveReplicas)
+    {
+        int count = 0;
+        for (Replica replica : liveReplicas)
+            if (replica.isFull())
+                ++count;
+        return count;
+    }
+
     /**
      * A placeholder for areas of the code that cannot yet handle transient replicas, but should do so in future
      */

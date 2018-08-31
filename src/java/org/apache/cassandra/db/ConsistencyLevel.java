@@ -23,6 +23,7 @@ import java.util.Map;
 import com.google.common.collect.Iterables;
 import org.apache.cassandra.locator.Endpoints;
 import org.apache.cassandra.locator.ReplicaCollection;
+import org.apache.cassandra.locator.Replicas;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -151,7 +152,7 @@ public enum ConsistencyLevel
                 break;
             case LOCAL_ONE: case LOCAL_QUORUM: case LOCAL_SERIAL:
                 // we will only count local replicas towards our response count, as these queries only care about local guarantees
-                blockFor += countLocalEndpoints(pending);
+                blockFor += countDCLocalReplicas(pending).allReplicas();
                 break;
             case ONE: case TWO: case THREE:
             case QUORUM: case EACH_QUORUM:
@@ -180,32 +181,55 @@ public enum ConsistencyLevel
         return DatabaseDescriptor.getLocalDataCenter().equals(DatabaseDescriptor.getEndpointSnitch().getDatacenter(endpoint));
     }
 
-    public boolean isLocal(Replica replica)
+    public static boolean isLocal(Replica replica)
     {
         return isLocal(replica.endpoint());
     }
 
-    public int countLocalEndpoints(ReplicaCollection<?> liveReplicas)
+    private static ReplicaCount countDCLocalReplicas(ReplicaCollection<?> liveReplicas)
     {
-        int count = 0;
+        ReplicaCount count = new ReplicaCount();
         for (Replica replica : liveReplicas)
             if (isLocal(replica))
-                count++;
+                count.increment(replica);
         return count;
     }
 
-    private Map<String, Integer> countPerDCEndpoints(Keyspace keyspace, Iterable<Replica> liveReplicas)
+    private static class ReplicaCount
+    {
+        int fullReplicas;
+        int transientReplicas;
+
+        int allReplicas()
+        {
+            return fullReplicas + transientReplicas;
+        }
+
+        void increment(Replica replica)
+        {
+            if (replica.isFull()) ++fullReplicas;
+            else ++transientReplicas;
+        }
+
+        boolean isSufficient(int allReplicas, int fullReplicas)
+        {
+            return this.fullReplicas >= fullReplicas
+                    && this.allReplicas() >= allReplicas;
+        }
+    }
+
+    private static Map<String, ReplicaCount> countPerDCEndpoints(Keyspace keyspace, Iterable<Replica> liveReplicas)
     {
         NetworkTopologyStrategy strategy = (NetworkTopologyStrategy) keyspace.getReplicationStrategy();
 
-        Map<String, Integer> dcEndpoints = new HashMap<String, Integer>();
+        Map<String, ReplicaCount> dcEndpoints = new HashMap<>();
         for (String dc: strategy.getDatacenters())
-            dcEndpoints.put(dc, 0);
+            dcEndpoints.put(dc, new ReplicaCount());
 
         for (Replica replica : liveReplicas)
         {
             String dc = DatabaseDescriptor.getEndpointSnitch().getDatacenter(replica);
-            dcEndpoints.put(dc, dcEndpoints.get(dc) + 1);
+            dcEndpoints.get(dc).increment(replica);
         }
         return dcEndpoints;
     }
@@ -261,7 +285,7 @@ public enum ConsistencyLevel
         });
     }
 
-    public boolean isSufficientLiveNodes(Keyspace keyspace, Endpoints<?> liveReplicas)
+    public boolean isSufficientLiveNodesForRead(Keyspace keyspace, Endpoints<?> liveReplicas)
     {
         switch (this)
         {
@@ -269,34 +293,38 @@ public enum ConsistencyLevel
                 // local hint is acceptable, and local node is always live
                 return true;
             case LOCAL_ONE:
-                return countLocalEndpoints(liveReplicas) >= 1;
+                return countDCLocalReplicas(liveReplicas).isSufficient(1, 1);
             case LOCAL_QUORUM:
-                return countLocalEndpoints(liveReplicas) >= blockFor(keyspace);
+                return countDCLocalReplicas(liveReplicas).isSufficient(blockFor(keyspace), 1);
             case EACH_QUORUM:
                 if (keyspace.getReplicationStrategy() instanceof NetworkTopologyStrategy)
                 {
-                    for (Map.Entry<String, Integer> entry : countPerDCEndpoints(keyspace, liveReplicas).entrySet())
+                    int fullCount = 0;
+                    for (Map.Entry<String, ReplicaCount> entry : countPerDCEndpoints(keyspace, liveReplicas).entrySet())
                     {
-                        if (entry.getValue() < localQuorumFor(keyspace, entry.getKey()))
+                        ReplicaCount count = entry.getValue();
+                        if (!count.isSufficient(localQuorumFor(keyspace, entry.getKey()), 0))
                             return false;
+                        fullCount += count.fullReplicas;
                     }
-                    return true;
+                    return fullCount > 0;
                 }
                 // Fallthough on purpose for SimpleStrategy
             default:
-                return liveReplicas.size() >= blockFor(keyspace);
+                return liveReplicas.size() >= blockFor(keyspace)
+                        && Replicas.countFull(liveReplicas) > 0;
         }
     }
 
     public void assureSufficientLiveNodesForRead(Keyspace keyspace, Endpoints<?> liveReplicas) throws UnavailableException
     {
-        assureSufficientLiveNodes(keyspace, liveReplicas, blockFor(keyspace));
+        assureSufficientLiveNodes(keyspace, liveReplicas, blockFor(keyspace), 1);
     }
-    public void assureSufficientLiveNodesForWrite(Keyspace keyspace, Endpoints<?> liveNatural, Endpoints<?> pendingWithDown) throws UnavailableException
+    public void assureSufficientLiveNodesForWrite(Keyspace keyspace, Endpoints<?> allLive, Endpoints<?> pendingWithDown) throws UnavailableException
     {
-        assureSufficientLiveNodes(keyspace, liveNatural, blockForWrite(keyspace, pendingWithDown));
+        assureSufficientLiveNodes(keyspace, allLive, blockForWrite(keyspace, pendingWithDown), 0);
     }
-    public void assureSufficientLiveNodes(Keyspace keyspace, Endpoints<?> liveNatural, int blockFor) throws UnavailableException
+    public void assureSufficientLiveNodes(Keyspace keyspace, Endpoints<?> allLive, int blockFor, int blockForFullReplicas) throws UnavailableException
     {
         switch (this)
         {
@@ -304,47 +332,53 @@ public enum ConsistencyLevel
                 // local hint is acceptable, and local node is always live
                 break;
             case LOCAL_ONE:
-                if (countLocalEndpoints(liveNatural) == 0)
-                    throw new UnavailableException(this, 1, 0);
+            {
+                ReplicaCount localLive = countDCLocalReplicas(allLive);
+                if (!localLive.isSufficient(blockFor, blockForFullReplicas))
+                    throw UnavailableException.create(this, 1, blockForFullReplicas, localLive.allReplicas(), localLive.fullReplicas);
                 break;
+            }
             case LOCAL_QUORUM:
-                int localLive = countLocalEndpoints(liveNatural);
-                if (localLive < blockFor)
+            {
+                ReplicaCount localLive = countDCLocalReplicas(allLive);
+                if (!localLive.isSufficient(blockFor, blockForFullReplicas))
                 {
                     if (logger.isTraceEnabled())
                     {
-                        StringBuilder builder = new StringBuilder("Local replicas [");
-                        for (Replica replica : liveNatural)
-                        {
-                            if (isLocal(replica))
-                                builder.append(replica).append(',');
-                        }
-                        builder.append("] are insufficient to satisfy LOCAL_QUORUM requirement of ").append(blockFor).append(" live nodes in '").append(DatabaseDescriptor.getLocalDataCenter()).append("'");
-                        logger.trace(builder.toString());
+                        logger.trace(String.format("Local replicas %s are insufficient to satisfy LOCAL_QUORUM requirement of %d live replicas and %d full replicas in '%s'",
+                                allLive.filter(ConsistencyLevel::isLocal), blockFor, blockForFullReplicas, DatabaseDescriptor.getLocalDataCenter()));
                     }
-                    throw new UnavailableException(this, blockFor, localLive);
+                    throw UnavailableException.create(this, blockFor, blockForFullReplicas, localLive.allReplicas(), localLive.fullReplicas);
                 }
                 break;
+            }
             case EACH_QUORUM:
                 if (keyspace.getReplicationStrategy() instanceof NetworkTopologyStrategy)
                 {
-                    for (Map.Entry<String, Integer> entry : countPerDCEndpoints(keyspace, liveNatural).entrySet())
+                    int total = 0;
+                    int totalFull = 0;
+                    for (Map.Entry<String, ReplicaCount> entry : countPerDCEndpoints(keyspace, allLive).entrySet())
                     {
                         int dcBlockFor = localQuorumFor(keyspace, entry.getKey());
-                        int dcLive = entry.getValue();
-                        if (dcLive < dcBlockFor)
-                            throw new UnavailableException(this, entry.getKey(), dcBlockFor, dcLive);
+                        ReplicaCount dcCount = entry.getValue();
+                        if (!dcCount.isSufficient(dcBlockFor, 0))
+                            throw UnavailableException.create(this, entry.getKey(), dcBlockFor, dcCount.allReplicas(), 0, dcCount.fullReplicas);
+                        totalFull += dcCount.fullReplicas;
+                        total += dcCount.allReplicas();
                     }
+                    if (totalFull < blockForFullReplicas)
+                        throw UnavailableException.create(this, blockFor, total, blockForFullReplicas, totalFull);
                     break;
                 }
                 // Fallthough on purpose for SimpleStrategy
             default:
-                int live = liveNatural.size();
-                if (live < blockFor)
+                int live = allLive.size();
+                int full = Replicas.countFull(allLive);
+                if (live < blockFor || full < blockForFullReplicas)
                 {
                     if (logger.isTraceEnabled())
-                        logger.trace("Live nodes {} do not satisfy ConsistencyLevel ({} required)", Iterables.toString(liveNatural), blockFor);
-                    throw new UnavailableException(this, blockFor, live);
+                        logger.trace("Live nodes {} do not satisfy ConsistencyLevel ({} required)", Iterables.toString(allLive), blockFor);
+                    throw UnavailableException.create(this, blockFor, blockForFullReplicas, live, full);
                 }
                 break;
         }
