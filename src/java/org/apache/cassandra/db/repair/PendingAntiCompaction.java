@@ -82,10 +82,10 @@ public class PendingAntiCompaction
     static class AcquisitionCallable implements Callable<AcquireResult>
     {
         private final ColumnFamilyStore cfs;
-        private final Iterable<Range<Token>> ranges;
+        private final Collection<Range<Token>> ranges;
         private final UUID sessionID;
 
-        public AcquisitionCallable(ColumnFamilyStore cfs, Iterable<Range<Token>> ranges, UUID sessionID)
+        public AcquisitionCallable(ColumnFamilyStore cfs, Collection<Range<Token>> ranges, UUID sessionID)
         {
             this.cfs = cfs;
             this.ranges = ranges;

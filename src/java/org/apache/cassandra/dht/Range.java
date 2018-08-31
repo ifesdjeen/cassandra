@@ -423,10 +423,10 @@ public class Range<T extends RingPosition<T>> extends AbstractBounds<T> implemen
     /**
      * @return A copy of the given list of with all ranges unwrapped, sorted by left bound and with overlapping bounds merged.
      */
-    public static <T extends RingPosition<T>> List<Range<T>> normalize(Iterable<Range<T>> ranges)
+    public static <T extends RingPosition<T>> List<Range<T>> normalize(Collection<Range<T>> ranges)
     {
         // unwrap all
-        List<Range<T>> output = new ArrayList<Range<T>>();
+        List<Range<T>> output = new ArrayList<Range<T>>(ranges.size());
         for (Range<T> range : ranges)
             output.addAll(range.unwrap());
 
