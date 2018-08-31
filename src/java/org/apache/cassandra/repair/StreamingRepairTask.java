@@ -80,8 +80,7 @@ public class StreamingRepairTask implements Runnable, StreamEventHandler
                .listeners(this)
                .flushBeforeTransfer(pendingRepair == null) // sstables are isolated at the beginning of an incremental repair session, so flushing isn't neccessary
                // see comment on RangesAtEndpoint.toDummyList for why we synthesize replicas here
-               .requestRanges(dest, desc.keyspace, RangesAtEndpoint.toDummyList(ranges),
-                       RangesAtEndpoint.toDummyList(Collections.emptyList()), desc.columnFamily); // request ranges from the remote node
+               .requestRanges(dest, desc.keyspace, RangesAtEndpoint.toDummyList(ranges), desc.columnFamily); // request ranges from the remote node
         if (!asymmetric)
             // see comment on RangesAtEndpoint.toDummyList for why we synthesize replicas here
             sp.transferRanges(dest, desc.keyspace, RangesAtEndpoint.toDummyList(ranges), desc.columnFamily); // send ranges to the remote node

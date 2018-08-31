@@ -2895,18 +2895,13 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                 //Remember whether this node is providing the full or transient replicas for this range. We are going
                 //to pass streaming the local instance of Replica for the range which doesn't tell us anything about the source
                 //By encoding it as two separate sets we retain this information about the source.
-                RangesAtEndpoint full = fetchReplicas.stream()
-                                                             .filter(f -> f.remote.isFull())
+                RangesAtEndpoint replicas = fetchReplicas.stream()
                                                              .map(f -> f.local)
                                                              .collect(RangesAtEndpoint.collector(myAddress));
-                RangesAtEndpoint transientReplicas = fetchReplicas.stream()
-                                                                  .filter(f -> f.remote.isTransient())
-                                                                  .map(f -> f.local)
-                                                                  .collect(RangesAtEndpoint.collector(myAddress));
                 if (logger.isDebugEnabled())
-                    logger.debug("Requesting from {} full replicas {} transient replicas {}", sourceAddress, StringUtils.join(full, ", "), StringUtils.join(transientReplicas, ", "));
+                    logger.debug("Requesting from {} full replicas {} transient replicas {}", sourceAddress, StringUtils.join(replicas.fullRanges(), ", "), StringUtils.join(replicas.transientRanges(), ", "));
 
-                stream.requestRanges(sourceAddress, keyspaceName, full, transientReplicas);
+                stream.requestRanges(sourceAddress, keyspaceName, replicas);
             });
         });
         StreamResultFuture future = stream.execute();
@@ -4536,16 +4531,12 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
 
                     // stream requests
                     workMap.asMap().forEach((address, sourceAndOurReplicas) -> {
-                        RangesAtEndpoint full = sourceAndOurReplicas.stream()
-                                .filter(pair -> pair.remote.isFull())
+                        RangesAtEndpoint replicas = sourceAndOurReplicas.stream()
                                 .map(pair -> pair.local)
                                 .collect(RangesAtEndpoint.collector(localAddress));
-                        RangesAtEndpoint transientReplicas = sourceAndOurReplicas.stream()
-                                .filter(pair -> pair.remote.isTransient())
-                                .map(pair -> pair.local)
-                                .collect(RangesAtEndpoint.collector(localAddress));
+
                         logger.debug("Will request range {} of keyspace {} from endpoint {}", workMap.get(address), keyspace, address);
-                        streamPlan.requestRanges(address, keyspace, full, transientReplicas);
+                        streamPlan.requestRanges(address, keyspace, replicas);
                     });
 
                     logger.debug("Keyspace {}: work map {}.", keyspace, workMap);
