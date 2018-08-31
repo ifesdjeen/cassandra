@@ -355,9 +355,6 @@ public abstract class ReplicaLayout<E extends Endpoints<E>, L extends ReplicaLay
         if (selected.size() < blockFor)
             throw new UnavailableException(consistencyLevel, blockFor, selected.size());
 
-        if (selected.isEmpty() || selected.get(0).isTransient())
-            throw new UnavailableException("At least one full replica required for writes", consistencyLevel, blockFor, 0);
-
         return new ForToken(keyspace, consistencyLevel, token, natural, pending, selected, all);
     }
 
