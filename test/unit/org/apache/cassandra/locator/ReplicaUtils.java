@@ -24,28 +24,21 @@ import org.apache.cassandra.dht.Murmur3Partitioner;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
 
+import static org.apache.cassandra.locator.Replica.fullReplica;
+import static org.apache.cassandra.locator.Replica.transientReplica;
+
 public class ReplicaUtils
 {
     public static final Range<Token> FULL_RANGE = new Range<>(Murmur3Partitioner.MINIMUM, Murmur3Partitioner.MINIMUM);
     public static final AbstractBounds<PartitionPosition> FULL_BOUNDS = new Range<>(Murmur3Partitioner.MINIMUM.minKeyBound(), Murmur3Partitioner.MINIMUM.maxKeyBound());
 
-    public static Replica full(InetAddressAndPort endpoint, Range<Token> range)
-    {
-        return new Replica(endpoint, range, true);
-    }
-
     public static Replica full(InetAddressAndPort endpoint)
     {
-        return full(endpoint, FULL_RANGE);
-    }
-
-    public static Replica trans(InetAddressAndPort endpoint, Range<Token> range)
-    {
-        return new Replica(endpoint, range, false);
+        return fullReplica(endpoint, FULL_RANGE);
     }
 
     public static Replica trans(InetAddressAndPort endpoint)
     {
-        return trans(endpoint, FULL_RANGE);
+        return transientReplica(endpoint, FULL_RANGE);
     }
 }

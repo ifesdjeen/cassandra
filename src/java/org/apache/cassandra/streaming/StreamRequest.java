@@ -47,14 +47,14 @@ public class StreamRequest
     //or fully from some remote. This is an important distinction for resumable bootstrap. The Replicas in these collections
     //are local replicas (or dummy if this is triggered by repair) and don't encode the necessary information about
     //what the remote provided.
-    public final RangesAtEndpoint fullReplicas;
+    public final RangesAtEndpoint full;
     public final RangesAtEndpoint transientReplicas;
     public final Collection<String> columnFamilies = new HashSet<>();
 
-    public StreamRequest(String keyspace, RangesAtEndpoint fullReplicas, RangesAtEndpoint transientReplicas, Collection<String> columnFamilies)
+    public StreamRequest(String keyspace, RangesAtEndpoint full, RangesAtEndpoint transientReplicas, Collection<String> columnFamilies)
     {
         this.keyspace = keyspace;
-        this.fullReplicas = fullReplicas;
+        this.full = full;
         this.transientReplicas = transientReplicas;
         this.columnFamilies.addAll(columnFamilies);
     }
@@ -66,7 +66,7 @@ public class StreamRequest
             out.writeUTF(request.keyspace);
             out.writeInt(request.columnFamilies.size());
 
-            serializeReplicas(request.fullReplicas, out, version);
+            serializeReplicas(request.full, out, version);
             serializeReplicas(request.transientReplicas, out, version);
             for (String cf : request.columnFamilies)
                 out.writeUTF(cf);
@@ -89,14 +89,14 @@ public class StreamRequest
         {
             String keyspace = in.readUTF();
             int cfCount = in.readInt();
-            RangesAtEndpoint fullReplicas = deserializeReplicas(in, version);
+            RangesAtEndpoint full = deserializeReplicas(in, version);
             RangesAtEndpoint transientReplicas = deserializeReplicas(in, version);
-            if (!fullReplicas.endpoint().equals(transientReplicas.endpoint()))
-                throw new IllegalStateException("Mismatching endpoints: " + fullReplicas + ", " + transientReplicas);
+            if (!full.endpoint().equals(transientReplicas.endpoint()))
+                throw new IllegalStateException("Mismatching endpoints: " + full + ", " + transientReplicas);
             List<String> columnFamilies = new ArrayList<>(cfCount);
             for (int i = 0; i < cfCount; i++)
                 columnFamilies.add(in.readUTF());
-            return new StreamRequest(keyspace, fullReplicas, transientReplicas, columnFamilies);
+            return new StreamRequest(keyspace, full, transientReplicas, columnFamilies);
         }
 
         RangesAtEndpoint deserializeReplicas(DataInputPlus in, int version) throws IOException
@@ -122,7 +122,7 @@ public class StreamRequest
             int size = TypeSizes.sizeof(request.keyspace);
             size += TypeSizes.sizeof(request.columnFamilies.size());
             size += replicasSerializedSize(request.transientReplicas, version);
-            size += replicasSerializedSize(request.fullReplicas, version);
+            size += replicasSerializedSize(request.full, version);
             for (String cf : request.columnFamilies)
                 size += TypeSizes.sizeof(cf);
             return size;

@@ -19,9 +19,7 @@ package org.apache.cassandra.db;
 
 import java.util.HashMap;
 import java.util.Map;
-import java.util.function.Predicate;
 
-import com.google.common.base.Predicates;
 import com.google.common.collect.Iterables;
 import org.apache.cassandra.locator.Endpoints;
 import org.apache.cassandra.locator.ReplicaCollection;
@@ -93,13 +91,13 @@ public enum ConsistencyLevel
 
     private int quorumFor(Keyspace keyspace)
     {
-        return (keyspace.getReplicationStrategy().getReplicationFactor().replicas / 2) + 1;
+        return (keyspace.getReplicationStrategy().getReplicationFactor().allReplicas / 2) + 1;
     }
 
     private int localQuorumFor(Keyspace keyspace, String dc)
     {
         return (keyspace.getReplicationStrategy() instanceof NetworkTopologyStrategy)
-             ? (((NetworkTopologyStrategy) keyspace.getReplicationStrategy()).getReplicationFactor(dc).replicas / 2) + 1
+             ? (((NetworkTopologyStrategy) keyspace.getReplicationStrategy()).getReplicationFactor(dc).allReplicas / 2) + 1
              : quorumFor(keyspace);
     }
 
@@ -120,7 +118,7 @@ public enum ConsistencyLevel
             case SERIAL:
                 return quorumFor(keyspace);
             case ALL:
-                return keyspace.getReplicationStrategy().getReplicationFactor().replicas;
+                return keyspace.getReplicationStrategy().getReplicationFactor().allReplicas;
             case LOCAL_QUORUM:
             case LOCAL_SERIAL:
                 return localQuorumFor(keyspace, DatabaseDescriptor.getLocalDataCenter());

@@ -511,10 +511,10 @@ public class CompactionManager implements CompactionManagerMBean
             return AllSSTableOpStatus.ABORTED;
         }
         // if local ranges is empty, it means no data should remain
-        final RangesAtEndpoint allReplicas = StorageService.instance.getLocalReplicas(keyspace.getName());
-        final Set<Range<Token>> allRanges = allReplicas.ranges();
-        final Set<Range<Token>> transientRanges = allReplicas.filter(Replica::isTransient).ranges();
-        final Set<Range<Token>> fullRanges = allReplicas.filter(Replica::isFull).ranges();
+        final RangesAtEndpoint replicas = StorageService.instance.getLocalReplicas(keyspace.getName());
+        final Set<Range<Token>> allRanges = replicas.ranges();
+        final Set<Range<Token>> transientRanges = replicas.filter(Replica::isTransient).ranges();
+        final Set<Range<Token>> fullRanges = replicas.filter(Replica::isFull).ranges();
         final boolean hasIndexes = cfStore.indexManager.hasIndexes();
 
         return parallelAllSSTableOperation(cfStore, new OneSSTableOperation()
@@ -531,7 +531,7 @@ public class CompactionManager implements CompactionManagerMBean
             public void execute(LifecycleTransaction txn) throws IOException
             {
                 CleanupStrategy cleanupStrategy = CleanupStrategy.get(cfStore, allRanges, transientRanges, txn.onlyOne().isRepaired(), FBUtilities.nowInSeconds());
-                doCleanupOne(cfStore, txn, cleanupStrategy, allReplicas.ranges(), fullRanges, transientRanges, hasIndexes);
+                doCleanupOne(cfStore, txn, cleanupStrategy, replicas.ranges(), fullRanges, transientRanges, hasIndexes);
             }
         }, jobs, OperationType.CLEANUP);
     }
@@ -957,10 +957,10 @@ public class CompactionManager implements CompactionManagerMBean
         {
             ColumnFamilyStore cfs = entry.getKey();
             Keyspace keyspace = cfs.keyspace;
-            final RangesAtEndpoint allReplicas = StorageService.instance.getLocalReplicas(keyspace.getName());
-            final Set<Range<Token>> allRanges = allReplicas.ranges();
-            final Set<Range<Token>> transientRanges = allReplicas.filter(Replica::isTransient).ranges();
-            final Set<Range<Token>> fullRanges = allReplicas.filter(Replica::isFull).ranges();
+            final RangesAtEndpoint replicas = StorageService.instance.getLocalReplicas(keyspace.getName());
+            final Set<Range<Token>> allRanges = replicas.ranges();
+            final Set<Range<Token>> transientRanges = replicas.filter(Replica::isTransient).ranges();
+            final Set<Range<Token>> fullRanges = replicas.filter(Replica::isFull).ranges();
             boolean hasIndexes = cfs.indexManager.hasIndexes();
             SSTableReader sstable = lookupSSTable(cfs, entry.getValue());
 
@@ -1474,7 +1474,7 @@ public class CompactionManager implements CompactionManagerMBean
                                  LifecycleTransaction txn,
                                  UUID pendingRepair)
     {
-        Preconditions.checkArgument(!fullRanges.isEmpty() || !transRanges.isEmpty(), "need at least one full or trans range");
+        Preconditions.checkArgument(!fullRanges.isEmpty() || !transRanges.isEmpty(), "need at least one full or transient range");
         long groupMaxDataAge = -1;
 
         for (Iterator<SSTableReader> i = txn.originals().iterator(); i.hasNext();)

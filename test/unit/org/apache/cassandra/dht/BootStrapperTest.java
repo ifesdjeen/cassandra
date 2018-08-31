@@ -88,7 +88,7 @@ public class BootStrapperTest
         final int[] clusterSizes = new int[] { 1, 3, 5, 10, 100};
         for (String keyspaceName : Schema.instance.getNonLocalStrategyKeyspaces())
         {
-            int replicationFactor = Keyspace.open(keyspaceName).getReplicationStrategy().getReplicationFactor().replicas;
+            int replicationFactor = Keyspace.open(keyspaceName).getReplicationStrategy().getReplicationFactor().allReplicas;
             for (int clusterSize : clusterSizes)
                 if (clusterSize >= replicationFactor)
                     testSourceTargetComputation(keyspaceName, clusterSize, replicationFactor);

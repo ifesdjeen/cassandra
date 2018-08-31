@@ -169,7 +169,7 @@ public class TokenAllocation
 
     static StrategyAdapter getStrategy(final TokenMetadata tokenMetadata, final SimpleStrategy rs, final InetAddressAndPort endpoint)
     {
-        final int replicas = rs.getReplicationFactor().replicas;
+        final int replicas = rs.getReplicationFactor().allReplicas;
 
         return new StrategyAdapter()
         {
@@ -196,7 +196,7 @@ public class TokenAllocation
     static StrategyAdapter getStrategy(final TokenMetadata tokenMetadata, final NetworkTopologyStrategy rs, final IEndpointSnitch snitch, final InetAddressAndPort endpoint)
     {
         final String dc = snitch.getDatacenter(endpoint);
-        final int replicas = rs.getReplicationFactor(dc).replicas;
+        final int replicas = rs.getReplicationFactor(dc).allReplicas;
 
         if (replicas == 0 || replicas == 1)
         {

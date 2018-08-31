@@ -49,6 +49,8 @@ import org.apache.cassandra.locator.SimpleStrategy;
 import org.apache.cassandra.locator.TokenMetadata;
 import org.apache.cassandra.utils.Pair;
 
+import static org.apache.cassandra.locator.Replica.fullReplica;
+import static org.apache.cassandra.locator.Replica.transientReplica;
 import static org.apache.cassandra.service.StorageServiceTest.assertMultimapEqualsIgnoreOrder;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
@@ -145,7 +147,7 @@ public class MoveTransientTest
 
         Pair<RangesAtEndpoint, RangesAtEndpoint> result = StorageService.calculateStreamAndFetchRanges(current, updated);
         assertContentsIgnoreOrder(result.left);
-        assertContentsIgnoreOrder(result.right, Replica.full(aAddress, threeToken, fourToken));
+        assertContentsIgnoreOrder(result.right, fullReplica(aAddress, threeToken, fourToken));
         return result;
     }
 
@@ -175,8 +177,8 @@ public class MoveTransientTest
 
 
         Pair<RangesAtEndpoint, RangesAtEndpoint> result = StorageService.calculateStreamAndFetchRanges(current, updated);
-        assertContentsIgnoreOrder(result.left, Replica.full(aAddress, oneToken, threeToken), Replica.full(aAddress, fourteenToken, oneToken));
-        assertContentsIgnoreOrder(result.right, Replica.trans(aAddress, sixToken, nineToken), Replica.full(aAddress, nineToken, elevenToken));
+        assertContentsIgnoreOrder(result.left, fullReplica(aAddress, oneToken, threeToken), fullReplica(aAddress, fourteenToken, oneToken));
+        assertContentsIgnoreOrder(result.right, transientReplica(aAddress, sixToken, nineToken), fullReplica(aAddress, nineToken, elevenToken));
         return result;
     }
 
@@ -207,7 +209,7 @@ public class MoveTransientTest
 
         //Moving backwards has no impact on any replica. We already fully replicate counter clockwise
         //The transient replica does transiently replicate slightly more, but that is addressed by cleanup
-        assertContentsIgnoreOrder(result.left, Replica.full(aAddress, twoToken, threeToken));
+        assertContentsIgnoreOrder(result.left, fullReplica(aAddress, twoToken, threeToken));
         assertContentsIgnoreOrder(result.right);
 
         return result;
@@ -233,8 +235,8 @@ public class MoveTransientTest
 
         Pair<RangesAtEndpoint, RangesAtEndpoint> result = StorageService.calculateStreamAndFetchRanges(current, updated);
 
-        assertContentsIgnoreOrder(result.left, Replica.full(aAddress, elevenToken, oneToken), Replica.trans(aAddress, nineToken, elevenToken));
-        assertContentsIgnoreOrder(result.right, Replica.full(aAddress, threeToken, sixToken), Replica.full(aAddress, sixToken, sevenToken));
+        assertContentsIgnoreOrder(result.left, fullReplica(aAddress, elevenToken, oneToken), transientReplica(aAddress, nineToken, elevenToken));
+        assertContentsIgnoreOrder(result.right, fullReplica(aAddress, threeToken, sixToken), fullReplica(aAddress, sixToken, sevenToken));
         return result;
     }
 
@@ -326,12 +328,12 @@ public class MoveTransientTest
         InetAddressAndPort cOrB = (downNodes.contains(cAddress) || sourceFilterDownNodes.contains(cAddress)) ? bAddress : cAddress;
 
         //Need to pull the full replica and the transient replica that is losing the range
-        expectedResult.put(Replica.full(aAddress, sixToken, sevenToken),  Replica.full(dAddress, sixToken, nineToken));
-        expectedResult.put(Replica.full(aAddress, sixToken, sevenToken), Replica.trans(eAddress, sixToken, nineToken));
+        expectedResult.put(fullReplica(aAddress, sixToken, sevenToken),  fullReplica(dAddress, sixToken, nineToken));
+        expectedResult.put(fullReplica(aAddress, sixToken, sevenToken), transientReplica(eAddress, sixToken, nineToken));
 
         //Same need both here as well
-        expectedResult.put(Replica.full(aAddress, threeToken, sixToken), Replica.full(cOrB, threeToken, sixToken));
-        expectedResult.put(Replica.full(aAddress, threeToken, sixToken), Replica.trans(dAddress, threeToken, sixToken));
+        expectedResult.put(fullReplica(aAddress, threeToken, sixToken), fullReplica(cOrB, threeToken, sixToken));
+        expectedResult.put(fullReplica(aAddress, threeToken, sixToken), transientReplica(dAddress, threeToken, sixToken));
 
         invokeCalculateRangesToFetchWithPreferredEndpoints(calculateStreamAndFetchRangesMoveForwardBetween().right,
                                                            constructTMDsMoveForwardBetween(),
@@ -402,8 +404,8 @@ public class MoveTransientTest
         EndpointsByReplica.Mutable expectedResult = new EndpointsByReplica.Mutable();
 
         //Need to pull the full replica and the transient replica that is losing the range
-        expectedResult.put(Replica.full(aAddress, nineToken, elevenToken), Replica.full(eAddress, nineToken, elevenToken));
-        expectedResult.put(Replica.trans(aAddress, sixToken, nineToken), Replica.trans(eAddress, sixToken, nineToken));
+        expectedResult.put(fullReplica(aAddress, nineToken, elevenToken), fullReplica(eAddress, nineToken, elevenToken));
+        expectedResult.put(transientReplica(aAddress, sixToken, nineToken), transientReplica(eAddress, sixToken, nineToken));
 
         invokeCalculateRangesToFetchWithPreferredEndpoints(calculateStreamAndFetchRangesMoveBackwardBetween().right,
                                                            constructTMDsMoveBackwardBetween(),
@@ -449,8 +451,8 @@ public class MoveTransientTest
         InetAddressAndPort cOrBAddress = (downNodes.contains(cAddress) || sourceFilterDownNodes.contains(cAddress)) ? bAddress : cAddress;
 
         //Need to pull the full replica and the transient replica that is losing the range
-        expectedResult.put(Replica.full(aAddress, threeToken, fourToken), Replica.full(cOrBAddress, threeToken, sixToken));
-        expectedResult.put(Replica.full(aAddress, threeToken, fourToken), Replica.trans(dAddress, threeToken, sixToken));
+        expectedResult.put(fullReplica(aAddress, threeToken, fourToken), fullReplica(cOrBAddress, threeToken, sixToken));
+        expectedResult.put(fullReplica(aAddress, threeToken, fourToken), transientReplica(dAddress, threeToken, sixToken));
 
         invokeCalculateRangesToFetchWithPreferredEndpoints(calculateStreamAndFetchRangesMoveForward().right,
                                                            constructTMDsMoveForward(),
@@ -562,8 +564,8 @@ public class MoveTransientTest
         RangesByEndpoint.Mutable expectedResult = new RangesByEndpoint.Mutable();
 
         //Need to pull the full replica and the transient replica that is losing the range
-        expectedResult.put(bAddress, Replica.trans(bAddress, nineToken, elevenToken));
-        expectedResult.put(bAddress, Replica.full(bAddress, elevenToken, oneToken));
+        expectedResult.put(bAddress, transientReplica(bAddress, nineToken, elevenToken));
+        expectedResult.put(bAddress, fullReplica(bAddress, elevenToken, oneToken));
 
         invokeCalculateRangesToStreamWithPreferredEndpoints(calculateStreamAndFetchRangesMoveForwardBetween().left,
                                                             constructTMDsMoveForwardBetween(),
@@ -575,12 +577,12 @@ public class MoveTransientTest
     {
         RangesByEndpoint.Mutable expectedResult = new RangesByEndpoint.Mutable();
 
-        expectedResult.put(bAddress, Replica.full(bAddress, fourteenToken, oneToken));
+        expectedResult.put(bAddress, fullReplica(bAddress, fourteenToken, oneToken));
 
-        expectedResult.put(dAddress, Replica.trans(dAddress, oneToken, threeToken));
+        expectedResult.put(dAddress, transientReplica(dAddress, oneToken, threeToken));
 
-        expectedResult.put(cAddress, Replica.full(cAddress, oneToken, threeToken));
-        expectedResult.put(cAddress, Replica.trans(cAddress, fourteenToken, oneToken));
+        expectedResult.put(cAddress, fullReplica(cAddress, oneToken, threeToken));
+        expectedResult.put(cAddress, transientReplica(cAddress, fourteenToken, oneToken));
 
         invokeCalculateRangesToStreamWithPreferredEndpoints(calculateStreamAndFetchRangesMoveBackwardBetween().left,
                                                             constructTMDsMoveBackwardBetween(),
@@ -591,8 +593,8 @@ public class MoveTransientTest
     public void testMoveBackwardCalculateRangesToStreamWithPreferredEndpoints() throws Exception
     {
         RangesByEndpoint.Mutable expectedResult = new RangesByEndpoint.Mutable();
-        expectedResult.put(cAddress, Replica.full(cAddress, twoToken, threeToken));
-        expectedResult.put(dAddress, Replica.trans(dAddress, twoToken, threeToken));
+        expectedResult.put(cAddress, fullReplica(cAddress, twoToken, threeToken));
+        expectedResult.put(dAddress, transientReplica(dAddress, twoToken, threeToken));
 
         invokeCalculateRangesToStreamWithPreferredEndpoints(calculateStreamAndFetchRangesMoveBackward().left,
                                                             constructTMDsMoveBackward(),

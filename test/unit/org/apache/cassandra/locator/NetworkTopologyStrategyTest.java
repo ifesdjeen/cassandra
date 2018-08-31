@@ -45,6 +45,9 @@ import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.locator.TokenMetadata.Topology;
 import org.apache.cassandra.service.StorageService;
 
+import static org.apache.cassandra.locator.Replica.fullReplica;
+import static org.apache.cassandra.locator.Replica.transientReplica;
+
 public class NetworkTopologyStrategyTest
 {
     private String keyspaceName = "Keyspace1";
@@ -72,9 +75,9 @@ public class NetworkTopologyStrategyTest
 
         // Set the localhost to the tokenmetadata. Embedded cassandra way?
         NetworkTopologyStrategy strategy = new NetworkTopologyStrategy(keyspaceName, metadata, snitch, configOptions);
-        assert strategy.getReplicationFactor("DC1").replicas == 3;
-        assert strategy.getReplicationFactor("DC2").replicas == 2;
-        assert strategy.getReplicationFactor("DC3").replicas == 1;
+        assert strategy.getReplicationFactor("DC1").allReplicas == 3;
+        assert strategy.getReplicationFactor("DC2").allReplicas == 2;
+        assert strategy.getReplicationFactor("DC3").allReplicas == 1;
         // Query for the natural hosts
         EndpointsForToken replicas = strategy.getNaturalReplicasForToken(new StringToken("123"));
         assert 6 == replicas.size();
@@ -97,9 +100,9 @@ public class NetworkTopologyStrategyTest
 
         // Set the localhost to the tokenmetadata. Embedded cassandra way?
         NetworkTopologyStrategy strategy = new NetworkTopologyStrategy(keyspaceName, metadata, snitch, configOptions);
-        assert strategy.getReplicationFactor("DC1").replicas == 3;
-        assert strategy.getReplicationFactor("DC2").replicas == 3;
-        assert strategy.getReplicationFactor("DC3").replicas == 0;
+        assert strategy.getReplicationFactor("DC1").allReplicas == 3;
+        assert strategy.getReplicationFactor("DC2").allReplicas == 3;
+        assert strategy.getReplicationFactor("DC3").allReplicas == 0;
         // Query for the natural hosts
         EndpointsForToken replicas = strategy.getNaturalReplicasForToken(new StringToken("123"));
         assert 6 == replicas.size();
@@ -392,7 +395,7 @@ public class NetworkTopologyStrategyTest
     }
 
     @Test
-    public void transientReplica() throws Exception
+    public void testTransientReplica() throws Exception
     {
         IEndpointSnitch snitch = new SimpleSnitch();
         DatabaseDescriptor.setEndpointSnitch(snitch);
@@ -415,15 +418,15 @@ public class NetworkTopologyStrategyTest
 
         NetworkTopologyStrategy strategy = new NetworkTopologyStrategy(keyspaceName, metadata, snitch, configOptions);
 
-        Assert.assertEquals(EndpointsForRange.of(ReplicaUtils.full(endpoints.get(0), range(400, 100)),
-                                           ReplicaUtils.full(endpoints.get(1), range(400, 100)),
-                                           ReplicaUtils.trans(endpoints.get(2), range(400, 100))),
+        Assert.assertEquals(EndpointsForRange.of(fullReplica(endpoints.get(0), range(400, 100)),
+                                           fullReplica(endpoints.get(1), range(400, 100)),
+                                           transientReplica(endpoints.get(2), range(400, 100))),
                             strategy.getNaturalReplicasForToken(tk(99)));
 
 
-        Assert.assertEquals(EndpointsForRange.of(ReplicaUtils.full(endpoints.get(1), range(100, 200)),
-                                           ReplicaUtils.full(endpoints.get(2), range(100, 200)),
-                                           ReplicaUtils.trans(endpoints.get(3), range(100, 200))),
+        Assert.assertEquals(EndpointsForRange.of(fullReplica(endpoints.get(1), range(100, 200)),
+                                           fullReplica(endpoints.get(2), range(100, 200)),
+                                           transientReplica(endpoints.get(3), range(100, 200))),
                             strategy.getNaturalReplicasForToken(tk(101)));
     }
 }

@@ -172,24 +172,24 @@ public final class Replica implements Comparable<Replica>
         return new Replica(endpoint(), subrange, isFull());
     }
 
-    public static Replica full(InetAddressAndPort endpoint, Range<Token> range)
+    public static Replica fullReplica(InetAddressAndPort endpoint, Range<Token> range)
     {
         return new Replica(endpoint, range, true);
     }
 
-    public static Replica full(InetAddressAndPort endpoint, Token start, Token end)
+    public static Replica fullReplica(InetAddressAndPort endpoint, Token start, Token end)
     {
-        return full(endpoint, new Range<>(start, end));
+        return fullReplica(endpoint, new Range<>(start, end));
     }
 
-    public static Replica trans(InetAddressAndPort endpoint, Range<Token> range)
+    public static Replica transientReplica(InetAddressAndPort endpoint, Range<Token> range)
     {
         return new Replica(endpoint, range, false);
     }
 
-    public static Replica trans(InetAddressAndPort endpoint, Token start, Token end)
+    public static Replica transientReplica(InetAddressAndPort endpoint, Token start, Token end)
     {
-        return trans(endpoint, new Range<>(start, end));
+        return transientReplica(endpoint, new Range<>(start, end));
     }
 
 }

@@ -2895,7 +2895,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                 //Remember whether this node is providing the full or transient replicas for this range. We are going
                 //to pass streaming the local instance of Replica for the range which doesn't tell us anything about the source
                 //By encoding it as two separate sets we retain this information about the source.
-                RangesAtEndpoint fullReplicas = fetchReplicas.stream()
+                RangesAtEndpoint full = fetchReplicas.stream()
                                                              .filter(f -> f.remote.isFull())
                                                              .map(f -> f.local)
                                                              .collect(RangesAtEndpoint.collector(myAddress));
@@ -2904,9 +2904,9 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                                                                   .map(f -> f.local)
                                                                   .collect(RangesAtEndpoint.collector(myAddress));
                 if (logger.isDebugEnabled())
-                    logger.debug("Requesting from {} full replicas {} transient replicas {}", sourceAddress, StringUtils.join(fullReplicas, ", "), StringUtils.join(transientReplicas, ", "));
+                    logger.debug("Requesting from {} full replicas {} transient replicas {}", sourceAddress, StringUtils.join(full, ", "), StringUtils.join(transientReplicas, ", "));
 
-                stream.requestRanges(sourceAddress, keyspaceName, fullReplicas, transientReplicas);
+                stream.requestRanges(sourceAddress, keyspaceName, full, transientReplicas);
             });
         });
         StreamResultFuture future = stream.execute();
@@ -3709,7 +3709,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                 Iterables.addAll(option.getRanges(), getLocalReplicas(keyspace).filter(Replica::isFull).ranges());
             }
         }
-        if (option.getRanges().isEmpty() || Keyspace.open(keyspace).getReplicationStrategy().getReplicationFactor().replicas < 2)
+        if (option.getRanges().isEmpty() || Keyspace.open(keyspace).getReplicationStrategy().getReplicationFactor().allReplicas < 2)
             return 0;
 
         int cmd = nextRepairCommand.incrementAndGet();
@@ -4133,13 +4133,13 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                         if (keyspace.getReplicationStrategy() instanceof NetworkTopologyStrategy)
                         {
                             NetworkTopologyStrategy strategy = (NetworkTopologyStrategy) keyspace.getReplicationStrategy();
-                            rf = strategy.getReplicationFactor(dc).replicas;
+                            rf = strategy.getReplicationFactor(dc).allReplicas;
                             numNodes = metadata.getTopology().getDatacenterEndpoints().get(dc).size();
                         }
                         else
                         {
                             numNodes = metadata.getAllEndpoints().size();
-                            rf = keyspace.getReplicationStrategy().getReplicationFactor().replicas;
+                            rf = keyspace.getReplicationStrategy().getReplicationFactor().allReplicas;
                         }
 
                         if (numNodes <= rf)
@@ -4539,7 +4539,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
 
                     // stream requests
                     workMap.asMap().forEach((address, sourceAndOurReplicas) -> {
-                        RangesAtEndpoint fullReplicas = sourceAndOurReplicas.stream()
+                        RangesAtEndpoint full = sourceAndOurReplicas.stream()
                                 .filter(pair -> pair.remote.isFull())
                                 .map(pair -> pair.local)
                                 .collect(RangesAtEndpoint.collector(localAddress));
@@ -4548,7 +4548,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                                 .map(pair -> pair.local)
                                 .collect(RangesAtEndpoint.collector(localAddress));
                         logger.debug("Will request range {} of keyspace {} from endpoint {}", workMap.get(address), keyspace, address);
-                        streamPlan.requestRanges(address, keyspace, fullReplicas, transientReplicas);
+                        streamPlan.requestRanges(address, keyspace, full, transientReplicas);
                     });
 
                     logger.debug("Keyspace {}: work map {}.", keyspace, workMap);
@@ -4668,7 +4668,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         for (String keyspaceName : Schema.instance.getNonLocalStrategyKeyspaces())
         {
             // if the replication factor is 1 the data is lost so we shouldn't wait for confirmation
-            if (Keyspace.open(keyspaceName).getReplicationStrategy().getReplicationFactor().replicas == 1)
+            if (Keyspace.open(keyspaceName).getReplicationStrategy().getReplicationFactor().allReplicas == 1)
                 continue;
 
             // get all ranges that change ownership (that is, a node needs

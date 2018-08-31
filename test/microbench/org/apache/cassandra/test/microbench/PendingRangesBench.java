@@ -75,7 +75,7 @@ public class PendingRangesBench
             for (int j = 0; j < ThreadLocalRandom.current().nextInt(2); j ++)
             {
                 Range<Token> range = genRange(Integer.toString(i * 10 + 5), Integer.toString(i * 10 + 15));
-                Replica replica = ReplicaUtils.full(endpoints.get(j), range);
+                Replica replica = Replica.fullReplica(endpoints.get(j), range);
                 pendingRangeMaps.addPendingRange(range, replica);
                 oldPendingRanges.put(range, replica);
             }
@@ -85,7 +85,7 @@ public class PendingRangesBench
         for (int j = 0; j < ThreadLocalRandom.current().nextInt(2); j ++)
         {
             Range<Token> range = genRange(Integer.toString(maxToken * 10 + 5), Integer.toString(5));
-            Replica replica = ReplicaUtils.full(endpoints.get(j), range);
+            Replica replica = Replica.fullReplica(endpoints.get(j), range);
             pendingRangeMaps.addPendingRange(range, replica);
             oldPendingRanges.put(range, replica);
         }

@@ -117,7 +117,7 @@ public class SimpleStrategyTest
             for (int i = 0; i < keyTokens.length; i++)
             {
                 EndpointsForToken replicas = strategy.getNaturalReplicasForToken(keyTokens[i]);
-                assertEquals(strategy.getReplicationFactor().replicas, replicas.size());
+                assertEquals(strategy.getReplicationFactor().allReplicas, replicas.size());
                 List<InetAddressAndPort> correctEndpoints = new ArrayList<>();
                 for (int j = 0; j < replicas.size(); j++)
                     correctEndpoints.add(hosts.get((i + j + 1) % hosts.size()));
@@ -163,7 +163,7 @@ public class SimpleStrategyTest
 
             PendingRangeCalculatorService.calculatePendingRanges(strategy, keyspaceName);
 
-            int replicationFactor = strategy.getReplicationFactor().replicas;
+            int replicationFactor = strategy.getReplicationFactor().allReplicas;
 
             for (int i = 0; i < keyTokens.length; i++)
             {
@@ -223,17 +223,17 @@ public class SimpleStrategyTest
 
         Range<Token> range1 = range(400, 100);
         Assert.assertEquals(EndpointsForToken.of(range1.right,
-                                                 ReplicaUtils.full(endpoints.get(0), range1),
-                                                 ReplicaUtils.full(endpoints.get(1), range1),
-                                                 ReplicaUtils.trans(endpoints.get(2), range1)),
+                                                 Replica.fullReplica(endpoints.get(0), range1),
+                                                 Replica.fullReplica(endpoints.get(1), range1),
+                                                 Replica.transientReplica(endpoints.get(2), range1)),
                             strategy.getNaturalReplicasForToken(tk(99)));
 
 
         Range<Token> range2 = range(100, 200);
         Assert.assertEquals(EndpointsForToken.of(range2.right,
-                                                 ReplicaUtils.full(endpoints.get(1), range2),
-                                                 ReplicaUtils.full(endpoints.get(2), range2),
-                                                 ReplicaUtils.trans(endpoints.get(3), range2)),
+                                                 Replica.fullReplica(endpoints.get(1), range2),
+                                                 Replica.fullReplica(endpoints.get(2), range2),
+                                                 Replica.transientReplica(endpoints.get(3), range2)),
                             strategy.getNaturalReplicasForToken(tk(101)));
     }
 

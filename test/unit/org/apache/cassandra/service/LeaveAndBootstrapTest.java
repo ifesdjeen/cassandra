@@ -130,7 +130,7 @@ public class LeaveAndBootstrapTest
             strategy = getStrategy(keyspaceName, tmd);
             for (Token token : keyTokens)
             {
-                int replicationFactor = strategy.getReplicationFactor().replicas;
+                int replicationFactor = strategy.getReplicationFactor().allReplicas;
 
                 Set<InetAddressAndPort> actual = tmd.getWriteEndpoints(token, keyspaceName, strategy.calculateNaturalReplicas(token, tmd.cloneOnlyTokenMap()).forToken(token)).endpoints();
                 Set<InetAddressAndPort> expected = new HashSet<>();
@@ -267,7 +267,7 @@ public class LeaveAndBootstrapTest
             }
 
             // just to be sure that things still work according to the old tests, run them:
-            if (strategy.getReplicationFactor().replicas != 3)
+            if (strategy.getReplicationFactor().allReplicas != 3)
                 continue;
             // tokens 5, 15 and 25 should go three nodes
             for (int i=0; i<3; ++i)
@@ -388,7 +388,7 @@ public class LeaveAndBootstrapTest
                 assertTrue(expectedEndpoints.get(keyspaceName).get(keyTokens.get(i)).containsAll(endpoints));
             }
 
-            if (strategy.getReplicationFactor().replicas != 3)
+            if (strategy.getReplicationFactor().allReplicas != 3)
                 continue;
             // leave this stuff in to guarantee the old tests work the way they were supposed to.
             // tokens 5, 15 and 25 should go three nodes

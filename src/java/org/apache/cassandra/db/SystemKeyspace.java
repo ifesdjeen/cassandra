@@ -32,7 +32,6 @@ import javax.management.openmbean.TabularData;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.HashMultimap;
 import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.SetMultimap;
 import com.google.common.collect.Sets;
 import com.google.common.io.ByteStreams;
@@ -74,6 +73,8 @@ import static java.util.Collections.singletonMap;
 
 import static org.apache.cassandra.cql3.QueryProcessor.executeInternal;
 import static org.apache.cassandra.cql3.QueryProcessor.executeOnceInternal;
+import static org.apache.cassandra.locator.Replica.fullReplica;
+import static org.apache.cassandra.locator.Replica.transientReplica;
 
 public final class SystemKeyspace
 {
@@ -1295,11 +1296,11 @@ public final class SystemKeyspace
             Optional.ofNullable(row.getSet("full_ranges", BytesType.instance))
                     .ifPresent(full_ranges -> full_ranges.stream()
                             .map(buf -> byteBufferToRange(buf, partitioner))
-                            .forEach(range -> builder.add(Replica.full(endpoint, range))));
+                            .forEach(range -> builder.add(fullReplica(endpoint, range))));
             Optional.ofNullable(row.getSet("transient_ranges", BytesType.instance))
                     .ifPresent(transient_ranges -> transient_ranges.stream()
                             .map(buf -> byteBufferToRange(buf, partitioner))
-                            .forEach(range -> builder.add(Replica.trans(endpoint, range))));
+                            .forEach(range -> builder.add(transientReplica(endpoint, range))));
         }
         return builder.build();
     }
