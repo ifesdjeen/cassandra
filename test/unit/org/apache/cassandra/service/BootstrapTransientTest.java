@@ -49,6 +49,8 @@ import org.apache.cassandra.locator.SimpleStrategy;
 import org.apache.cassandra.locator.TokenMetadata;
 import org.apache.cassandra.utils.Pair;
 
+import static org.apache.cassandra.locator.Replica.fullReplica;
+import static org.apache.cassandra.locator.Replica.transientReplica;
 import static org.apache.cassandra.service.StorageServiceTest.assertMultimapEqualsIgnoreOrder;
 
 /**
@@ -109,9 +111,9 @@ public class BootstrapTransientTest
     public void testRangeStreamerRangesToFetch() throws Exception
     {
         EndpointsByReplica expectedResult = new EndpointsByReplica(ImmutableMap.of(
-        Replica.full(dAddress, dRange), EndpointsForRange.builder(aRange).add(Replica.full(bAddress, aRange)).add(Replica.trans(cAddress, aRange)).build(),
-        Replica.full(dAddress, cRange), EndpointsForRange.builder(cRange).add(Replica.full(cAddress, cRange)).add(Replica.trans(bAddress, cRange)).build(),
-        Replica.trans(dAddress, bRange), EndpointsForRange.builder(bRange).add(Replica.trans(aAddress, bRange)).build()));
+        fullReplica(dAddress, dRange), EndpointsForRange.builder(aRange).add(fullReplica(bAddress, aRange)).add(transientReplica(cAddress, aRange)).build(),
+        fullReplica(dAddress, cRange), EndpointsForRange.builder(cRange).add(fullReplica(cAddress, cRange)).add(transientReplica(bAddress, cRange)).build(),
+        transientReplica(dAddress, bRange), EndpointsForRange.builder(bRange).add(transientReplica(aAddress, bRange)).build()));
 
         invokeCalculateRangesToFetchWithPreferredEndpoints(toFetch, constructTMDs(), expectedResult);
     }

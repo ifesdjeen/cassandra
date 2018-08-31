@@ -41,7 +41,7 @@ public class PendingRangeMapsTest {
     {
         try
         {
-            pendingRangeMaps.addPendingRange(range, ReplicaUtils.full(InetAddressAndPort.getByName(endpoint), range));
+            pendingRangeMaps.addPendingRange(range, Replica.fullReplica(InetAddressAndPort.getByName(endpoint), range));
         }
         catch (UnknownHostException e)
         {

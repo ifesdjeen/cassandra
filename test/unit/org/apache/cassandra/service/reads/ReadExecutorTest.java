@@ -45,6 +45,7 @@ import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.schema.KeyspaceParams;
 
+import static org.apache.cassandra.locator.ReplicaUtils.full;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.fail;
 
@@ -64,9 +65,9 @@ public class ReadExecutorTest
         cfs = ks.getColumnFamilyStore("Bar");
         dummy = Murmur3Partitioner.instance.getMinimumToken();
         targets = EndpointsForToken.of(dummy,
-                ReplicaUtils.full(InetAddressAndPort.getByName("127.0.0.255")),
-                ReplicaUtils.full(InetAddressAndPort.getByName("127.0.0.254")),
-                ReplicaUtils.full(InetAddressAndPort.getByName("127.0.0.253"))
+                full(InetAddressAndPort.getByName("127.0.0.255")),
+                full(InetAddressAndPort.getByName("127.0.0.254")),
+                full(InetAddressAndPort.getByName("127.0.0.253"))
         );
         cfs.sampleReadLatencyNanos = 0;
     }

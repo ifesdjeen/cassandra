@@ -205,7 +205,7 @@ public abstract class AbstractReplicationStrategy
 
     public boolean hasTransientReplicas()
     {
-        return getReplicationFactor().trans > 0;
+        return getReplicationFactor().hasTransientReplicas();
     }
 
     /*
@@ -361,7 +361,7 @@ public abstract class AbstractReplicationStrategy
         AbstractReplicationStrategy strategy = createInternal(keyspaceName, strategyClass, tokenMetadata, snitch, strategyOptions);
         strategy.validateExpectedOptions();
         strategy.validateOptions();
-        if (strategy.getReplicationFactor().trans > 0 && !DatabaseDescriptor.isTransientReplicationEnabled())
+        if (strategy.hasTransientReplicas() && !DatabaseDescriptor.isTransientReplicationEnabled())
         {
             throw new ConfigurationException("Transient replication is disabled. Enable in cassandra.yaml to use.");
         }
@@ -388,7 +388,7 @@ public abstract class AbstractReplicationStrategy
         try
         {
             ReplicationFactor rf = ReplicationFactor.fromString(s);
-            if (rf.trans > 0)
+            if (rf.hasTransientReplicas())
             {
                 if (DatabaseDescriptor.getNumTokens() > 1)
                     throw new ConfigurationException(String.format("Transient replication is not supported with vnodes yet"));

@@ -70,14 +70,14 @@ public class NetworkTopologyStrategy extends AbstractReplicationStrategy
                 if (dc.equalsIgnoreCase("replication_factor"))
                     throw new ConfigurationException("replication_factor is an option for SimpleStrategy, not NetworkTopologyStrategy");
                 ReplicationFactor rf = ReplicationFactor.fromString(entry.getValue());
-                replicas += rf.replicas;
-                trans += rf.trans;
+                replicas += rf.allReplicas;
+                trans += rf.transientReplicas();
                 newDatacenters.put(dc, rf);
             }
         }
 
         datacenters = Collections.unmodifiableMap(newDatacenters);
-        aggregateRf = ReplicationFactor.rf(replicas, trans);
+        aggregateRf = ReplicationFactor.withTransient(replicas, trans);
         logger.info("Configured datacenter replicas are {}", FBUtilities.toString(datacenters));
     }
 
@@ -106,14 +106,14 @@ public class NetworkTopologyStrategy extends AbstractReplicationStrategy
             this.replicas = replicas;
             this.racks = racks;
             // If there aren't enough nodes in this DC to fill the RF, the number of nodes is the effective RF.
-            this.rfLeft = Math.min(rf.replicas, nodeCount);
+            this.rfLeft = Math.min(rf.allReplicas, nodeCount);
             // If there aren't enough racks in this DC to fill the RF, we'll still use at least one node from each rack,
             // and the difference is to be filled by the first encountered nodes.
-            acceptableRackRepeats = rf.replicas - rackCount;
+            acceptableRackRepeats = rf.allReplicas - rackCount;
 
             // if we have fewer replicas than rf calls for, reduce transients accordingly
-            int reduceTransients = rf.replicas - this.rfLeft;
-            transients = Math.max(rf.trans - reduceTransients, 0);
+            int reduceTransients = rf.allReplicas - this.rfLeft;
+            transients = Math.max(rf.transientReplicas() - reduceTransients, 0);
             ReplicationFactor.validate(rfLeft, transients);
         }
 
@@ -188,7 +188,7 @@ public class NetworkTopologyStrategy extends AbstractReplicationStrategy
             ReplicationFactor rf = en.getValue();
             int nodeCount = sizeOrZero(allEndpoints.get(dc));
 
-            if (rf.replicas <= 0 || nodeCount <= 0)
+            if (rf.allReplicas <= 0 || nodeCount <= 0)
                 continue;
 
             DatacenterEndpoints dcEndpoints = new DatacenterEndpoints(rf, sizeOrZero(racks.get(dc)), nodeCount, builder, seenRacks);

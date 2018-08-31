@@ -57,6 +57,8 @@ import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.schema.Tables;
 import org.apache.cassandra.utils.ByteBufferUtil;
 
+import static org.apache.cassandra.locator.ReplicaUtils.full;
+
 public class ReadRepairTest
 {
     static Keyspace ks;
@@ -126,9 +128,9 @@ public class ReadRepairTest
 
         cfs.sampleReadLatencyNanos = 0;
 
-        target1 = ReplicaUtils.full(InetAddressAndPort.getByName("127.0.0.255"));
-        target2 = ReplicaUtils.full(InetAddressAndPort.getByName("127.0.0.254"));
-        target3 = ReplicaUtils.full(InetAddressAndPort.getByName("127.0.0.253"));
+        target1 = full(InetAddressAndPort.getByName("127.0.0.255"));
+        target2 = full(InetAddressAndPort.getByName("127.0.0.254"));
+        target3 = full(InetAddressAndPort.getByName("127.0.0.253"));
 
         targets = EndpointsForRange.of(target1, target2, target3);
 
@@ -323,8 +325,8 @@ public class ReadRepairTest
         Map<Replica, Mutation> repairs = new HashMap<>();
         repairs.put(target1, mutation(cell1));
 
-        Replica remote1 = ReplicaUtils.full(InetAddressAndPort.getByName("10.0.0.1"));
-        Replica remote2 = ReplicaUtils.full(InetAddressAndPort.getByName("10.0.0.2"));
+        Replica remote1 = full(InetAddressAndPort.getByName("10.0.0.1"));
+        Replica remote2 = full(InetAddressAndPort.getByName("10.0.0.2"));
         repairs.put(remote1, mutation(cell1));
 
         EndpointsForRange participants = EndpointsForRange.of(target1, target2, remote1, remote2);

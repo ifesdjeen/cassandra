@@ -598,7 +598,7 @@ public class MoveTest
             int numMoved = 0;
             for (Token token : keyTokens)
             {
-                int replicationFactor = strategy.getReplicationFactor().replicas;
+                int replicationFactor = strategy.getReplicationFactor().allReplicas;
 
                 EndpointsForToken actual = tmd.getWriteEndpoints(token, keyspaceName, strategy.calculateNaturalReplicas(token, tmd.cloneOnlyTokenMap()).forToken(token));
                 HashSet<InetAddressAndPort> expected = new HashSet<>();
@@ -831,7 +831,7 @@ public class MoveTest
             }
 
             // just to be sure that things still work according to the old tests, run them:
-            if (strategy.getReplicationFactor().replicas != 3)
+            if (strategy.getReplicationFactor().allReplicas != 3)
                 continue;
 
             ReplicaCollection<?> replicas = null;
@@ -963,7 +963,7 @@ public class MoveTest
     {
         EndpointsForRange.Builder replicas = EndpointsForRange.builder(range, hosts.length);
         for (String host : hosts)
-            replicas.add(ReplicaUtils.full(InetAddressAndPort.getByName(host), range));
+            replicas.add(Replica.fullReplica(InetAddressAndPort.getByName(host), range));
         return replicas.build();
     }
 

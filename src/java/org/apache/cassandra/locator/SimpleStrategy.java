@@ -21,7 +21,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Collection;
 import java.util.Iterator;
-import java.util.List;
 import java.util.Map;
 
 import org.apache.cassandra.dht.Range;
@@ -56,15 +55,15 @@ public class SimpleStrategy extends AbstractReplicationStrategy
         Range<Token> replicaRange = new Range<>(replicaStart, replicaEnd);
         Iterator<Token> iter = TokenMetadata.ringIterator(ring, token, false);
 
-        EndpointsForRange.Builder replicas = EndpointsForRange.builder(replicaRange, rf.replicas);
+        EndpointsForRange.Builder replicas = EndpointsForRange.builder(replicaRange, rf.allReplicas);
 
         // Add the token at the index by default
-        while (replicas.size() < rf.replicas && iter.hasNext())
+        while (replicas.size() < rf.allReplicas && iter.hasNext())
         {
             Token tk = iter.next();
             InetAddressAndPort ep = metadata.getEndpoint(tk);
             if (!replicas.containsEndpoint(ep))
-                replicas.add(new Replica(ep, replicaRange, replicas.size() < rf.full));
+                replicas.add(new Replica(ep, replicaRange, replicas.size() < rf.fullReplicas));
         }
         return replicas.build();
     }

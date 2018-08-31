@@ -29,7 +29,7 @@ import org.apache.cassandra.utils.FBUtilities;
 
 public class LocalStrategy extends AbstractReplicationStrategy
 {
-    private static final ReplicationFactor RF = ReplicationFactor.rf(1);
+    private static final ReplicationFactor RF = ReplicationFactor.fullOnly(1);
     private final EndpointsForRange replicas;
 
     public LocalStrategy(String keyspaceName, TokenMetadata tokenMetadata, IEndpointSnitch snitch, Map<String, String> configOptions)

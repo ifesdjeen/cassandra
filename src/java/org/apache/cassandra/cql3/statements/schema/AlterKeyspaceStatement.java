@@ -102,7 +102,7 @@ public final class AlterKeyspaceStatement extends AlterSchemaStatement
         AbstractReplicationStrategy before = keyspaceDiff.before.createReplicationStrategy();
         AbstractReplicationStrategy after = keyspaceDiff.after.createReplicationStrategy();
 
-        return before.getReplicationFactor().full < after.getReplicationFactor().full
+        return before.getReplicationFactor().fullReplicas < after.getReplicationFactor().fullReplicas
              ? ImmutableSet.of("When increasing replication factor you need to run a full (-full) repair to distribute the data.")
              : ImmutableSet.of();
     }
@@ -132,10 +132,10 @@ public final class AlterKeyspaceStatement extends AlterSchemaStatement
         ReplicationFactor oldRF = oldStrategy.getReplicationFactor();
         ReplicationFactor newRF = newStrategy.getReplicationFactor();
 
-        int oldTrans = oldRF.trans;
-        int oldFull = oldRF.full;
-        int newTrans = newRF.trans;
-        int newFull = newRF.full;
+        int oldTrans = oldRF.transientReplicas();
+        int oldFull = oldRF.fullReplicas;
+        int newTrans = newRF.transientReplicas();
+        int newFull = newRF.fullReplicas;
 
         if (newTrans > 0)
         {

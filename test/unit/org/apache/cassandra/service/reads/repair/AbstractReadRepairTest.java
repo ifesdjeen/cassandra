@@ -52,6 +52,9 @@ import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.schema.Tables;
 import org.apache.cassandra.utils.ByteBufferUtil;
 
+import static org.apache.cassandra.locator.Replica.fullReplica;
+import static org.apache.cassandra.locator.ReplicaUtils.FULL_RANGE;
+
 @Ignore
 public abstract  class AbstractReadRepairTest
 {
@@ -209,9 +212,9 @@ public abstract  class AbstractReadRepairTest
 
         targets = ImmutableList.of(target1, target2, target3);
 
-        replica1 = ReplicaUtils.full(target1);
-        replica2 = ReplicaUtils.full(target2);
-        replica3 = ReplicaUtils.full(target3);
+        replica1 = fullReplica(target1, FULL_RANGE);
+        replica2 = fullReplica(target2, FULL_RANGE);
+        replica3 = fullReplica(target3, FULL_RANGE);
         replicas = EndpointsForRange.of(replica1, replica2, replica3);
 
         replicaLayout = replicaLayout(ConsistencyLevel.QUORUM, replicas);
@@ -242,9 +245,9 @@ public abstract  class AbstractReadRepairTest
         cfs.sampleWriteLatencyNanos = 0;
     }
 
-    static ReplicaLayout.ForRange replicaLayout(EndpointsForRange allReplicas, EndpointsForRange targets)
+    static ReplicaLayout.ForRange replicaLayout(EndpointsForRange replicas, EndpointsForRange targets)
     {
-        return new ReplicaLayout.ForRange(ks, ConsistencyLevel.QUORUM, ReplicaUtils.FULL_BOUNDS, allReplicas, targets);
+        return new ReplicaLayout.ForRange(ks, ConsistencyLevel.QUORUM, ReplicaUtils.FULL_BOUNDS, replicas, targets);
     }
 
     static ReplicaLayout.ForRange replicaLayout(ConsistencyLevel consistencyLevel, EndpointsForRange replicas)

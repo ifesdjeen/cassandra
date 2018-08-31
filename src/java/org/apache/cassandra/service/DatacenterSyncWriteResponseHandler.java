@@ -53,7 +53,7 @@ public class DatacenterSyncWriteResponseHandler<T> extends AbstractWriteResponse
 
         for (String dc : strategy.getDatacenters())
         {
-            int rf = strategy.getReplicationFactor(dc).replicas;
+            int rf = strategy.getReplicationFactor(dc).allReplicas;
             responses.put(dc, new AtomicInteger((rf / 2) + 1));
         }
 

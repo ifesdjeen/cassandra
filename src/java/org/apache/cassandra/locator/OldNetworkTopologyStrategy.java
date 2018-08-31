@@ -54,14 +54,14 @@ public class OldNetworkTopologyStrategy extends AbstractReplicationStrategy
         Token previousToken = metadata.getPredecessor(primaryToken);
         Range<Token> tokenRange = new Range<>(previousToken, primaryToken);
 
-        EndpointsForRange.Builder replicas = EndpointsForRange.builder(tokenRange, rf.replicas);
+        EndpointsForRange.Builder replicas = EndpointsForRange.builder(tokenRange, rf.allReplicas);
 
-        assert rf.trans == 0: "support transient replicas";
+        assert !rf.hasTransientReplicas() : "support transient replicas";
         replicas.add(new Replica(metadata.getEndpoint(primaryToken), previousToken, primaryToken, true));
 
         boolean bDataCenter = false;
         boolean bOtherRack = false;
-        while (replicas.size() < rf.replicas && iter.hasNext())
+        while (replicas.size() < rf.allReplicas && iter.hasNext())
         {
             // First try to find one in a different data center
             Token t = iter.next();
@@ -91,10 +91,10 @@ public class OldNetworkTopologyStrategy extends AbstractReplicationStrategy
 
         // If we found N number of nodes we are good. This loop wil just exit. Otherwise just
         // loop through the list and add until we have N nodes.
-        if (replicas.size() < rf.replicas)
+        if (replicas.size() < rf.allReplicas)
         {
             iter = TokenMetadata.ringIterator(tokens, token, false);
-            while (replicas.size() < rf.replicas && iter.hasNext())
+            while (replicas.size() < rf.allReplicas && iter.hasNext())
             {
                 Token t = iter.next();
                 Replica replica = new Replica(metadata.getEndpoint(t), previousToken, primaryToken, true);

@@ -64,6 +64,7 @@ import static com.google.common.base.Predicates.and;
 import static com.google.common.base.Predicates.not;
 import static com.google.common.collect.Iterables.all;
 import static com.google.common.collect.Iterables.any;
+import static org.apache.cassandra.locator.Replica.fullReplica;
 
 /**
  * Assists in streaming ranges to this node.
@@ -254,7 +255,7 @@ public class RangeStreamer
         Multimap<InetAddressAndPort, FetchReplica> workMap;
         //Only use the optimized strategy if we don't care about strict sources, have a replication factor > 1, and no
         //transient replicas.
-        if (useStrictSource || strat == null || strat.getReplicationFactor().replicas == 1 || strat.getReplicationFactor().trans > 0)
+        if (useStrictSource || strat == null || strat.getReplicationFactor().allReplicas == 1 || strat.getReplicationFactor().hasTransientReplicas())
         {
             workMap = convertPreferredEndpointsToWorkMap(fetchMap);
         }
@@ -282,7 +283,7 @@ public class RangeStreamer
     {
         return useStrictConsistency
                 && tokens != null
-                && metadata.getSizeOfAllEndpoints() != strat.getReplicationFactor().replicas;
+                && metadata.getSizeOfAllEndpoints() != strat.getReplicationFactor().allReplicas;
     }
 
     /**
@@ -385,7 +386,7 @@ public class RangeStreamer
 
                         //Due to CASSANDRA-5953 we can have a higher RF then we have endpoints.
                         //So we need to be careful to only be strict when endpoints == RF
-                        if (oldEndpoints.size() == strat.getReplicationFactor().replicas)
+                        if (oldEndpoints.size() == strat.getReplicationFactor().allReplicas)
                         {
                             Set<InetAddressAndPort> endpointsStillReplicated = newEndpoints.endpoints();
                             // Remove new endpoints from old endpoints based on address
@@ -466,7 +467,7 @@ public class RangeStreamer
             //We must have enough stuff to fetch from
             if ((toFetch.isFull() && !any(addressList, Replica::isFull)) || addressList.isEmpty())
             {
-                if (strat.getReplicationFactor().replicas == 1)
+                if (strat.getReplicationFactor().allReplicas == 1)
                 {
                     if (useStrictConsistency)
                     {
@@ -552,7 +553,7 @@ public class RangeStreamer
                 throw new AssertionError("Shouldn't be possible for the Replica we fetch to be null here");
             //Committing the cardinal sin of synthesizing a Replica, but it's ok because we assert earlier all of them
             //are full and optimized range fetch map doesn't support transient replication yet.
-            wrapped.put(entry.getKey(), new FetchReplica(toFetch, Replica.full(entry.getKey(), entry.getValue())));
+            wrapped.put(entry.getKey(), new FetchReplica(toFetch, fullReplica(entry.getKey(), entry.getValue())));
         }
 
         return wrapped;
@@ -642,7 +643,7 @@ public class RangeStreamer
                 //know what we got from the remote. We preserve that here by splitting based on the remotes transient
                 //status.
                 InetAddressAndPort self = FBUtilities.getBroadcastAddressAndPort();
-                RangesAtEndpoint fullReplicas = remaining.stream()
+                RangesAtEndpoint full = remaining.stream()
                         .filter(pair -> pair.remote.isFull())
                         .map(pair -> pair.local)
                         .collect(RangesAtEndpoint.collector(self));
@@ -652,10 +653,10 @@ public class RangeStreamer
                         .collect(RangesAtEndpoint.collector(self));
 
                 logger.debug("Source and our replicas {}", fetchReplicas);
-                logger.debug("Source {} Keyspace {}  streaming full {} transient {}", source, keyspace, fullReplicas, transientReplicas);
+                logger.debug("Source {} Keyspace {}  streaming full {} transient {}", source, keyspace, full, transientReplicas);
 
                 /* Send messages to respective folks to stream data over to me */
-                streamPlan.requestRanges(source, keyspace, fullReplicas, transientReplicas);
+                streamPlan.requestRanges(source, keyspace, full, transientReplicas);
             });
         });
 
