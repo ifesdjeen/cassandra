@@ -44,6 +44,8 @@ import org.apache.cassandra.service.reads.AlwaysSpeculativeRetryPolicy;
 import org.apache.cassandra.service.reads.SpeculativeRetryPolicy;
 import org.apache.cassandra.utils.FBUtilities;
 
+import static com.google.common.collect.Iterables.any;
+
 /**
  * Encapsulates knowledge about the ring necessary for performing a specific operation, with static accessors
  * for building the relevant layout.
@@ -281,7 +283,7 @@ public abstract class ReplicaLayout<E extends Endpoints<E>, L extends ReplicaLay
             pending = Endpoints.resolveConflictsInPending(natural, pending);
         }
 
-        if (!keyspace.getReplicationStrategy().hasTransientReplicas())
+        if (!any(natural, Replica::isTransient) && !any(pending, Replica::isTransient))
         {
             EndpointsForToken selected = Endpoints.concat(natural, pending).filter(r -> isAlive.test(r.endpoint()));
             return new ForToken(keyspace, consistencyLevel, token, natural, pending, selected);
