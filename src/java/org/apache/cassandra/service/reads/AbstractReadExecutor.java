@@ -263,6 +263,9 @@ public abstract class AbstractReadExecutor
                                        ReplicaLayout.ForToken replicaLayout,
                                        long queryStartNanoTime)
         {
+            // We're hitting additional targets for read repair (??).  Since our "extra" replica is the least-
+            // preferred by the snitch, we do an extra data read to start with against a replica more
+            // likely to reply; better to let RR fail than the entire query.
             super(cfs, command, replicaLayout, replicaLayout.blockFor() < replicaLayout.selected().size() ? 2 : 1, queryStartNanoTime);
         }
 
@@ -280,6 +283,8 @@ public abstract class AbstractReadExecutor
                 {
                     extraReplica = tryFind(replicaLayout().all(),
                             r -> !replicaLayout().selected().contains(r)).orNull();
+
+                    // we should only use a SpeculatingReadExecutor if we have an extra replica to speculate against
                     assert extraReplica != null;
 
                     retryCommand = extraReplica.isTransient()
