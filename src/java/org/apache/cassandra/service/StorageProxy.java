@@ -1968,8 +1968,6 @@ public class StorageProxy implements StorageProxyMBean
                 EndpointsForRange filteredMerged = consistency.filterForQuery(keyspace, merged);
 
                 // Estimate whether merging will be a win or not
-                // TODO: we should ideally also expand our EndpointsForRange
-                // unfortunately these are currently only Endpoints<?>, due to conflation of behaviours in just a couple of places
                 if (!DatabaseDescriptor.getEndpointSnitch().isWorthMergingForRangeQuery(filteredMerged, current.selected(), next.selected()))
                     break;
 
