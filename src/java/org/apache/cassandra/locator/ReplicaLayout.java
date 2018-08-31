@@ -140,14 +140,6 @@ public abstract class ReplicaLayout<E extends Endpoints<E>, L extends ReplicaLay
 
     abstract public L withConsistencyLevel(ConsistencyLevel cl);
 
-    public L forResponded(Iterable<InetAddressAndPort> endpoints)
-    {
-        // Preserve insertion order
-        Set<InetAddressAndPort> endpointSet = new HashSet<>(Iterables.size(endpoints));
-        Iterables.addAll(endpointSet, endpoints);
-        return withSelected(selected.keep(endpointSet));
-    }
-
     public L forNaturalUncontacted()
     {
         E more;
