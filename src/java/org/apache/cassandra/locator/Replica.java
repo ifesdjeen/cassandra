@@ -28,14 +28,22 @@ import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.utils.FBUtilities;
 
 /**
- * A Replica is an endpoint, a token range that endpoint replicates (or used to replicate) and whether it replicates
- * that range fully or transiently. Generally it's a bad idea to pass around ranges when code depends on the transientness
- * of the replication. That means you should avoid unwrapping and rewrapping these things and think hard about subtraction
- * and such and what the result is WRT to transientness.
+ * A Replica represents an owning node for a copy of a portion of the token ring.
  *
- * Definitely avoid creating fake Replicas with misinformation about endpoints, ranges, or transientness.
+ * It consists of:
+ *  - the logical token range that is being replicated (i.e. for the first logical replica only, this will be equal
+ *      to one of its owned portions of the token ring; all other replicas will have this token range also)
+ *  - an endpoint (IP and port)
+ *  - whether the range is replicated in full, or transiently (CASSANDRA-14404)
+ *
+ * In general, it is preferred to use a Replica to a Range&lt;Token&gt;, particularly when users of the concept depend on
+ * knowledge of the full/transient status of the copy.
+ *
+ * That means you should avoid unwrapping and rewrapping these things and think hard about subtraction
+ * and such and what the result is WRT to transientness. Definitely avoid creating fake Replicas with misinformation
+ * about endpoints, ranges, or transientness.
  */
-public class Replica implements Comparable<Replica>
+public final class Replica implements Comparable<Replica>
 {
     private final Range<Token> range;
     private final InetAddressAndPort endpoint;
@@ -65,6 +73,17 @@ public class Replica implements Comparable<Replica>
                Objects.equals(range, replica.range);
     }
 
+    @Override
+    public int compareTo(Replica o)
+    {
+        int c = range.compareTo(o.range);
+        if (c == 0)
+            c = endpoint.compareTo(o.endpoint);
+        if (c == 0)
+            c =  Boolean.compare(full, o.full);
+        return c;
+    }
+
     public int hashCode()
     {
         return Objects.hash(endpoint, range, full);
@@ -73,10 +92,7 @@ public class Replica implements Comparable<Replica>
     @Override
     public String toString()
     {
-        StringBuilder sb = new StringBuilder();
-        sb.append(full ? "Full" : "Transient");
-        sb.append('(').append(endpoint()).append(',').append(range).append(')');
-        return sb.toString();
+        return (full ? "Full" : "Transient") + '(' + endpoint() + ',' + range + ')';
     }
 
     public final InetAddressAndPort endpoint()
@@ -176,15 +192,5 @@ public class Replica implements Comparable<Replica>
         return trans(endpoint, new Range<>(start, end));
     }
 
-    @Override
-    public int compareTo(Replica o)
-    {
-        int c = range.compareTo(o.range);
-        if (c == 0)
-            c = endpoint.compareTo(o.endpoint);
-        if (c == 0)
-            c =  Boolean.compare(full, o.full);
-        return c;
-    }
 }
 
