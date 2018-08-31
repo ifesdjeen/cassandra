@@ -626,27 +626,27 @@ public class RangeStreamer
                 if (logger.isTraceEnabled())
                     logger.trace("{}ing from {} ranges {}", description, source, StringUtils.join(remaining, ", "));
 
+                InetAddressAndPort self = FBUtilities.getBroadcastAddressAndPort();
                 //At the other end the distinction between full and transient is ignored it just used the transient status
                 //of the Replica objects we send to determine what to send. The real reason we have this split down to
                 //StreamRequest is that on completion StreamRequest is used to write to the system table tracking
                 //what has already been streamed. At that point since we only have the local Replica instances so we don't
                 //know what we got from the remote. We preserve that here by splitting based on the remotes transient
                 //status.
-                InetAddressAndPort self = FBUtilities.getBroadcastAddressAndPort();
-                RangesAtEndpoint fullReplicas = remaining.stream()
-                        .filter(pair -> pair.remote.isFull())
-                        .map(pair -> pair.local)
-                        .collect(RangesAtEndpoint.collector(self));
-                RangesAtEndpoint transientReplicas = remaining.stream()
-                        .filter(pair -> pair.remote.isTransient())
-                        .map(pair -> pair.local)
-                        .collect(RangesAtEndpoint.collector(self));
+                Collection<Range<Token>> fullRanges = remaining.stream()
+                                                               .filter(pair -> pair.remote.isFull())
+                                                               .map(pair -> pair.local.range())
+                                                               .collect(Collectors.toList());
+                Collection<Range<Token>> transientRanges = remaining.stream()
+                                                                    .filter(pair -> pair.remote.isTransient())
+                                                                    .map(pair -> pair.local.range())
+                                                                    .collect(Collectors.toList());
 
                 logger.debug("Source and our replicas {}", fetchReplicas);
-                logger.debug("Source {} Keyspace {}  streaming full {} transient {}", source, keyspace, fullReplicas, transientReplicas);
+                logger.debug("Source {} Keyspace {}  streaming full {} transient {}", source, keyspace, fullRanges, transientRanges);
 
                 /* Send messages to respective folks to stream data over to me */
-                streamPlan.requestRanges(source, keyspace, fullReplicas, transientReplicas);
+                streamPlan.requestRanges(source,  keyspace, new EndpointRanges(self, fullRanges, transientRanges));
             });
         });
 

@@ -699,6 +699,7 @@ public class CompactionManager implements CompactionManagerMBean
 
         List<Range<Token>> normalizedRanges = Range.normalize(ranges);
 
+        // TODO: maybe rename "findSSTablesToAnticompact" to something like "find sstable by range"
         Set<SSTableReader> fullyContainedSSTables = findSSTablesToAnticompact(sstableIterator, normalizedRanges, sessionID);
 
         cfs.metric.bytesMutatedAnticompaction.inc(SSTableReader.getTotalBytes(fullyContainedSSTables));

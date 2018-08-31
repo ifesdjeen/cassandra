@@ -25,6 +25,7 @@ import com.google.common.annotations.VisibleForTesting;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.apache.cassandra.dht.EndpointRanges;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.locator.InetAddressAndPort;
@@ -68,14 +69,13 @@ public class SymmetricLocalSyncTask extends SymmetricSyncTask implements StreamE
                           .listeners(this)
                           .flushBeforeTransfer(pendingRepair == null)
                           // see comment on RangesAtEndpoint.toDummyList for why we synthesize replicas here
-                          .requestRanges(dst, desc.keyspace, RangesAtEndpoint.toDummyList(differences),
-                                  RangesAtEndpoint.toDummyList(Collections.emptyList()), desc.columnFamily);  // request ranges from the remote node
+                          .requestRanges(dst, desc.keyspace, new EndpointRanges(dst, differences, Collections.emptyList()), desc.columnFamily);  // request ranges from the remote node
 
         if (!pullRepair && !remoteIsTransient)
         {
             // send ranges to the remote node if we are not performing a pull repair
             // see comment on RangesAtEndpoint.toDummyList for why we synthesize replicas here
-            plan.transferRanges(dst, desc.keyspace, RangesAtEndpoint.toDummyList(differences), desc.columnFamily);
+            plan.transferRanges(dst, desc.keyspace, new EndpointRanges(dst, differences, Collections.emptyList()), desc.columnFamily);
         }
 
         return plan;

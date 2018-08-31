@@ -27,6 +27,7 @@ import org.apache.cassandra.db.PartitionPosition;
 import org.apache.cassandra.db.lifecycle.SSTableIntervalTree;
 import org.apache.cassandra.db.lifecycle.SSTableSet;
 import org.apache.cassandra.db.lifecycle.View;
+import org.apache.cassandra.dht.EndpointRanges;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
@@ -97,14 +98,15 @@ public class CassandraStreamManager implements TableStreamManager
     }
 
     @Override
-    public Collection<OutgoingStream> createOutgoingStreams(StreamSession session, RangesAtEndpoint replicas, UUID pendingRepair, PreviewKind previewKind)
+    public Collection<OutgoingStream> createOutgoingStreams(StreamSession session, EndpointRanges ranges, UUID pendingRepair, PreviewKind previewKind)
     {
         Refs<SSTableReader> refs = new Refs<>();
         try
         {
-            final List<Range<PartitionPosition>> keyRanges = new ArrayList<>(replicas.size());
-            for (Replica replica : replicas)
-                keyRanges.add(Range.makeRowRange(replica.range()));
+            final List<Range<PartitionPosition>> keyRanges = new ArrayList<>();
+            for (Range<Token> range : Iterables.concat(ranges.full, ranges.trans))
+                keyRanges.add(Range.makeRowRange(range));
+
             refs.addAll(cfs.selectAndReference(view -> {
                 Set<SSTableReader> sstables = Sets.newHashSet();
                 SSTableIntervalTree intervalTree = SSTableIntervalTree.build(view.select(SSTableSet.CANONICAL));
@@ -142,14 +144,14 @@ public class CassandraStreamManager implements TableStreamManager
             }).refs);
 
 
-            List<Range<Token>> normalizedFullRanges = Range.normalize(replicas.filter(Replica::isFull).ranges());
-            List<Range<Token>> normalizedAllRanges = Range.normalize(replicas.ranges());
+            List<Range<Token>> normalizedFullRanges = Range.normalize(ranges.full);
+            List<Range<Token>> normalizedAllRanges = Range.normalize(ranges.trans);
             //Create outgoing file streams for ranges possibly skipping repaired ranges in sstables
             List<OutgoingStream> streams = new ArrayList<>(refs.size());
             for (SSTableReader sstable : refs)
             {
-                List<Range<Token>> ranges = sstable.isRepaired() ? normalizedFullRanges : normalizedAllRanges;
-                List<SSTableReader.PartitionPositionBounds> sections = sstable.getPositionsForRanges(ranges);
+                List<Range<Token>> sstableRanges = sstable.isRepaired() ? normalizedFullRanges : normalizedAllRanges;
+                List<SSTableReader.PartitionPositionBounds> sections = sstable.getPositionsForRanges(sstableRanges);
 
                 Ref<SSTableReader> ref = refs.get(sstable);
                 if (sections.isEmpty())
@@ -157,8 +159,8 @@ public class CassandraStreamManager implements TableStreamManager
                     ref.release();
                     continue;
                 }
-                streams.add(new CassandraOutgoingFile(session.getStreamOperation(), ref, sections, ranges,
-                                                      sstable.estimatedKeysForRanges(ranges)));
+                streams.add(new CassandraOutgoingFile(session.getStreamOperation(), ref, sections, sstableRanges,
+                                                      sstable.estimatedKeysForRanges(sstableRanges)));
             }
 
             return streams;

@@ -24,6 +24,7 @@ import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Iterables;
 
+import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.locator.Replica;
 import org.apache.cassandra.locator.ReplicaCollection;
 
@@ -42,7 +43,7 @@ public class TokenRanges
         return new TokenRanges(full, trans);
     }
 
-    private TokenRanges(Collection<Range<Token>> full, Collection<Range<Token>> trans)
+    protected TokenRanges(Collection<Range<Token>> full, Collection<Range<Token>> trans)
     {
         this.full = ImmutableSet.copyOf(full);
         this.trans = ImmutableSet.copyOf(trans);

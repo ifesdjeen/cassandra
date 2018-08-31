@@ -67,7 +67,7 @@ public abstract class SSTableWriter extends SSTable implements Transactional
     protected abstract TransactionalProxy txnProxy();
 
     // due to lack of multiple inheritance, we use an inner class to proxy our Transactional implementation details
-    protected abstract class TransactionalProxy extends AbstractTransactional
+    protected static abstract class TransactionalProxy extends AbstractTransactional
     {
         // should be set during doPrepare()
         protected SSTableReader finalReader;
@@ -314,6 +314,7 @@ public abstract class SSTableWriter extends SSTable implements Transactional
     {
         return metadataCollector.finalizeMetadata(getPartitioner().getClass().getCanonicalName(),
                                                   metadata().params.bloomFilterFpChance,
+                                                  // TODO:These three seem to be passed over and over together
                                                   repairedAt,
                                                   pendingRepair,
                                                   isTransient,

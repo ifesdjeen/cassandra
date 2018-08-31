@@ -2865,7 +2865,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
     {
         Map<String, Multimap<InetAddressAndPort, FetchReplica>> replicasToFetch = new HashMap<>();
 
-        InetAddressAndPort myAddress = FBUtilities.getBroadcastAddressAndPort();
+        InetAddressAndPort self = FBUtilities.getBroadcastAddressAndPort();
 
         for (String keyspaceName : Schema.instance.getNonLocalStrategyKeyspaces())
         {
@@ -2875,7 +2875,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
             for (Map.Entry<Replica, Replica> entry : changedReplicas.flattenEntries())
             {
                 Replica replica = entry.getValue();
-                if (replica.endpoint().equals(myAddress))
+                if (replica.endpoint().equals(self))
                 {
                     //Maybe we don't technically need to fetch transient data from somewhere
                     //but it's probably not a lot and it probably makes things a hair more resilient to people
@@ -2895,18 +2895,18 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                 //Remember whether this node is providing the full or transient replicas for this range. We are going
                 //to pass streaming the local instance of Replica for the range which doesn't tell us anything about the source
                 //By encoding it as two separate sets we retain this information about the source.
-                RangesAtEndpoint fullReplicas = fetchReplicas.stream()
-                                                             .filter(f -> f.remote.isFull())
-                                                             .map(f -> f.local)
-                                                             .collect(RangesAtEndpoint.collector(myAddress));
-                RangesAtEndpoint transientReplicas = fetchReplicas.stream()
-                                                                  .filter(f -> f.remote.isTransient())
-                                                                  .map(f -> f.local)
-                                                                  .collect(RangesAtEndpoint.collector(myAddress));
+                Collection<Range<Token>> fullRanges = fetchReplicas.stream()
+                                                                   .filter(f -> f.remote.isFull())
+                                                                   .map(f -> f.local.range())
+                                                                   .collect(Collectors.toList());
+                Collection<Range<Token>> transRanges = fetchReplicas.stream()
+                                                                    .filter(f -> f.remote.isTransient())
+                                                                    .map(f -> f.local.range())
+                                                                    .collect(Collectors.toList());
                 if (logger.isDebugEnabled())
-                    logger.debug("Requesting from {} full replicas {} transient replicas {}", sourceAddress, StringUtils.join(fullReplicas, ", "), StringUtils.join(transientReplicas, ", "));
+                    logger.debug("Requesting from {} full replicas {} transient replicas {}", sourceAddress, StringUtils.join(fullRanges, ", "), StringUtils.join(transRanges, ", "));
 
-                stream.requestRanges(sourceAddress, keyspaceName, fullReplicas, transientReplicas);
+                stream.requestRanges(sourceAddress, keyspaceName, new EndpointRanges(self, fullRanges, transRanges));
             });
         });
         StreamResultFuture future = stream.execute();
@@ -4534,18 +4534,19 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                         streamPlan.transferRanges(address, keyspace, ranges);
                     }
 
+                    InetAddressAndPort self = FBUtilities.getBroadcastAddressAndPort();
                     // stream requests
                     workMap.asMap().forEach((address, sourceAndOurReplicas) -> {
-                        RangesAtEndpoint fullReplicas = sourceAndOurReplicas.stream()
-                                .filter(pair -> pair.remote.isFull())
-                                .map(pair -> pair.local)
-                                .collect(RangesAtEndpoint.collector(localAddress));
-                        RangesAtEndpoint transientReplicas = sourceAndOurReplicas.stream()
-                                .filter(pair -> pair.remote.isTransient())
-                                .map(pair -> pair.local)
-                                .collect(RangesAtEndpoint.collector(localAddress));
+                        Collection<Range<Token>> fullRanges = sourceAndOurReplicas.stream()
+                                                                                    .filter(pair -> pair.remote.isFull())
+                                                                                    .map(pair -> pair.local.range())
+                                                                                    .collect(Collectors.toList());
+                        Collection<Range<Token>> transRanges = sourceAndOurReplicas.stream()
+                                                                                   .filter(pair -> pair.remote.isTransient())
+                                                                                   .map(pair -> pair.local.range())
+                                                                                   .collect(Collectors.toList());
                         logger.debug("Will request range {} of keyspace {} from endpoint {}", workMap.get(address), keyspace, address);
-                        streamPlan.requestRanges(address, keyspace, fullReplicas, transientReplicas);
+                        streamPlan.requestRanges(address, keyspace, new EndpointRanges(self, fullRanges, transRanges);
                     });
 
                     logger.debug("Keyspace {}: work map {}.", keyspace, workMap);
