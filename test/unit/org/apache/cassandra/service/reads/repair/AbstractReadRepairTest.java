@@ -204,7 +204,7 @@ public abstract  class AbstractReadRepairTest
         cfs = ks.getColumnFamilyStore("tbl");
 
         cfs.sampleReadLatencyNanos = 0;
-        cfs.speculativeWriteLatencyNanos = 0;
+        cfs.transientWriteLatencyNanos = 0;
 
         target1 = InetAddressAndPort.getByName("127.0.0.255");
         target2 = InetAddressAndPort.getByName("127.0.0.254");
@@ -242,7 +242,7 @@ public abstract  class AbstractReadRepairTest
         assert configured : "configureClass must be called in a @BeforeClass method";
 
         cfs.sampleReadLatencyNanos = 0;
-        cfs.speculativeWriteLatencyNanos = 0;
+        cfs.transientWriteLatencyNanos = 0;
     }
 
     static ReplicaLayout.ForRange replicaLayout(EndpointsForRange replicas, EndpointsForRange targets)

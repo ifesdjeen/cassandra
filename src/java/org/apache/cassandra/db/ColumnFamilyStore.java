@@ -213,7 +213,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
 
     public final TableMetrics metric;
     public volatile long sampleReadLatencyNanos;
-    public volatile long speculativeWriteLatencyNanos;
+    public volatile long transientWriteLatencyNanos;
 
     private final CassandraTableWriteHandler writeHandler;
     private final CassandraStreamManager streamManager;
@@ -393,7 +393,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
         metric = new TableMetrics(this);
         fileIndexGenerator.set(generation);
         sampleReadLatencyNanos = TimeUnit.MILLISECONDS.toNanos(DatabaseDescriptor.getReadRpcTimeout() / 2);
-        speculativeWriteLatencyNanos = TimeUnit.MILLISECONDS.toNanos(DatabaseDescriptor.getWriteRpcTimeout() / 2);
+        transientWriteLatencyNanos = TimeUnit.MILLISECONDS.toNanos(DatabaseDescriptor.getWriteRpcTimeout() / 2);
 
         logger.info("Initializing {}.{}", keyspace.getName(), name);
 
@@ -464,7 +464,7 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
         try
         {
             sampleReadLatencyNanos = metadata().params.speculativeRetry.calculateThreshold(metric.coordinatorReadLatency);
-            speculativeWriteLatencyNanos = metadata().params.speculativeWriteThreshold.calculateThreshold(metric.coordinatorWriteLatency);
+            transientWriteLatencyNanos = metadata().params.speculativeWriteThreshold.calculateThreshold(metric.coordinatorWriteLatency);
         }
         catch (Throwable e)
         {

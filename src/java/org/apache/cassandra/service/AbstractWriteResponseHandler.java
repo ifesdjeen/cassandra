@@ -300,7 +300,7 @@ public abstract class AbstractWriteResponseHandler<T> implements IAsyncCallbackW
                                               .map(Schema.instance::getColumnFamilyStoreInstance)
                                               .collect(Collectors.toList());
         for (ColumnFamilyStore cf : cfs)
-            timeout = Math.min(timeout, cf.speculativeWriteLatencyNanos);
+            timeout = Math.min(timeout, cf.transientWriteLatencyNanos);
 
         // no latency information, or we're overloaded
         if (timeout > TimeUnit.MILLISECONDS.toNanos(mutation.getTimeout()))
