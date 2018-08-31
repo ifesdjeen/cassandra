@@ -128,6 +128,9 @@ public final class TableAttributes extends PropertyDefinitions
         if (hasOption(Option.SPECULATIVE_RETRY))
             builder.speculativeRetry(SpeculativeRetryPolicy.fromString(getString(Option.SPECULATIVE_RETRY)));
 
+        if (hasOption(Option.UPGRADE_CHEAP_QUORUM))
+            builder.upgradeCheapQuorum(SpeculativeRetryPolicy.fromString(getString(Option.UPGRADE_CHEAP_QUORUM)));
+
         if (hasOption(Option.CRC_CHECK_CHANCE))
             builder.crcCheckChance(getDouble(Option.CRC_CHECK_CHANCE));
 
