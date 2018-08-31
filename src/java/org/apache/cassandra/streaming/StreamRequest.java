@@ -32,10 +32,8 @@ import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.locator.RangesAtEndpoint;
 import org.apache.cassandra.locator.Replica;
-import org.apache.cassandra.locator.ReplicaCollection;
 import org.apache.cassandra.net.CompactEndpointSerializationHelper;
 import org.apache.cassandra.net.MessagingService;
-import org.apache.hadoop.mapred.JobTracker;
 
 public class StreamRequest
 {
@@ -54,6 +52,9 @@ public class StreamRequest
     public StreamRequest(String keyspace, RangesAtEndpoint full, RangesAtEndpoint transientReplicas, Collection<String> columnFamilies)
     {
         this.keyspace = keyspace;
+        if (!full.endpoint().equals(transientReplicas.endpoint()))
+            throw new IllegalStateException("Mismatching endpoints: " + full + ", " + transientReplicas);
+
         this.full = full;
         this.transientReplicas = transientReplicas;
         this.columnFamilies.addAll(columnFamilies);
@@ -66,6 +67,7 @@ public class StreamRequest
             out.writeUTF(request.keyspace);
             out.writeInt(request.columnFamilies.size());
 
+            CompactEndpointSerializationHelper.streamingInstance.serialize(request.full.endpoint(), out, version);
             serializeReplicas(request.full, out, version);
             serializeReplicas(request.transientReplicas, out, version);
             for (String cf : request.columnFamilies)
@@ -75,13 +77,12 @@ public class StreamRequest
         private void serializeReplicas(RangesAtEndpoint replicas, DataOutputPlus out, int version) throws IOException
         {
             out.writeInt(replicas.size());
-            CompactEndpointSerializationHelper.streamingInstance.serialize(replicas.endpoint(), out, version);
+
             for (Replica replica : replicas)
             {
                 MessagingService.validatePartitioner(replica.range());
                 Token.serializer.serialize(replica.range().left, out, version);
                 Token.serializer.serialize(replica.range().right, out, version);
-                out.writeBoolean(replica.isFull());
             }
         }
 
@@ -89,20 +90,20 @@ public class StreamRequest
         {
             String keyspace = in.readUTF();
             int cfCount = in.readInt();
-            RangesAtEndpoint full = deserializeReplicas(in, version);
-            RangesAtEndpoint transientReplicas = deserializeReplicas(in, version);
-            if (!full.endpoint().equals(transientReplicas.endpoint()))
-                throw new IllegalStateException("Mismatching endpoints: " + full + ", " + transientReplicas);
+            InetAddressAndPort endpoint = CompactEndpointSerializationHelper.streamingInstance.deserialize(in, version);
+
+            RangesAtEndpoint full = deserializeReplicas(in, version, endpoint, true);
+            RangesAtEndpoint transientReplicas = deserializeReplicas(in, version, endpoint, false);
             List<String> columnFamilies = new ArrayList<>(cfCount);
             for (int i = 0; i < cfCount; i++)
                 columnFamilies.add(in.readUTF());
             return new StreamRequest(keyspace, full, transientReplicas, columnFamilies);
         }
 
-        RangesAtEndpoint deserializeReplicas(DataInputPlus in, int version) throws IOException
+        RangesAtEndpoint deserializeReplicas(DataInputPlus in, int version, InetAddressAndPort endpoint, boolean isFull) throws IOException
         {
             int replicaCount = in.readInt();
-            InetAddressAndPort endpoint = CompactEndpointSerializationHelper.streamingInstance.deserialize(in, version);
+
             RangesAtEndpoint.Builder replicas = RangesAtEndpoint.builder(endpoint, replicaCount);
             for (int i = 0; i < replicaCount; i++)
             {
@@ -111,8 +112,7 @@ public class StreamRequest
                 //streaming version?
                 Token left = Token.serializer.deserialize(in, MessagingService.globalPartitioner(), version);
                 Token right = Token.serializer.deserialize(in, MessagingService.globalPartitioner(), version);
-                boolean full = in.readBoolean();
-                replicas.add(new Replica(endpoint, new Range<>(left, right), full));
+                replicas.add(new Replica(endpoint, new Range<>(left, right), isFull));
             }
             return replicas.build();
         }
@@ -121,6 +121,7 @@ public class StreamRequest
         {
             int size = TypeSizes.sizeof(request.keyspace);
             size += TypeSizes.sizeof(request.columnFamilies.size());
+            size += CompactEndpointSerializationHelper.streamingInstance.serializedSize(request.full.endpoint(), version);
             size += replicasSerializedSize(request.transientReplicas, version);
             size += replicasSerializedSize(request.full, version);
             for (String cf : request.columnFamilies)
@@ -132,12 +133,11 @@ public class StreamRequest
         {
             long size = 0;
             size += TypeSizes.sizeof(replicas.size());
-            size += CompactEndpointSerializationHelper.streamingInstance.serializedSize(replicas.endpoint(), version);
+
             for (Replica replica : replicas)
             {
                 size += Token.serializer.serializedSize(replica.range().left, version);
                 size += Token.serializer.serializedSize(replica.range().right, version);
-                size += TypeSizes.sizeof(replica.isFull());
             }
             return size;
         }
