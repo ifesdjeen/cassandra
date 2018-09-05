@@ -320,10 +320,17 @@ public enum ConsistencyLevel
     {
         assureSufficientLiveNodes(keyspace, liveReplicas, blockFor(keyspace), 1);
     }
+
+    public void assureSufficientLiveNodesForWrite(Keyspace keyspace, Endpoints<?> allLive, int blockForWrite) throws UnavailableException
+    {
+        assureSufficientLiveNodes(keyspace, allLive, blockForWrite, 0);
+    }
+
     public void assureSufficientLiveNodesForWrite(Keyspace keyspace, Endpoints<?> allLive, Endpoints<?> pendingWithDown) throws UnavailableException
     {
-        assureSufficientLiveNodes(keyspace, allLive, blockForWrite(keyspace, pendingWithDown), 0);
+        assureSufficientLiveNodesForWrite(keyspace, allLive, blockForWrite(keyspace, pendingWithDown));
     }
+
     public void assureSufficientLiveNodes(Keyspace keyspace, Endpoints<?> allLive, int blockFor, int blockForFullReplicas) throws UnavailableException
     {
         switch (this)

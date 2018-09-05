@@ -32,10 +32,8 @@ import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.locator.EndpointsForToken;
 import org.apache.cassandra.locator.ReplicaLayout;
 import org.apache.cassandra.locator.EndpointsForRange;
-import org.apache.cassandra.locator.ReplicaUtils;
 import org.junit.Assert;
 import org.junit.BeforeClass;
-import org.junit.Ignore;
 import org.junit.Test;
 
 import org.apache.cassandra.SchemaLoader;
@@ -52,9 +50,6 @@ import org.apache.cassandra.locator.TokenMetadata;
 import org.apache.cassandra.schema.KeyspaceParams;
 import org.apache.cassandra.utils.ByteBufferUtil;
 
-import static org.apache.cassandra.locator.Replica.fullReplica;
-import static org.apache.cassandra.locator.Replica.transientReplica;
-import static org.apache.cassandra.locator.ReplicaUtils.FULL_RANGE;
 import static org.apache.cassandra.locator.ReplicaUtils.full;
 import static org.apache.cassandra.locator.ReplicaUtils.trans;
 
@@ -147,7 +142,6 @@ public class WriteResponseHandlerTransientTest
         dummy = DatabaseDescriptor.getPartitioner().getToken(ByteBufferUtil.bytes(0));
     }
 
-    @Ignore("Throws unavailable for quorum as written")
     @Test
     public void checkPendingReplicasAreNotFiltered()
     {
@@ -186,7 +180,6 @@ public class WriteResponseHandlerTransientTest
         return EndpointsForToken.of(dummy.getToken(), rr);
     }
 
-    @Ignore("Throws unavailable for quorum as written")
     @Test
     public void checkSpeculationContext()
     {
@@ -210,10 +203,15 @@ public class WriteResponseHandlerTransientTest
                                   1, dead(EP2));
     }
 
-    @Test (expected = UnavailableException.class)
+    @Test
     public void noFullReplicas()
     {
-        getSpeculationContext(replicas(full(EP1), trans(EP2), trans(EP3)), 2, dead(EP1));
+        EndpointsForToken all = replicas(full(EP1), trans(EP2), trans(EP3));
+        // Full replicas are not strictly required during write time, only during read time
+        assertSpeculationReplicas(expected(all,
+                                           replicas(trans(EP2), trans(EP3))),
+                                  all,
+                                  2, dead(EP1));
     }
 
     @Test (expected = UnavailableException.class)

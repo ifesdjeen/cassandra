@@ -227,11 +227,6 @@ public abstract class AbstractWriteResponseHandler<T> implements IAsyncCallbackW
      */
     public abstract void response(MessageIn<T> msg);
 
-    public void assureSufficientLiveNodes() throws UnavailableException
-    {
-        replicaLayout.consistencyLevel().assureSufficientLiveNodesForWrite(replicaLayout.keyspace(), replicaLayout.all().filter(isReplicaAlive), replicaLayout.pending());
-    }
-
     protected void signal()
     {
         condition.signalAll();

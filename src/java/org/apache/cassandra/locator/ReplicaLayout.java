@@ -61,7 +61,7 @@ import static com.google.common.collect.Iterables.any;
  */
 public abstract class ReplicaLayout<E extends Endpoints<E>, L extends ReplicaLayout<E, L>>
 {
-    private volatile E all;
+    protected volatile E all;
     protected final E natural;
     protected final E pending;
     protected final E selected;
@@ -140,8 +140,6 @@ public abstract class ReplicaLayout<E extends Endpoints<E>, L extends ReplicaLay
 
     abstract public L withSelected(E replicas);
 
-    abstract public L withConsistencyLevel(ConsistencyLevel cl);
-
     public L forNaturalUncontacted()
     {
         E more;
@@ -177,12 +175,6 @@ public abstract class ReplicaLayout<E extends Endpoints<E>, L extends ReplicaLay
         {
             return new ForRange(keyspace, consistencyLevel, range, natural, newSelected);
         }
-
-        @Override
-        public ForRange withConsistencyLevel(ConsistencyLevel cl)
-        {
-            return new ForRange(keyspace, cl, range, natural, selected);
-        }
     }
 
     public static class ForToken extends ReplicaLayout<EndpointsForToken, ForToken>
@@ -205,12 +197,6 @@ public abstract class ReplicaLayout<E extends Endpoints<E>, L extends ReplicaLay
         public ForToken withSelected(EndpointsForToken newSelected)
         {
             return new ForToken(keyspace, consistencyLevel, token, natural, pending, newSelected);
-        }
-
-        @Override
-        public ForToken withConsistencyLevel(ConsistencyLevel cl)
-        {
-            return new ForToken(keyspace, cl, token, natural, pending, selected);
         }
     }
 
@@ -258,6 +244,13 @@ public abstract class ReplicaLayout<E extends Endpoints<E>, L extends ReplicaLay
         return forWriteWithDownNodes(keyspace, consistencyLevel, token, natural, pending);
     }
 
+    public static ForToken forWriteWithConsistencyLevel(ForToken forToken, ConsistencyLevel consistencyLevel)
+    {
+        consistencyLevel.assureSufficientLiveNodesForWrite(forToken.keyspace, forToken.selected, forToken.pending);
+
+        return new ForToken(forToken.keyspace, consistencyLevel, forToken.token, forToken.natural, forToken.pending, forToken.selected, forToken.all());
+    }
+
     public static ForToken forWriteWithDownNodes(Keyspace keyspace, ConsistencyLevel consistencyLevel, Token token) throws UnavailableException
     {
         return forWrite(keyspace, consistencyLevel, token, Predicates.alwaysTrue());
@@ -267,6 +260,7 @@ public abstract class ReplicaLayout<E extends Endpoints<E>, L extends ReplicaLay
     {
         EndpointsForToken natural = StorageService.getNaturalReplicasForToken(keyspace.getName(), token);
         EndpointsForToken pending = StorageService.instance.getTokenMetadata().pendingEndpointsForToken(token, keyspace.getName());
+
         return forWrite(keyspace, consistencyLevel, token, natural, pending, isAlive);
     }
 
@@ -286,6 +280,9 @@ public abstract class ReplicaLayout<E extends Endpoints<E>, L extends ReplicaLay
         if (!any(natural, Replica::isTransient) && !any(pending, Replica::isTransient))
         {
             EndpointsForToken selected = Endpoints.concat(natural, pending).filter(r -> isAlive.test(r.endpoint()));
+
+            consistencyLevel.assureSufficientLiveNodesForWrite(keyspace, selected, pending);
+
             return new ForToken(keyspace, consistencyLevel, token, natural, pending, selected);
         }
 
@@ -340,19 +337,19 @@ public abstract class ReplicaLayout<E extends Endpoints<E>, L extends ReplicaLay
 
     /**
      * We want to send mutations to as many full replicas as we can, and just as many transient replicas
-     * as we need to meet blockFor.
+     * as we need to meet blockForWrite.
      */
     @VisibleForTesting
-    public static ForToken forWrite(Keyspace keyspace, ConsistencyLevel consistencyLevel, Token token, int blockFor, EndpointsForToken natural, EndpointsForToken pending, Predicate<InetAddressAndPort> livePredicate) throws UnavailableException
+    public static ForToken forWrite(Keyspace keyspace, ConsistencyLevel consistencyLevel, Token token, int blockForWrite, EndpointsForToken natural, EndpointsForToken pending, Predicate<InetAddressAndPort> livePredicate) throws UnavailableException
     {
         EndpointsForToken all = Endpoints.concat(natural, pending);
         EndpointsForToken selected = all
                 .select()
                 .add(r -> r.isFull() && livePredicate.test(r.endpoint()))
-                .add(r -> r.isTransient() && livePredicate.test(r.endpoint()), blockFor)
+                .add(r -> r.isTransient() && livePredicate.test(r.endpoint()), blockForWrite)
                 .get();
 
-        consistencyLevel.assureSufficientLiveNodesForWrite(keyspace, selected, pending);
+        consistencyLevel.assureSufficientLiveNodesForWrite(keyspace, selected, blockForWrite);
 
         return new ForToken(keyspace, consistencyLevel, token, natural, pending, selected, all);
     }

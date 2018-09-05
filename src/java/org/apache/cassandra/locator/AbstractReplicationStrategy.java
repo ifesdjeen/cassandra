@@ -52,7 +52,6 @@ public abstract class AbstractReplicationStrategy
 
     @VisibleForTesting
     final String keyspaceName;
-    private Keyspace keyspace;
     public final Map<String, String> configOptions;
     private final TokenMetadata tokenMetadata;
 
@@ -176,7 +175,7 @@ public abstract class AbstractReplicationStrategy
             else
             {
                 //Construct a delegate response handler to use to track the ideal consistency level
-                AbstractWriteResponseHandler idealHandler = getWriteResponseHandler(replicaLayout.withConsistencyLevel(idealConsistencyLevel),
+                AbstractWriteResponseHandler idealHandler = getWriteResponseHandler(ReplicaLayout.forWriteWithConsistencyLevel(replicaLayout, idealConsistencyLevel),
                                                                                     callback,
                                                                                     writeType,
                                                                                     queryStartNanoTime,
@@ -186,13 +185,6 @@ public abstract class AbstractReplicationStrategy
         }
 
         return resultResponseHandler;
-    }
-
-    private Keyspace getKeyspace()
-    {
-        if (keyspace == null)
-            keyspace = Keyspace.open(keyspaceName);
-        return keyspace;
     }
 
     /**

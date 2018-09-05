@@ -64,11 +64,6 @@ public class BatchlogResponseHandler<T> extends AbstractWriteResponseHandler<T>
         wrapped.onFailure(from, failureReason);
     }
 
-    public void assureSufficientLiveNodes()
-    {
-        wrapped.assureSufficientLiveNodes();
-    }
-
     public void get() throws WriteTimeoutException, WriteFailureException
     {
         wrapped.get();

@@ -933,8 +933,6 @@ public class StorageProxy implements StorageProxyMBean
                                                                                WriteType.BATCH,
                                                                                cleanup,
                                                                                queryStartNanoTime);
-                // exit early if we can't fulfill the CL at this time.
-                wrapper.handler.assureSufficientLiveNodes();
                 wrappers.add(wrapper);
             }
 
@@ -1098,9 +1096,6 @@ public class StorageProxy implements StorageProxyMBean
 
         ReplicaLayout.ForToken replicaLayout = ReplicaLayout.forWriteWithDownNodes(keyspace, consistencyLevel, tk);
         AbstractWriteResponseHandler<IMutation> responseHandler = rs.getWriteResponseHandler(replicaLayout, callback, writeType, queryStartNanoTime);
-
-        // exit early if we can't fulfill the CL at this time
-        responseHandler.assureSufficientLiveNodes();
 
         performer.apply(mutation, replicaLayout, responseHandler, localDataCenter);
         return responseHandler;
@@ -1439,7 +1434,8 @@ public class StorageProxy implements StorageProxyMBean
             Token tk = cm.key().getToken();
 
             ReplicaLayout.ForToken replicaLayout = ReplicaLayout.forWriteWithDownNodes(keyspace, cm.consistency(), tk);
-            rs.getWriteResponseHandler(replicaLayout, null, WriteType.COUNTER, queryStartNanoTime).assureSufficientLiveNodes();
+            // Validates consistency level with ideal consistency
+            rs.getWriteResponseHandler(replicaLayout, null, WriteType.COUNTER, queryStartNanoTime);
 
             // Forward the actual update to the chosen leader replica
             AbstractWriteResponseHandler<IMutation> responseHandler = new WriteResponseHandler<>(ReplicaLayout.forCounterWrite(keyspace, tk, replica),
