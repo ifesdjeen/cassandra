@@ -45,7 +45,7 @@ import org.apache.cassandra.utils.MerkleTrees;
 /**
  * LocalSyncTask performs streaming between local(coordinator) node and remote replica.
  */
-public class LocalSyncTask extends SymmetricSyncTask implements StreamEventHandler
+public class LocalSyncTask extends SyncTask implements StreamEventHandler
 {
     private final TraceState state = Tracing.instance.get();
 
@@ -104,15 +104,15 @@ public class LocalSyncTask extends SymmetricSyncTask implements StreamEventHandl
      * that will be called out of band once the streams complete.
      */
     @Override
-    protected void startSync(List<Range<Token>> differences)
+    protected void startSync(List<Range<Token>> ranges)
     {
-        InetAddressAndPort remote = endpoint2;
+        InetAddressAndPort remote = nodePair.peer;
 
-        String message = String.format("Performing streaming repair of %d ranges with %s", differences.size(), remote);
+        String message = String.format("Performing streaming repair of %d ranges with %s", ranges.size(), remote);
         logger.info("{} {}", previewKind.logPrefix(desc.sessionId), message);
         Tracing.traceRepair(message);
 
-        createStreamPlan(remote, differences).execute();
+        createStreamPlan(remote, ranges).execute();
     }
 
     public void handleStreamEvent(StreamEvent event)
@@ -143,7 +143,7 @@ public class LocalSyncTask extends SymmetricSyncTask implements StreamEventHandl
 
     public void onSuccess(StreamState result)
     {
-        String message = String.format("Sync complete using session %s between %s and %s on %s", desc.sessionId, endpoint1, endpoint2, desc.columnFamily);
+        String message = String.format("Sync complete using session %s between %s and %s on %s", desc.sessionId, nodePair.coordinator, nodePair.peer, desc.columnFamily);
         logger.info("{} {}", previewKind.logPrefix(desc.sessionId), message);
         Tracing.traceRepair(message);
         set(stat.withSummaries(result.createSummaries()));

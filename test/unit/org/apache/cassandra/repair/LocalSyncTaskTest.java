@@ -147,7 +147,7 @@ public class LocalSyncTaskTest extends AbstractRepairTest
         }
 
         // ensure that the changed range was recorded
-        assertEquals("Wrong differing ranges", interesting.size(), task.getCurrentStat().numberOfDifferences);
+        assertEquals("Wrong differing ranges", interesting.size(), task.stat.numberOfDifferences);
     }
 
     @Test

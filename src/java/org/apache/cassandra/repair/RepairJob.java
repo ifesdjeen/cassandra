@@ -170,7 +170,7 @@ public class RepairJob extends AbstractFuture<RepairResult> implements Runnable
     {
         InetAddressAndPort local = FBUtilities.getLocalAddressAndPort();
 
-        List<AbstractSyncTask> syncTasks = new ArrayList<>();
+        List<SyncTask> syncTasks = new ArrayList<>();
         // We need to difference all trees one against another
         for (int i = 0; i < trees.size() - 1; ++i)
         {
@@ -183,7 +183,7 @@ public class RepairJob extends AbstractFuture<RepairResult> implements Runnable
                 if (isTransient(r1.endpoint) && isTransient(r2.endpoint))
                     continue;
 
-                AbstractSyncTask task;
+                SyncTask task;
                 if (r1.endpoint.equals(local) || r2.endpoint.equals(local))
                 {
                     TreeResponse self = r1.endpoint.equals(local) ? r1 : r2;
@@ -227,7 +227,7 @@ public class RepairJob extends AbstractFuture<RepairResult> implements Runnable
     {
         InetAddressAndPort local = FBUtilities.getLocalAddressAndPort();
 
-        List<AbstractSyncTask> syncTasks = new ArrayList<>();
+        List<SyncTask> syncTasks = new ArrayList<>();
         // We need to difference all trees one against another
         DifferenceHolder diffHolder = new DifferenceHolder(trees);
 
@@ -255,7 +255,7 @@ public class RepairJob extends AbstractFuture<RepairResult> implements Runnable
                 {
                     List<Range<Token>> toFetch = streamsFor.get(fetchFrom);
                     logger.debug("{} is about to fetch {} from {}", address, toFetch, fetchFrom);
-                    AbstractSyncTask task;
+                    SyncTask task;
                     if (address.equals(local))
                     {
                         task = new LocalSyncTask(desc, address, fetchFrom, toFetch, isIncremental ? desc.parentSessionId : null,

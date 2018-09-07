@@ -15,12 +15,15 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.cassandra.repair;
 
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 import com.google.common.base.Preconditions;
+import com.google.common.util.concurrent.AbstractFuture;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -31,68 +34,59 @@ import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.streaming.PreviewKind;
 import org.apache.cassandra.tracing.Tracing;
 
-/**
- * SymmetricSyncTask will calculate the difference of MerkleTree between two nodes
- * and perform necessary operation to repair replica.
- */
-public abstract class SymmetricSyncTask extends AbstractSyncTask
+public abstract class SyncTask extends AbstractFuture<SyncStat> implements Runnable
 {
-    private static Logger logger = LoggerFactory.getLogger(SymmetricSyncTask.class);
+    private static Logger logger = LoggerFactory.getLogger(SyncTask.class);
 
     protected final RepairJobDesc desc;
-    protected final InetAddressAndPort endpoint1;
-    protected final InetAddressAndPort endpoint2;
-    protected final List<Range<Token>> differences;
+    private final List<Range<Token>> rangesToSync;
     protected final PreviewKind previewKind;
-    protected final NodePair nodePair;
-    protected volatile SyncStat stat;
-    protected long startTime = Long.MIN_VALUE;
+    protected final SyncNodePair nodePair;
 
-    public SymmetricSyncTask(RepairJobDesc desc, InetAddressAndPort endpoint1, InetAddressAndPort endpoint2, List<Range<Token>> differences, PreviewKind previewKind)
+    protected volatile long startTime = Long.MIN_VALUE;
+    protected final SyncStat stat;
+
+    protected SyncTask(RepairJobDesc desc, InetAddressAndPort primaryEndpoint, InetAddressAndPort peer, List<Range<Token>> rangesToSync, PreviewKind previewKind)
     {
-        Preconditions.checkArgument(!endpoint1.equals(endpoint2), "Both sync targets are the same: %s", endpoint1);
+        Preconditions.checkArgument(!peer.equals(primaryEndpoint), "Sending and receiving node are the same: %s", peer);
         this.desc = desc;
-        this.endpoint1 = endpoint1;
-        this.endpoint2 = endpoint2;
-        this.differences = differences;
+        this.rangesToSync = rangesToSync;
+        this.nodePair = new SyncNodePair(primaryEndpoint, peer);
         this.previewKind = previewKind;
-        this.nodePair = new NodePair(endpoint1, endpoint2);
+        this.stat = new SyncStat(nodePair, rangesToSync.size());
+    }
+
+    protected abstract void startSync(List<Range<Token>> rangesToSync);
+
+    public SyncNodePair nodePair()
+    {
+        return nodePair;
     }
 
     /**
      * Compares trees, and triggers repairs for any ranges that mismatch.
      */
-    public void run()
+    public final void run()
     {
         startTime = System.currentTimeMillis();
 
-        stat = new SyncStat(nodePair, differences.size());
 
         // choose a repair method based on the significance of the difference
-        String format = String.format("%s Endpoints %s and %s %%s for %s", previewKind.logPrefix(desc.sessionId), endpoint1, endpoint2, desc.columnFamily);
-        if (differences.isEmpty())
+        String format = String.format("%s Endpoints %s and %s %%s for %s", previewKind.logPrefix(desc.sessionId), nodePair.coordinator, nodePair.peer, desc.columnFamily);
+        if (rangesToSync.isEmpty())
         {
             logger.info(String.format(format, "are consistent"));
-            Tracing.traceRepair("Endpoint {} is consistent with {} for {}", endpoint1, endpoint2, desc.columnFamily);
+            Tracing.traceRepair("Endpoint {} is consistent with {} for {}", nodePair.coordinator, nodePair.peer, desc.columnFamily);
             set(stat);
             return;
         }
 
         // non-0 difference: perform streaming repair
-        logger.info(String.format(format, "have " + differences.size() + " range(s) out of sync"));
-        Tracing.traceRepair("Endpoint {} has {} range(s) out of sync with {} for {}", endpoint1, differences.size(), endpoint2, desc.columnFamily);
-        startSync(differences);
+        logger.info(String.format(format, "have " + rangesToSync.size() + " range(s) out of sync"));
+        Tracing.traceRepair("Endpoint {} has {} range(s) out of sync with {} for {}", nodePair.coordinator, rangesToSync.size(), nodePair.peer, desc.columnFamily);
+        startSync(rangesToSync);
     }
 
-    public NodePair nodePair()
-    {
-        return nodePair;
-    }
-
-    public SyncStat getCurrentStat()
-    {
-        return stat;
-    }
 
     protected void finished()
     {
