@@ -62,7 +62,7 @@ public class SymmetricRemoteSyncTaskTest extends AbstractRepairTest
     public void normalSync()
     {
         InstrumentedSymmetricRemoteSyncTask syncTask = new InstrumentedSymmetricRemoteSyncTask(PARTICIPANT1, PARTICIPANT2);
-        syncTask.startSync(RANGE_LIST);
+        syncTask.startSync();
 
         Assert.assertNotNull(syncTask.sentMessage);
         Assert.assertSame(SyncRequest.class, syncTask.sentMessage.getClass());

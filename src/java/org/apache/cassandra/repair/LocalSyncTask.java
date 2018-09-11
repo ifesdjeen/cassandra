@@ -104,15 +104,15 @@ public class LocalSyncTask extends SyncTask implements StreamEventHandler
      * that will be called out of band once the streams complete.
      */
     @Override
-    protected void startSync(List<Range<Token>> ranges)
+    protected void startSync()
     {
         InetAddressAndPort remote = nodePair.peer;
 
-        String message = String.format("Performing streaming repair of %d ranges with %s", ranges.size(), remote);
+        String message = String.format("Performing streaming repair of %d ranges with %s", rangesToSync.size(), remote);
         logger.info("{} {}", previewKind.logPrefix(desc.sessionId), message);
         Tracing.traceRepair(message);
 
-        createStreamPlan(remote, ranges).execute();
+        createStreamPlan(remote, rangesToSync).execute();
     }
 
     public void handleStreamEvent(StreamEvent event)

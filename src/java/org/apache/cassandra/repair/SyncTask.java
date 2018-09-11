@@ -39,7 +39,7 @@ public abstract class SyncTask extends AbstractFuture<SyncStat> implements Runna
     private static Logger logger = LoggerFactory.getLogger(SyncTask.class);
 
     protected final RepairJobDesc desc;
-    private final List<Range<Token>> rangesToSync;
+    protected final List<Range<Token>> rangesToSync;
     protected final PreviewKind previewKind;
     protected final SyncNodePair nodePair;
 
@@ -56,7 +56,7 @@ public abstract class SyncTask extends AbstractFuture<SyncStat> implements Runna
         this.stat = new SyncStat(nodePair, rangesToSync.size());
     }
 
-    protected abstract void startSync(List<Range<Token>> rangesToSync);
+    protected abstract void startSync();
 
     public SyncNodePair nodePair()
     {
@@ -84,7 +84,7 @@ public abstract class SyncTask extends AbstractFuture<SyncStat> implements Runna
         // non-0 difference: perform streaming repair
         logger.info(String.format(format, "have " + rangesToSync.size() + " range(s) out of sync"));
         Tracing.traceRepair("Endpoint {} has {} range(s) out of sync with {} for {}", nodePair.coordinator, rangesToSync.size(), nodePair.peer, desc.columnFamily);
-        startSync(rangesToSync);
+        startSync();
     }
 
 

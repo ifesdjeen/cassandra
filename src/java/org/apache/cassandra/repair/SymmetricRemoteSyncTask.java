@@ -65,11 +65,11 @@ public class SymmetricRemoteSyncTask extends SyncTask implements CompletableRemo
     }
 
     @Override
-    protected void startSync(List<Range<Token>> ranges)
+    protected void startSync()
     {
         InetAddressAndPort local = FBUtilities.getBroadcastAddressAndPort();
 
-        SyncRequest request = new SyncRequest(desc, local, nodePair.coordinator, nodePair.peer, ranges, previewKind);
+        SyncRequest request = new SyncRequest(desc, local, nodePair.coordinator, nodePair.peer, rangesToSync, previewKind);
         Preconditions.checkArgument(nodePair.coordinator.equals(request.src));
         String message = String.format("Forwarding streaming repair of %d ranges to %s (to be streamed with %s)", request.ranges.size(), request.src, request.dst);
         logger.info("{} {}", previewKind.logPrefix(desc.sessionId), message);

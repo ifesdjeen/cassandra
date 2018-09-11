@@ -46,7 +46,7 @@ import org.apache.cassandra.utils.Pair;
  */
 public class RepairJob extends AbstractFuture<RepairResult> implements Runnable
 {
-    private static Logger logger = LoggerFactory.getLogger(RepairJob.class);
+    private static final Logger logger = LoggerFactory.getLogger(RepairJob.class);
 
     private final RepairSession session;
     private final RepairJobDesc desc;
@@ -129,7 +129,9 @@ public class RepairJob extends AbstractFuture<RepairResult> implements Runnable
         }
 
         // When all validations complete, submit sync tasks
-        ListenableFuture<List<SyncStat>> syncResults = Futures.transformAsync(validations, optimiseStreams && !session.pullRepair ? this::optimisedSyncing : this::standardSyncing, taskExecutor);
+        ListenableFuture<List<SyncStat>> syncResults = Futures.transformAsync(validations,
+                                                                              optimiseStreams && !session.pullRepair ? this::optimisedSyncing : this::standardSyncing,
+                                                                              taskExecutor);
 
         // When all sync complete, set the final result
         Futures.addCallback(syncResults, new FutureCallback<List<SyncStat>>()

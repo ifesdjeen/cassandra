@@ -43,10 +43,10 @@ public class AsymmetricRemoteSyncTask extends SyncTask implements CompletableRem
         this(desc, to.endpoint, from.endpoint, MerkleTrees.difference(to.trees, from.trees), previewKind);
     }
 
-    public void startSync(List<Range<Token>> ranges)
+    public void startSync()
     {
         InetAddressAndPort local = FBUtilities.getBroadcastAddressAndPort();
-        AsymmetricSyncRequest request = new AsymmetricSyncRequest(desc, local, nodePair.coordinator, nodePair.peer, ranges, previewKind);
+        AsymmetricSyncRequest request = new AsymmetricSyncRequest(desc, local, nodePair.coordinator, nodePair.peer, rangesToSync, previewKind);
         String message = String.format("Forwarding streaming repair of %d ranges to %s (to be streamed with %s)", request.ranges.size(), request.fetchingNode, request.fetchFrom);
         Tracing.traceRepair(message);
         MessagingService.instance().sendOneWay(request.createMessage(), request.fetchingNode);
