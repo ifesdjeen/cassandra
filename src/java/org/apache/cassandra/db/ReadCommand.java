@@ -142,6 +142,9 @@ public abstract class ReadCommand extends AbstractReadQuery
                           IndexMetadata index)
     {
         super(metadata, nowInSec, columnFilter, rowFilter, limits);
+        if (acceptsTransient && isDigestQuery)
+            throw new IllegalArgumentException("Attempted to issue a digest response to transient replica");
+
         this.kind = kind;
         this.isDigestQuery = isDigestQuery;
         this.digestVersion = digestVersion;
