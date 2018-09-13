@@ -255,6 +255,7 @@ public abstract  class AbstractReadRepairTest
     {
         return replicaPlan(ks, ConsistencyLevel.QUORUM, replicas, targets);
     }
+
     static ReplicaPlan.ForRangeRead replicaPlan(Keyspace keyspace, ConsistencyLevel consistencyLevel, EndpointsForRange replicas)
     {
         return replicaPlan(keyspace, consistencyLevel, replicas, replicas);

@@ -18,11 +18,17 @@
 
 package org.apache.cassandra.locator;
 
+import java.net.UnknownHostException;
+
+import org.apache.cassandra.config.DatabaseDescriptor;
+import org.apache.cassandra.db.ConsistencyLevel;
+import org.apache.cassandra.db.Keyspace;
 import org.apache.cassandra.db.PartitionPosition;
 import org.apache.cassandra.dht.AbstractBounds;
 import org.apache.cassandra.dht.Murmur3Partitioner;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
+import org.apache.cassandra.utils.ByteBufferUtil;
 
 import static org.apache.cassandra.locator.Replica.fullReplica;
 import static org.apache.cassandra.locator.Replica.transientReplica;
@@ -37,8 +43,43 @@ public class ReplicaUtils
         return fullReplica(endpoint, FULL_RANGE);
     }
 
+    public static Replica full(String name)
+    {
+        try
+        {
+            return ReplicaUtils.full(InetAddressAndPort.getByName(name));
+        }
+        catch (UnknownHostException e)
+        {
+            throw new AssertionError(e);
+        }
+    }
+
     public static Replica trans(InetAddressAndPort endpoint)
     {
         return transientReplica(endpoint, FULL_RANGE);
     }
+
+    public static Token token(int token)
+    {
+        return DatabaseDescriptor.getPartitioner().getToken(ByteBufferUtil.bytes(token));
+    }
+
+    public static ReplicaPlan.SharedForTokenRead sharedPlan(Keyspace ks, ConsistencyLevel consistencyLevel, EndpointsForToken replicas)
+    {
+        return ReplicaPlan.shared(new ReplicaPlan.ForTokenRead(ks, consistencyLevel, replicas, replicas));
+    }
+
+
+    static ReplicaPlan.ForRangeRead replicaPlan(Keyspace ks, ConsistencyLevel consistencyLevel, EndpointsForRange replicas)
+    {
+        return replicaPlan(ks, consistencyLevel, replicas, replicas);
+    }
+
+    static ReplicaPlan.ForRangeRead replicaPlan(Keyspace keyspace, ConsistencyLevel consistencyLevel, EndpointsForRange replicas, EndpointsForRange targets)
+    {
+        return new ReplicaPlan.ForRangeRead(keyspace, consistencyLevel,
+                                            ReplicaUtils.FULL_BOUNDS, replicas, targets);
+    }
+
 }

@@ -24,7 +24,7 @@ import com.google.common.primitives.Ints;
 
 import org.apache.cassandra.Util;
 import org.apache.cassandra.db.DecoratedKey;
-import org.apache.cassandra.locator.ReplicaPlan;
+
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
@@ -41,7 +41,6 @@ import org.apache.cassandra.db.partitions.PartitionUpdate;
 import org.apache.cassandra.db.rows.BTreeRow;
 import org.apache.cassandra.db.rows.Row;
 import org.apache.cassandra.locator.EndpointsForToken;
-import org.apache.cassandra.locator.ReplicaLayout;
 import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.service.reads.repair.TestableReadRepair;
 import org.apache.cassandra.utils.ByteBufferUtil;
@@ -50,6 +49,7 @@ import static org.apache.cassandra.db.ConsistencyLevel.QUORUM;
 import static org.apache.cassandra.locator.Replica.fullReplica;
 import static org.apache.cassandra.locator.Replica.transientReplica;
 import static org.apache.cassandra.locator.ReplicaUtils.full;
+import static org.apache.cassandra.locator.ReplicaUtils.sharedPlan;
 import static org.apache.cassandra.locator.ReplicaUtils.trans;
 
 /**
@@ -104,7 +104,7 @@ public class DataResolverTransientTest extends AbstractReadResponseTest
         SinglePartitionReadCommand command = SinglePartitionReadCommand.fullPartitionRead(update.metadata(), nowInSec, key);
         EndpointsForToken targetReplicas = EndpointsForToken.of(key.getToken(), full(EP1), full(EP2), trans(EP3));
         TestableReadRepair repair = new TestableReadRepair(command, QUORUM);
-        DataResolver resolver = new DataResolver(command, plan(targetReplicas, ConsistencyLevel.QUORUM), repair, 0);
+        DataResolver resolver = new DataResolver(command, sharedPlan(ks, ConsistencyLevel.QUORUM, targetReplicas), repair, 0);
 
         Assert.assertFalse(resolver.isDataPresent());
         resolver.preprocess(response(command, EP1, iter(update), false));
@@ -173,7 +173,7 @@ public class DataResolverTransientTest extends AbstractReadResponseTest
         SinglePartitionReadCommand command = SinglePartitionReadCommand.fullPartitionRead(cfm, nowInSec, dk(5));
         EndpointsForToken targetReplicas = EndpointsForToken.of(key.getToken(), full(EP1), full(EP2), trans(EP3));
         TestableReadRepair repair = new TestableReadRepair(command, QUORUM);
-        DataResolver resolver = new DataResolver(command, plan(targetReplicas, QUORUM), repair, 0);
+        DataResolver resolver = new DataResolver(command, sharedPlan(ks, QUORUM, targetReplicas), repair, 0);
 
         Assert.assertFalse(resolver.isDataPresent());
         resolver.preprocess(response(command, EP1, iter(update(row(1000, 5, 5)).build()), false));
@@ -200,7 +200,7 @@ public class DataResolverTransientTest extends AbstractReadResponseTest
         SinglePartitionReadCommand command = SinglePartitionReadCommand.fullPartitionRead(cfm, nowInSec, dk(5));
         EndpointsForToken targetReplicas = EndpointsForToken.of(key.getToken(), full(EP1), full(EP2), trans(EP3));
         TestableReadRepair<?, ?> repair = new TestableReadRepair(command, QUORUM);
-        DataResolver resolver = new DataResolver(command, plan(targetReplicas, QUORUM), repair, 0);
+        DataResolver resolver = new DataResolver(command, sharedPlan(ks, QUORUM, targetReplicas), repair, 0);
 
         Assert.assertFalse(resolver.isDataPresent());
         PartitionUpdate transData = update(row(1000, 5, 5)).build();
@@ -218,10 +218,5 @@ public class DataResolverTransientTest extends AbstractReadResponseTest
         assertPartitionsEqual(filter(iter(transData)), filter(iter(repair.sent.get(EP2).getPartitionUpdate(cfm))));
         Assert.assertFalse(repair.sent.containsKey(EP3));
 
-    }
-
-    private ReplicaPlan.SharedForTokenRead plan(EndpointsForToken replicas, ConsistencyLevel consistencyLevel)
-    {
-        return ReplicaPlan.shared(new ReplicaPlan.ForTokenRead(ks, consistencyLevel, replicas, replicas));
     }
 }

@@ -20,7 +20,6 @@ package org.apache.cassandra.service;
 
 
 import java.net.InetAddress;
-import java.net.UnknownHostException;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
@@ -46,8 +45,8 @@ import org.apache.cassandra.locator.ReplicaUtils;
 import org.apache.cassandra.locator.TokenMetadata;
 import org.apache.cassandra.net.MessageIn;
 import org.apache.cassandra.schema.KeyspaceParams;
-import org.apache.cassandra.utils.ByteBufferUtil;
 
+import static org.apache.cassandra.locator.ReplicaUtils.full;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
@@ -57,18 +56,6 @@ public class WriteResponseHandlerTest
     static ColumnFamilyStore cfs;
     static EndpointsForToken targets;
     static EndpointsForToken pending;
-
-    private static Replica full(String name)
-    {
-        try
-        {
-            return ReplicaUtils.full(InetAddressAndPort.getByName(name));
-        }
-        catch (UnknownHostException e)
-        {
-            throw new AssertionError(e);
-        }
-    }
 
     @BeforeClass
     public static void setUpClass() throws Throwable
@@ -121,10 +108,10 @@ public class WriteResponseHandlerTest
         SchemaLoader.createKeyspace("Foo", KeyspaceParams.nts("datacenter1", 3, "datacenter2", 3), SchemaLoader.standardCFMD("Foo", "Bar"));
         ks = Keyspace.open("Foo");
         cfs = ks.getColumnFamilyStore("Bar");
-        targets = EndpointsForToken.of(DatabaseDescriptor.getPartitioner().getToken(ByteBufferUtil.bytes(0)),
+        targets = EndpointsForToken.of(ReplicaUtils.token(0),
                                        full("127.1.0.255"), full("127.1.0.254"), full("127.1.0.253"),
                                        full("127.2.0.255"), full("127.2.0.254"), full("127.2.0.253"));
-        pending = EndpointsForToken.empty(DatabaseDescriptor.getPartitioner().getToken(ByteBufferUtil.bytes(0)));
+        pending = EndpointsForToken.empty(ReplicaUtils.token(0));
     }
 
     @Before
