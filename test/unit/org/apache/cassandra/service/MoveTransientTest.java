@@ -20,6 +20,7 @@ package org.apache.cassandra.service;
 
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
@@ -84,7 +85,8 @@ public class MoveTransientTest
     Predicate<Replica> alivePredicate = replica -> !downNodes.contains(replica.endpoint());
 
     private final List<InetAddressAndPort> sourceFilterDownNodes = new ArrayList<>();
-    private final Collection<Predicate<Replica>> sourceFilters = Collections.singleton(replica -> !sourceFilterDownNodes.contains(replica.endpoint()));
+    private final Collection<Predicate<Replica>> sourceFilters = Arrays.asList(replica -> !sourceFilterDownNodes.contains(replica.endpoint()),
+                                                                               alivePredicate);
 
     @After
     public void clearDownNode()
@@ -524,7 +526,7 @@ public class MoveTransientTest
                                                                                                                    tmds.right,
                                                                                                                    alivePredicate,
                                                                                                                    "OldNetworkTopologyStrategyTest",
-                                                                                                                   sourceFilters);
+                                                                                                                    sourceFilters);
         logger.info("Ranges to fetch with preferred endpoints");
         logger.info(result.toString());
         assertMultimapEqualsIgnoreOrder(expectedResult, result);
