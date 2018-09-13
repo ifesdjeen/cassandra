@@ -252,7 +252,6 @@ public class RangeStreamer
         for (Map.Entry<Replica, Replica> entry : fetchMap.flattenEntries())
             logger.info("{}: range {} exists on {} for keyspace {}", description, entry.getKey(), entry.getValue(), keyspaceName);
 
-
         Multimap<InetAddressAndPort, FetchReplica> workMap;
         //Only use the optimized strategy if we don't care about strict sources, have a replication factor > 1, and no
         //transient replicas.
@@ -289,10 +288,6 @@ public class RangeStreamer
 
     /**
      * Wrapper method to assemble the arguments for invoking the implementation with RangeStreamer's parameters
-     * @param fetchRanges
-     * @param keyspace
-     * @param useStrictConsistency
-     * @return
      */
     private EndpointsByReplica calculateRangesToFetchWithPreferredEndpoints(ReplicaCollection<?> fetchRanges, Keyspace keyspace, boolean useStrictConsistency)
     {
@@ -562,9 +557,6 @@ public class RangeStreamer
 
     /**
      * Verify that source returned for each range is correct
-     * @param rangesWithSources
-     * @param rangeFetchMapMap
-     * @param keyspace
      */
     private static void validateRangeFetchMap(EndpointsByRange rangesWithSources, Multimap<InetAddressAndPort, Range<Token>> rangeFetchMapMap, String keyspace)
     {

@@ -4383,57 +4383,32 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                 EndpointsForRange newEndpoints = strat.calculateNaturalReplicas(toStream.range().right, tmdAfter);
                 logger.debug("Need to stream {}, current endpoints {}, new endpoints {}", toStream, currentEndpoints, newEndpoints);
 
-                for (Replica current : currentEndpoints)
+                outer:
+                for (Replica updated : newEndpoints)
                 {
-                    for (Replica updated : newEndpoints)
+                    Set<Range<Token>> subsToStream = Collections.singleton(toStream.range());
+
+                    for (Replica current : currentEndpoints)
                     {
+                        // if the range isn't compeltely new for the endpoint
                         if (current.endpoint().equals(updated.endpoint()))
                         {
                             //Nothing to do
                             if (current.equals(updated))
-                                break;
+                                continue outer;
 
-                            //In these two (really three) cases the existing data is sufficient and we should subtract whatever is already replicated
+                            //First subtract what we already have
                             if (current.isFull() == updated.isFull() || current.isFull())
-                            {
-                                //First subtract what we already have
-                                Set<Range<Token>> subsToStream = toStream.range().subtract(current.range());
-                                //Now we only stream what is still replicated
-                                subsToStream = subsToStream.stream().flatMap(range -> range.intersectionWith(updated.range()).stream()).collect(Collectors.toSet());
-                                for (Range<Token> subrange : subsToStream)
-                                {
-                                    //Only stream what intersects with what is in the new world
-                                    Set<Range<Token>> intersections = subrange.intersectionWith(updated.range());
-                                    for (Range<Token> intersection : intersections)
-                                    {
-                                        endpointRanges.put(updated.endpoint(), updated.decorateSubrange(intersection));
-                                    }
-                                }
-                            }
-                            else
-                            {
-                                for (Range<Token> intersection : toStream.range().intersectionWith(updated.range()))
-                                {
-                                    endpointRanges.put(updated.endpoint(), updated.decorateSubrange(intersection));
-                                }
-                            }
+                                subsToStream = toStream.range().subtract(current.range());
+
+                            //Now we only stream what is still replicated
+                            subsToStream = subsToStream.stream().flatMap(range -> range.intersectionWith(updated.range()).stream()).collect(Collectors.toSet());
                         }
                     }
-                }
 
-                for (Replica updated : newEndpoints)
-                {
-                    if (!currentEndpoints.byEndpoint().containsKey(updated.endpoint()))
+                    for (Range<Token> tokenRange : subsToStream)
                     {
-                        // Completely new range for this endpoint
-                        if (toStream.isTransient() && updated.isFull())
-                        {
-                            throw new AssertionError(String.format("Need to stream %s, but only have %s which is transient and not full", updated, toStream));
-                        }
-                        for (Range<Token> intersection : updated.range().intersectionWith(toStream.range()))
-                        {
-                            endpointRanges.put(updated.endpoint(), updated.decorateSubrange(intersection));
-                        }
+                        endpointRanges.put(updated.endpoint(), updated.decorateSubrange(tokenRange));
                     }
                 }
             }
