@@ -87,7 +87,7 @@ public class RangeStreamer
     private final InetAddressAndPort address;
     /* streaming description */
     private final String description;
-    private final Multimap<String, Multimap<InetAddressAndPort, FetchReplica>> toFetch = HashMultimap.create();
+    private final Map<String, Multimap<InetAddressAndPort, FetchReplica>> toFetch = new HashMap<>();
     private final Set<Predicate<Replica>> sourceFilters = new HashSet<>();
     private final StreamPlan streamPlan;
     private final boolean useStrictConsistency;
@@ -97,6 +97,7 @@ public class RangeStreamer
     public static class FetchReplica
     {
         public final Replica local;
+        // Source replica
         public final Replica remote;
 
         public FetchReplica(Replica local, Replica remote)
@@ -264,10 +265,11 @@ public class RangeStreamer
             workMap = getOptimizedWorkMap(fetchMap, sourceFilters, keyspaceName);
         }
 
-        toFetch.put(keyspaceName, workMap);
-        for (Map.Entry<InetAddressAndPort, Collection<FetchReplica>> entry : workMap.asMap().entrySet())
+        assert toFetch.put(keyspaceName, workMap) == null : "Keyspace is already added to fetch map";
+
+        if (logger.isTraceEnabled())
         {
-            if (logger.isTraceEnabled())
+            for (Map.Entry<InetAddressAndPort, Collection<FetchReplica>> entry : workMap.asMap().entrySet())
             {
                 for (FetchReplica r : entry.getValue())
                     logger.trace("{}: range source {} local range {} for keyspace {}", description, r.remote, r.local, keyspaceName);
@@ -300,7 +302,7 @@ public class RangeStreamer
         if (tokens != null)
         {
             // Pending ranges
-            tmdAfter =  tmd.cloneOnlyTokenMap();
+            tmdAfter = tmd.cloneOnlyTokenMap();
             tmdAfter.updateNormalTokens(tokens, address);
         }
         else if (useStrictConsistency)
@@ -308,15 +310,15 @@ public class RangeStreamer
             throw new IllegalArgumentException("Can't ask for strict consistency and not supply tokens");
         }
 
-        return RangeStreamer.calculateRangesToFetchWithPreferredEndpoints(snitch::sortedByProximity,
-                                                                           strat,
-                                                                           fetchRanges,
-                                                                           useStrictConsistency,
-                                                                           tmd,
-                                                                           tmdAfter,
-                                                                           ALIVE_PREDICATE,
-                                                                           keyspace.getName(),
-                                                                           sourceFilters);
+        return calculateRangesToFetchWithPreferredEndpoints(snitch::sortedByProximity,
+                                                            strat,
+                                                            fetchRanges,
+                                                            useStrictConsistency,
+                                                            tmd,
+                                                            tmdAfter,
+                                                            ALIVE_PREDICATE,
+                                                            keyspace.getName(),
+                                                            sourceFilters);
 
     }
 
@@ -324,7 +326,6 @@ public class RangeStreamer
      * Get a map of all ranges and the source that will be cleaned up once this bootstrapped node is added for the given ranges.
      * For each range, the list should only contain a single source. This allows us to consistently migrate data without violating
      * consistency.
-     *
      **/
      public static EndpointsByReplica
      calculateRangesToFetchWithPreferredEndpoints(BiFunction<InetAddressAndPort, EndpointsForRange, EndpointsForRange> snitchGetSortedListByProximity,
@@ -490,8 +491,6 @@ public class RangeStreamer
     /**
      * The preferred endpoint list is the wrong format because it is keyed by Replica (this node) rather than the source
      * endpoint we will fetch from which streaming wants.
-     * @param preferredEndpoints
-     * @return
      */
     public static Multimap<InetAddressAndPort, FetchReplica> convertPreferredEndpointsToWorkMap(EndpointsByReplica preferredEndpoints)
     {
@@ -500,7 +499,7 @@ public class RangeStreamer
         {
             for (Replica source : e.getValue())
             {
-                assert (e.getKey()).isLocal();
+                assert e.getKey().isLocal();
                 assert !source.isLocal();
                 workMap.put(source.endpoint(), new FetchReplica(e.getKey(), source));
             }
@@ -513,7 +512,8 @@ public class RangeStreamer
      * Optimized version that also outputs the final work map
      */
     private static Multimap<InetAddressAndPort, FetchReplica> getOptimizedWorkMap(EndpointsByReplica rangesWithSources,
-                                                                                  Collection<Predicate<Replica>> sourceFilters, String keyspace)
+                                                                                  Collection<Predicate<Replica>> sourceFilters,
+                                                                                  String keyspace)
     {
         //For now we just aren't going to use the optimized range fetch map with transient replication to shrink
         //the surface area to test and introduce bugs.
@@ -526,10 +526,11 @@ public class RangeStreamer
             unwrapped.put(entry.getKey().range(), entry.getValue());
         }
 
-        RangeFetchMapCalculator calculator = new RangeFetchMapCalculator(unwrapped.asImmutableView(), sourceFilters, keyspace);
+        EndpointsByRange unwrappedView = unwrapped.asImmutableView();
+        RangeFetchMapCalculator calculator = new RangeFetchMapCalculator(unwrappedView, sourceFilters, keyspace);
         Multimap<InetAddressAndPort, Range<Token>> rangeFetchMapMap = calculator.getRangeFetchMap();
         logger.info("Output from RangeFetchMapCalculator for keyspace {}", keyspace);
-        validateRangeFetchMap(unwrapped.asImmutableView(), rangeFetchMapMap, keyspace);
+        validateRangeFetchMap(unwrappedView, rangeFetchMapMap, keyspace);
 
         //Need to rewrap as Replicas
         Multimap<InetAddressAndPort, FetchReplica> wrapped = HashMultimap.create();
@@ -580,7 +581,7 @@ public class RangeStreamer
 
     // For testing purposes
     @VisibleForTesting
-    Multimap<String, Multimap<InetAddressAndPort, FetchReplica>> toFetch()
+    Map<String, Multimap<InetAddressAndPort, FetchReplica>> toFetch()
     {
         return toFetch;
     }
@@ -592,7 +593,7 @@ public class RangeStreamer
             sources.asMap().forEach((source, fetchReplicas) -> {
 
                 // filter out already streamed ranges
-                RangesAtEndpoint available = stateStore.getAvailableRanges(keyspace, StorageService.instance.getTokenMetadata().partitioner);
+                RangesAtEndpoint available = stateStore.getAvailableRanges(keyspace, metadata.partitioner);
 
                 Predicate<FetchReplica> isAvailable = fetch -> {
                     Replica availableRange =  available.byRange().get(fetch.local.range());

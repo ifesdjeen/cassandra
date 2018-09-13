@@ -617,7 +617,7 @@ public class MoveTransientTest
                                                                      RangesByEndpoint expectedResult)
     {
         DatabaseDescriptor.setTransientReplicationEnabledUnsafe(true);
-        StorageService.RangeRelocator relocator = new StorageService.RangeRelocator();
+        RangeRelocator relocator = new RangeRelocator();
         RangesByEndpoint result = relocator.calculateRangesToStreamWithEndpoints(toStream,
                                                                                  simpleStrategy(tmds.left),
                                                                                  tmds.left,
