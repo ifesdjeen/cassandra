@@ -36,8 +36,6 @@ import net.nicoulaj.compilecommand.annotations.Inline;
 import org.apache.cassandra.db.TypeSizes;
 import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputPlus;
-import org.apache.cassandra.io.util.FileDataInput;
-import org.apache.cassandra.io.util.FileUtils;
 
 /**
  * Utility methods to make ByteBuffers less painful
@@ -162,7 +160,6 @@ public class ByteBufferUtil
     public static byte[] getArray(ByteBuffer buffer)
     {
         int length = buffer.remaining();
-
         if (buffer.hasArray())
         {
             int boff = buffer.arrayOffset() + buffer.position();
@@ -450,6 +447,37 @@ public class ByteBufferUtil
     public static double toDouble(ByteBuffer bytes)
     {
         return bytes.getDouble(bytes.position());
+    }
+
+    public static ByteBuffer objectToBytes(Object obj)
+    {
+        if (obj instanceof Integer)
+            return ByteBufferUtil.bytes((int) obj);
+        else if (obj instanceof Byte)
+            return ByteBufferUtil.bytes((byte) obj);
+        else if (obj instanceof Short)
+            return ByteBufferUtil.bytes((short) obj);
+        else if (obj instanceof Long)
+            return ByteBufferUtil.bytes((long) obj);
+        else if (obj instanceof Float)
+            return ByteBufferUtil.bytes((float) obj);
+        else if (obj instanceof Double)
+            return ByteBufferUtil.bytes((double) obj);
+        else if (obj instanceof UUID)
+            return ByteBufferUtil.bytes((UUID) obj);
+        else if (obj instanceof InetAddress)
+            return ByteBufferUtil.bytes((InetAddress) obj);
+        else if (obj instanceof String)
+            return ByteBufferUtil.bytes((String) obj);
+        else
+            throw new IllegalArgumentException(String.format("Cannot convert value %s of type %s",
+                                                             obj,
+                                                             obj.getClass()));
+    }
+
+    public static ByteBuffer bytes(byte b)
+    {
+        return ByteBuffer.allocate(1).put(0, b);
     }
 
     public static ByteBuffer bytes(short s)

@@ -535,6 +535,21 @@ public final class FileUtils
         }
     }
 
+    public static void copyFile(File cfDir, File file) throws IOException
+    {
+        byte[] buf = new byte[65536];
+        if (file.isFile())
+        {
+            File target = new File(cfDir, file.getName());
+            int rd;
+            try (FileInputStream is = new FileInputStream(file);
+                 FileOutputStream os = new FileOutputStream(target);) {
+                while ((rd = is.read(buf)) >= 0)
+                    os.write(buf, 0, rd);
+            }
+        }
+    }
+
     public static boolean isSubDirectory(File parent, File child) throws IOException
     {
         parent = parent.getCanonicalFile();

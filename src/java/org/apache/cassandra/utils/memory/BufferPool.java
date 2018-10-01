@@ -32,6 +32,7 @@ import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.utils.NoSpamLogger;
 
 import com.google.common.annotations.VisibleForTesting;
+import org.apache.cassandra.concurrent.InfiniteLoopExecutor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -476,35 +477,16 @@ public class BufferPool
     private static final ConcurrentLinkedQueue<LocalPoolRef> localPoolReferences = new ConcurrentLinkedQueue<>();
 
     private static final ReferenceQueue<Object> localPoolRefQueue = new ReferenceQueue<>();
-    private static final ExecutorService EXEC = Executors.newFixedThreadPool(1, new NamedThreadFactory("LocalPool-Cleaner"));
-    static
+    private static final InfiniteLoopExecutor EXEC = new InfiniteLoopExecutor("LocalPool-Cleaner", () ->
     {
-        EXEC.execute(new Runnable()
+        Object obj = localPoolRefQueue.remove(100);
+        if (obj instanceof LocalPoolRef)
         {
-            public void run()
-            {
-                try
-                {
-                    while (true)
-                    {
-                        Object obj = localPoolRefQueue.remove();
-                        if (obj instanceof LocalPoolRef)
-                        {
-                            ((LocalPoolRef) obj).release();
-                            localPoolReferences.remove(obj);
-                        }
-                    }
-                }
-                catch (InterruptedException e)
-                {
-                }
-                finally
-                {
-                    EXEC.execute(this);
-                }
-            }
-        });
-    }
+            ((LocalPoolRef) obj).release();
+            localPoolReferences.remove(obj);
+        }
+
+    }).start();
 
     private static ByteBuffer allocateDirectAligned(int capacity)
     {
@@ -854,5 +836,12 @@ public class BufferPool
     {
         int mask = unit - 1;
         return (size + mask) & ~mask;
+    }
+
+    @VisibleForTesting
+    public static void shutdownLocalCleaner() throws InterruptedException
+    {
+        EXEC.shutdown();
+        EXEC.awaitTermination(60, TimeUnit.SECONDS);
     }
 }

@@ -20,6 +20,8 @@ package org.apache.cassandra.utils.memory;
 
 import java.util.concurrent.atomic.AtomicLongFieldUpdater;
 
+import com.google.common.annotations.VisibleForTesting;
+
 import com.codahale.metrics.Timer;
 import org.apache.cassandra.metrics.CassandraMetricsRegistry;
 import org.apache.cassandra.metrics.DefaultNameFactory;
@@ -64,6 +66,11 @@ public abstract class MemtablePool
     }
 
     public abstract boolean needToCopyOnHeap();
+    public void shutdown()
+    {
+        cleaner.shutdown();
+    }
+
     public abstract MemtableAllocator newAllocator();
 
     /**

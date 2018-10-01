@@ -24,15 +24,19 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Joiner;
 import com.google.common.base.Strings;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Iterables;
+import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 import com.google.common.primitives.Longs;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.MoreExecutors;
+import org.apache.cassandra.notifications.INotification;
+import org.apache.cassandra.notifications.SSTableAddedNotification;
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -1142,5 +1146,15 @@ public class SecondaryIndexManager implements IndexRegistry
                 waitFor.add(blockingExecutor.submit(task));
         });
         FBUtilities.waitOnFutures(waitFor);
+    }
+
+    @VisibleForTesting
+    public static void shutdownExecutors() throws InterruptedException
+    {
+        for (ExecutorService executor : new ExecutorService[]{ asyncExecutor, blockingExecutor })
+        {
+            executor.shutdown();
+            executor.awaitTermination(60, TimeUnit.SECONDS);
+        }
     }
 }

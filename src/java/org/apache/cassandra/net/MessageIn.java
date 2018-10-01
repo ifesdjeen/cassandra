@@ -30,7 +30,6 @@ import org.apache.cassandra.concurrent.Stage;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.io.IVersionedSerializer;
 import org.apache.cassandra.io.util.DataInputPlus;
-import org.apache.cassandra.io.util.FileUtils;
 
 public class MessageIn<T>
 {
@@ -42,7 +41,7 @@ public class MessageIn<T>
     public final MessagingService.Verb verb;
     public final int version;
 
-    private MessageIn(InetAddress from, T payload, Map<String, byte[]> parameters, MessagingService.Verb verb, int version)
+    public MessageIn(InetAddress from, T payload, Map<String, byte[]> parameters, MessagingService.Verb verb, int version)
     {
         this.from = from;
         this.payload = payload;

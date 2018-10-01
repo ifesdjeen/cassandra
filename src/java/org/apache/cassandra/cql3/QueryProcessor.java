@@ -158,14 +158,15 @@ public class QueryProcessor implements QueryHandler
         }
     }
 
-    private static QueryState internalQueryState()
-    {
-        return InternalStateInstance.INSTANCE.queryState;
-    }
-
     private QueryProcessor()
     {
         MigrationManager.instance.register(new MigrationSubscriber());
+    }
+
+    @VisibleForTesting
+    public static QueryState internalQueryState()
+    {
+        return InternalStateInstance.INSTANCE.queryState;
     }
 
     public ParsedStatement.Prepared getPrepared(MD5Digest id)
@@ -256,7 +257,8 @@ public class QueryProcessor implements QueryHandler
             return null;
     }
 
-    private static QueryOptions makeInternalOptions(ParsedStatement.Prepared prepared, Object[] values)
+    @VisibleForTesting
+    public static QueryOptions makeInternalOptions(ParsedStatement.Prepared prepared, Object[] values)
     {
         return makeInternalOptions(prepared, values, ConsistencyLevel.ONE);
     }
@@ -266,7 +268,7 @@ public class QueryProcessor implements QueryHandler
         if (prepared.boundNames.size() != values.length)
             throw new IllegalArgumentException(String.format("Invalid number of values. Expecting %d but got %d", prepared.boundNames.size(), values.length));
 
-        List<ByteBuffer> boundValues = new ArrayList<ByteBuffer>(values.length);
+        List<ByteBuffer> boundValues = new ArrayList<>(values.length);
         for (int i = 0; i < values.length; i++)
         {
             Object value = values[i];
