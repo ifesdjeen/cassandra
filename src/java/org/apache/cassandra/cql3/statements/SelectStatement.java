@@ -20,6 +20,7 @@ package org.apache.cassandra.cql3.statements;
 import java.nio.ByteBuffer;
 import java.util.*;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.MoreObjects;
 
 import org.slf4j.Logger;
@@ -422,6 +423,16 @@ public class SelectStatement implements CQLStatement
                                               int userLimit) throws RequestValidationException
     {
         ResultSet rset = process(partitions, options, selectors, nowInSec, userLimit);
+        return new ResultMessage.Rows(rset);
+    }
+
+    @VisibleForTesting
+    public ResultMessage.Rows processResults(PartitionIterator partitions,
+                                             QueryOptions options,
+                                             int nowInSec,
+                                             int userLimit) throws RequestValidationException
+    {
+        ResultSet rset = process(partitions, options, selection.newSelectors(options), nowInSec, userLimit);
         return new ResultMessage.Rows(rset);
     }
 

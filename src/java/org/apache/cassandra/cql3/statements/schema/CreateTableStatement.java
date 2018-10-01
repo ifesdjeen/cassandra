@@ -19,6 +19,7 @@ package org.apache.cassandra.cql3.statements.schema;
 
 import java.util.*;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.ImmutableSet;
 
 import org.apache.cassandra.audit.AuditLogContext;
@@ -108,6 +109,12 @@ public final class CreateTableStatement extends AlterSchemaStatement
         }
 
         return schema.withAddedOrUpdated(keyspace.withSwapped(keyspace.tables.with(table)));
+    }
+
+    @VisibleForTesting
+    public void setTableId(String id)
+    {
+        attrs.addProperty(TableAttributes.ID, id);
     }
 
     SchemaChange schemaChangeEvent(KeyspacesDiff diff)
