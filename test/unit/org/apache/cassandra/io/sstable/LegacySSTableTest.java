@@ -624,7 +624,7 @@ public class LegacySSTableTest
                  FileOutputStream os = new FileOutputStream(target);) {
                 while ((rd = is.read(buf)) >= 0)
                     os.write(buf, 0, rd);
-                }
+            }
         }
     }
 }
