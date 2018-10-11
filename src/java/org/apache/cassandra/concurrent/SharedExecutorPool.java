@@ -76,6 +76,7 @@ public class SharedExecutorPool
     final ConcurrentSkipListMap<Long, SEPWorker> spinning = new ConcurrentSkipListMap<>();
     // the collection of threads that have been asked to stop/deschedule - new workers are scheduled from here last
     final ConcurrentSkipListMap<Long, SEPWorker> descheduled = new ConcurrentSkipListMap<>();
+    final List<SEPWorker> workers = new CopyOnWriteArrayList<>();
 
     public SharedExecutorPool(String poolName)
     {
@@ -94,7 +95,7 @@ public class SharedExecutorPool
                 return;
 
         if (!work.isStop())
-            new SEPWorker(workerId.incrementAndGet(), work, this);
+            workers.add(new SEPWorker(workerId.incrementAndGet(), work, this));
     }
 
     void maybeStartSpinningWorker()
@@ -113,13 +114,15 @@ public class SharedExecutorPool
         return executor;
     }
 
-    @VisibleForTesting
-    public static void shutdownSharedPool() throws InterruptedException
+    public void shutdown() throws InterruptedException
     {
-        for (SEPExecutor executor : SHARED.executors)
-            executor.shutdown();
-
-        for (SEPExecutor executor : SHARED.executors)
+        for (SEPExecutor executor : executors)
+        {
+            executor.shutdownNow();
             executor.awaitTermination(60, TimeUnit.SECONDS);
+        }
+
+        for (SEPWorker worker : workers)
+            worker.kill();
     }
 }
