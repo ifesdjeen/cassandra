@@ -55,6 +55,7 @@ import org.apache.cassandra.io.sstable.format.SSTableFormat;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.apache.cassandra.io.sstable.format.Version;
 import org.apache.cassandra.io.sstable.format.big.BigFormat;
+import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.service.ActiveRepairService;
 import org.apache.cassandra.service.CacheService;
 import org.apache.cassandra.service.StorageService;
@@ -560,7 +561,7 @@ public class LegacySSTableTest
         {
             for (File file : srcDir.listFiles())
             {
-                copyFile(cfDir, file);
+                FileUtils.copyFile(cfDir, file);
             }
         }
     }
@@ -571,7 +572,7 @@ public class LegacySSTableTest
         Assert.assertTrue("The table directory " + tableDir + " was not found", tableDir.isDirectory());
         for (File file : tableDir.listFiles())
         {
-            copyFile(cfDir, file);
+            FileUtils.copyFile(cfDir, file);
         }
     }
 
@@ -580,18 +581,5 @@ public class LegacySSTableTest
         return new File(LEGACY_SSTABLE_ROOT, String.format("%s/legacy_tables/%s", legacyVersion, table));
     }
 
-    private static void copyFile(File cfDir, File file) throws IOException
-    {
-        byte[] buf = new byte[65536];
-        if (file.isFile())
-        {
-            File target = new File(cfDir, file.getName());
-            int rd;
-            try (FileInputStream is = new FileInputStream(file);
-                 FileOutputStream os = new FileOutputStream(target);) {
-                while ((rd = is.read(buf)) >= 0)
-                    os.write(buf, 0, rd);
-                }
-        }
-    }
+
 }

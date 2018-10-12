@@ -35,8 +35,6 @@ import java.util.function.BiFunction;
 
 import org.apache.cassandra.batchlog.BatchlogManager;
 import org.apache.cassandra.concurrent.ScheduledExecutors;
-import org.apache.cassandra.concurrent.SharedExecutorPool;
-import org.apache.cassandra.concurrent.StageManager;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.config.YamlConfigurationLoader;
 import org.apache.cassandra.cql3.CQLStatement;
@@ -67,8 +65,10 @@ import org.apache.cassandra.gms.Gossiper;
 import org.apache.cassandra.gms.VersionedValue;
 import org.apache.cassandra.hints.HintsService;
 import org.apache.cassandra.index.SecondaryIndexManager;
+import org.apache.cassandra.integration.log.InstanceIDDefiner;
 import org.apache.cassandra.io.util.DataInputBuffer;
 import org.apache.cassandra.io.util.DataOutputBuffer;
+import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.net.IMessageSink;
 import org.apache.cassandra.net.MessageIn;
@@ -323,9 +323,17 @@ public class Instance extends InvokableInstance
 
     void launch()
     {
-        mkdirs();
         try
         {
+            mkdirs();
+            String testConfPath = "test/conf/logback-dtest.xml";
+            int id = config.num;
+            runOnInstance(() -> {
+                InstanceIDDefiner.instanceId = id;
+            });
+            FileUtils.copyFile(root,
+                               new File(testConfPath));
+            System.setProperty("logback.configurationFile", "file://" + root + "/logback-dtest.xml");
             ConfigUtil.writeConfigFile(new File(root, "node" + config.num + "/cassandra.conf"), ConfigUtil.generateConfig(config));
             initializeCassandraInstance("file://" + root + "/node" + config.num + "/cassandra.conf");
         }

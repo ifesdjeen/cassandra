@@ -152,14 +152,16 @@ public class InvokableInstance
             // Do not share:
             //  * yaml, which  is a rare exception because it does mess with loading org.cassandra...Config class instances
             //  * most of the rest of Cassandra classes (unless they were explicitly shared) g
-            if (name.startsWith("org.yaml") ||
-                    (name.startsWith("org.apache.cassandra") && !shared.test(name)))
+            if (name.startsWith("org.slf4j") ||
+                name.startsWith("ch.qos.logback") ||
+                name.startsWith("org.yaml") ||
+                (name.startsWith("org.apache.cassandra") && !shared.test(name)))
                 return loadClassInternal(name);
 
             return commonClassLoader.loadClass(name);
         }
 
-        private Class<?> loadClassInternal(String name) throws ClassNotFoundException
+        Class<?> loadClassInternal(String name) throws ClassNotFoundException
         {
             synchronized (getClassLoadingLock(name))
             {
