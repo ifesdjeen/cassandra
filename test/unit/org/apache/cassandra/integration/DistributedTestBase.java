@@ -21,9 +21,16 @@ package org.apache.cassandra.integration;
 import java.util.Arrays;
 
 import org.junit.Assert;
+import org.junit.BeforeClass;
 
 public class DistributedTestBase
 {
+    @BeforeClass
+    public static void setup()
+    {
+        System.setProperty("org.apache.cassandra.disable_mbrean_registration", "true");
+    }
+
     public static void assertRows(Object[][] actual, Object[]... expected)
     {
         Assert.assertEquals(rowsNotEqualErrorMessage(expected, actual),
