@@ -254,6 +254,8 @@ public class CompactionManager implements CompactionManagerMBean
                 logger.error("Interrupted while waiting for tasks to be terminated", e);
             }
         }
+
+        cacheCleanupExecutor.shutdown();
     }
 
     public void finishCompactionsAndShutdown(long timeout, TimeUnit unit) throws InterruptedException

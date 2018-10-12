@@ -220,10 +220,31 @@ public class ColumnFamilyStore implements ColumnFamilyStoreMBean
 
     private volatile boolean neverPurgeTombstones = false;
 
+    public static void shutdownFlushExecutor() throws InterruptedException
+    {
+        flushExecutor.shutdown();
+        flushExecutor.awaitTermination(60, TimeUnit.SECONDS);
+    }
+
+
     public static void shutdownPostFlushExecutor() throws InterruptedException
     {
         postFlushExecutor.shutdown();
         postFlushExecutor.awaitTermination(60, TimeUnit.SECONDS);
+    }
+
+    public static void shutdownReclaimExecutor() throws InterruptedException
+    {
+        reclaimExecutor.shutdown();
+        reclaimExecutor.awaitTermination(60, TimeUnit.SECONDS);
+    }
+
+    public static void shutdownPerDiskFlushExecutors() throws InterruptedException
+    {
+        for (ExecutorService executorService : perDiskflushExecutors)
+            executorService.shutdown();
+        for (ExecutorService executorService : perDiskflushExecutors)
+            executorService.awaitTermination(60, TimeUnit.SECONDS);
     }
 
     public void reload()

@@ -20,6 +20,8 @@ package org.apache.cassandra.utils.memory;
 
 import java.util.concurrent.atomic.AtomicLongFieldUpdater;
 
+import com.google.common.annotations.VisibleForTesting;
+
 import com.codahale.metrics.Timer;
 import org.apache.cassandra.metrics.CassandraMetricsRegistry;
 import org.apache.cassandra.metrics.DefaultNameFactory;
@@ -56,6 +58,12 @@ public abstract class MemtablePool
     SubPool getSubPool(long limit, float cleanThreshold)
     {
         return new SubPool(limit, cleanThreshold);
+    }
+
+    @VisibleForTesting
+    public MemtableCleanerThread<?> getCleaner()
+    {
+        return cleaner;
     }
 
     MemtableCleanerThread<?> getCleaner(Runnable cleaner)

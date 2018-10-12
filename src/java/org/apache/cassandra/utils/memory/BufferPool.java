@@ -502,9 +502,9 @@ public class BufferPool
             {
                 try
                 {
-                    while (true)
+                    while (!EXEC.isShutdown())
                     {
-                        Object obj = localPoolRefQueue.remove();
+                        Object obj = localPoolRefQueue.remove(100);
                         if (obj instanceof LocalPoolRef)
                         {
                             ((LocalPoolRef) obj).release();
@@ -517,7 +517,8 @@ public class BufferPool
                 }
                 finally
                 {
-                    EXEC.execute(this);
+                    if (!EXEC.isShutdown())
+                        EXEC.execute(this);
                 }
             }
         });
@@ -871,5 +872,12 @@ public class BufferPool
     {
         int mask = unit - 1;
         return (size + mask) & ~mask;
+    }
+
+    @VisibleForTesting
+    public static void shutdownLocalCleaner() throws InterruptedException
+    {
+        EXEC.shutdown();
+        EXEC.awaitTermination(60, TimeUnit.SECONDS);
     }
 }

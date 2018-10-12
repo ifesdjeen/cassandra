@@ -24,7 +24,7 @@ import org.apache.cassandra.utils.concurrent.WaitQueue;
  * A thread that reclaims memory from a MemtablePool on demand.  The actual reclaiming work is delegated to the
  * cleaner Runnable, e.g., FlushLargestColumnFamily
  */
-class MemtableCleanerThread<P extends MemtablePool> extends Thread
+public class MemtableCleanerThread<P extends MemtablePool> extends Thread
 {
     /** The pool we're cleaning */
     final P pool;
@@ -49,7 +49,7 @@ class MemtableCleanerThread<P extends MemtablePool> extends Thread
     }
 
     // should ONLY be called when we really think it already needs cleaning
-    void trigger()
+    public void trigger()
     {
         wait.signal();
     }
@@ -66,6 +66,9 @@ class MemtableCleanerThread<P extends MemtablePool> extends Thread
                     signal.awaitUninterruptibly();
                 else
                     signal.cancel();
+
+                if (Thread.currentThread().isInterrupted())
+                    return;
             }
 
             cleaner.run();

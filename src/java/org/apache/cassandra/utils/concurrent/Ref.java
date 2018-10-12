@@ -373,9 +373,9 @@ public final class Ref<T> implements RefCounted<T>
         {
             try
             {
-                while (true)
+                while (!EXEC.isShutdown())
                 {
-                    Object obj = referenceQueue.remove();
+                    Object obj = referenceQueue.remove(100);
                     if (obj instanceof Ref.State)
                     {
                         ((Ref.State) obj).release(true);
@@ -387,7 +387,8 @@ public final class Ref<T> implements RefCounted<T>
             }
             finally
             {
-                EXEC.execute(this);
+                if (!EXEC.isShutdown())
+                    EXEC.execute(this);
             }
         }
     }
@@ -718,5 +719,12 @@ public final class Ref<T> implements RefCounted<T>
                 }
             }
         }
+    }
+
+    @VisibleForTesting
+    public static void shutdownReferenceReaper() throws InterruptedException
+    {
+        EXEC.shutdown();
+        EXEC.awaitTermination(60, TimeUnit.SECONDS);
     }
 }
