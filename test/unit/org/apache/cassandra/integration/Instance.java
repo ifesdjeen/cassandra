@@ -25,24 +25,22 @@ import java.net.URL;
 import java.net.UnknownHostException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
-import java.util.function.BiFunction;
 
 import org.apache.cassandra.batchlog.BatchlogManager;
 import org.apache.cassandra.concurrent.ScheduledExecutors;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.config.YamlConfigurationLoader;
 import org.apache.cassandra.cql3.CQLStatement;
-import org.apache.cassandra.cql3.ColumnSpecification;
 import org.apache.cassandra.cql3.QueryHandler;
 import org.apache.cassandra.cql3.QueryOptions;
 import org.apache.cassandra.cql3.QueryProcessor;
-import org.apache.cassandra.cql3.UntypedResultSet;
 import org.apache.cassandra.cql3.statements.ModificationStatement;
 import org.apache.cassandra.cql3.statements.SelectStatement;
 import org.apache.cassandra.cql3.statements.schema.CreateTableStatement;
@@ -73,11 +71,7 @@ import org.apache.cassandra.io.util.DataInputBuffer;
 import org.apache.cassandra.io.util.DataOutputBuffer;
 import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.locator.InetAddressAndPort;
-import org.apache.cassandra.net.IMessageSink;
-import org.apache.cassandra.net.MessageIn;
-import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
-import org.apache.cassandra.net.async.BaseMessageInHandler;
 import org.apache.cassandra.schema.SchemaConstants;
 import org.apache.cassandra.service.ActiveRepairService;
 import org.apache.cassandra.service.ClientState;
@@ -85,7 +79,6 @@ import org.apache.cassandra.service.PendingRangeCalculatorService;
 import org.apache.cassandra.service.QueryState;
 import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.transport.messages.ResultMessage;
-import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.Throwables;
 import org.apache.cassandra.utils.concurrent.Ref;
@@ -221,39 +214,39 @@ public class Instance extends InvokableInstance
 
     public InetAddressAndPort getBroadcastAddress() { return callOnInstance(FBUtilities::getBroadcastAddressAndPort); }
 
-    private static Object[][] doCoordinatorWrite(String query)
+    private static Object[][] doCoordinatorWrite(String query, int consistencyLevel)
     {
         CQLStatement prepared = QueryProcessor.getStatement(query, ClientState.forInternalCalls());
         assert prepared instanceof ModificationStatement;
         ModificationStatement modificationStatement = (ModificationStatement) prepared;
 
         modificationStatement.execute(QueryState.forInternalCalls(),
-                                      QueryOptions.DEFAULT,
+                                      QueryOptions.forInternalCalls(ConsistencyLevel.fromCode(consistencyLevel), Collections.emptyList()),
                                       System.nanoTime());
 
         return new Object[][] {};
     }
 
-    private static Object[][] doCoordinatorRead(String query)
+    private static Object[][] doCoordinatorRead(String query, int consistencyLevel)
     {
         CQLStatement prepared = QueryProcessor.getStatement(query, ClientState.forInternalCalls());
         assert prepared instanceof SelectStatement;
         SelectStatement selectStatement = (SelectStatement) prepared;
         ReadQuery readQuery = selectStatement.getQuery(QueryOptions.DEFAULT, FBUtilities.nowInSeconds());
 
-        PartitionIterator pi = readQuery.execute(ConsistencyLevel.ALL, ClientState.forInternalCalls(), System.nanoTime());
+        PartitionIterator pi = readQuery.execute(ConsistencyLevel.fromCode(consistencyLevel), ClientState.forInternalCalls(), System.nanoTime());
         ResultMessage.Rows rows = selectStatement.processResults(pi, QueryOptions.DEFAULT, FBUtilities.nowInSeconds(), 10);
         return RowUtil.toObjects(rows);
     }
 
-    public Object[][] coordinatorWrite(String query)
+    public Object[][] coordinatorWrite(String query, int consistencyLevel)
     {
-        return appliesOnInstance(Instance::doCoordinatorWrite).apply(query);
+        return appliesOnInstance(Instance::doCoordinatorWrite).apply(query, consistencyLevel);
     }
 
-    public Object[][] coordinatorRead(String query)
+    public Object[][] coordinatorRead(String query, int consistencyLevel)
     {
-        return appliesOnInstance(Instance::doCoordinatorRead).apply(query);
+        return appliesOnInstance(Instance::doCoordinatorRead).apply(query, consistencyLevel);
     }
 
     public ByteBuffer handleWrite(ByteBuffer bb)

@@ -43,6 +43,7 @@ import com.google.common.io.Files;
 import com.google.common.util.concurrent.Futures;
 
 import org.apache.cassandra.concurrent.NamedThreadFactory;
+import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.db.Mutation;
 import org.apache.cassandra.db.ReadCommand;
 import org.apache.cassandra.db.ReadResponse;
@@ -110,16 +111,15 @@ public class TestCluster implements AutoCloseable
         return get(0);
     }
 
-    public Object[][] coordinatorWrite(String statement)
+    public Object[][] coordinatorWrite(String statement, ConsistencyLevel consistencyLevel)
     {
-        return coordinator().coordinatorWrite(String.format(statement, KEYSPACE));
+        return coordinator().coordinatorWrite(String.format(statement, KEYSPACE), consistencyLevel.code);
 
     }
 
-    public Object[][] coordinatorRead(String statement)
+    public Object[][] coordinatorRead(String statement, ConsistencyLevel consistencyLevel)
     {
-        return coordinator().coordinatorRead(String.format(statement, KEYSPACE));
-
+        return coordinator().coordinatorRead(String.format(statement, KEYSPACE), consistencyLevel.code);
     }
 
     public static TestCluster create(int nodeCount) throws Throwable

@@ -20,6 +20,8 @@ package org.apache.cassandra.integration;
 
 import org.junit.Test;
 
+import org.apache.cassandra.db.ConsistencyLevel;
+
 import static org.apache.cassandra.integration.TestCluster.KEYSPACE;
 
 public class DistributedReadWritePathTest extends DistributedTestBase
@@ -35,7 +37,8 @@ public class DistributedReadWritePathTest extends DistributedTestBase
             cluster.get(1).executeInternal("INSERT INTO " + KEYSPACE + ".tbl (pk, ck, v) VALUES (1, 2, 2)");
             cluster.get(2).executeInternal("INSERT INTO " + KEYSPACE + ".tbl (pk, ck, v) VALUES (1, 3, 3)");
 
-            assertRows(cluster.coordinatorRead("SELECT * FROM " + KEYSPACE + ".tbl WHERE pk = 1"),
+            assertRows(cluster.coordinatorRead("SELECT * FROM " + KEYSPACE + ".tbl WHERE pk = 1",
+                                               ConsistencyLevel.QUORUM),
                        row(1, 1, 1),
                        row(1, 2, 2),
                        row(1, 3, 3));
@@ -49,7 +52,8 @@ public class DistributedReadWritePathTest extends DistributedTestBase
         {
             cluster.schemaChange("CREATE TABLE " + KEYSPACE + ".tbl (pk int, ck int, v int, PRIMARY KEY (pk, ck)) WITH read_repair='none'");
 
-            cluster.coordinatorWrite("INSERT INTO " + KEYSPACE + ".tbl (pk, ck, v) VALUES (1, 1, 1)");
+            cluster.coordinatorWrite("INSERT INTO " + KEYSPACE + ".tbl (pk, ck, v) VALUES (1, 1, 1)",
+                                     ConsistencyLevel.QUORUM);
 
             for (int i = 0; i < 3; i++)
             {
@@ -57,21 +61,31 @@ public class DistributedReadWritePathTest extends DistributedTestBase
                            row(1, 1, 1));
             }
 
-            assertRows(cluster.coordinatorRead("SELECT * FROM " + KEYSPACE + ".tbl WHERE pk = 1"),
+            assertRows(cluster.coordinatorRead("SELECT * FROM " + KEYSPACE + ".tbl WHERE pk = 1",
+                                               ConsistencyLevel.QUORUM),
                        row(1, 1, 1));
         }
     }
+
     @Test
     public void readRepairTest() throws Throwable
     {
         try (TestCluster cluster = TestCluster.create(3))
         {
-            cluster.schemaChange("CREATE TABLE " + KEYSPACE + ".tbl (pk int, ck int, v int, PRIMARY KEY (pk, ck)) WITH read_repair='none'");
+            cluster.schemaChange("CREATE TABLE " + KEYSPACE + ".tbl (pk int, ck int, v int, PRIMARY KEY (pk, ck)) WITH read_repair='blocking'");
 
             cluster.get(0).executeInternal("INSERT INTO " + KEYSPACE + ".tbl (pk, ck, v) VALUES (1, 1, 1)");
             cluster.get(1).executeInternal("INSERT INTO " + KEYSPACE + ".tbl (pk, ck, v) VALUES (1, 1, 1)");
 
-            assertRows(cluster.coordinatorRead("SELECT * FROM " + KEYSPACE + ".tbl WHERE pk = 1"),
+            // Verify that data got repaired to the third node
+            for (int i = 0; i < 3; i++)
+            {
+                assertRows(cluster.get(0).executeInternal("SELECT * FROM " + KEYSPACE + ".tbl WHERE pk = 1"),
+                           row(1, 1, 1));
+            }
+
+            assertRows(cluster.coordinatorRead("SELECT * FROM " + KEYSPACE + ".tbl WHERE pk = 1",
+                                               ConsistencyLevel.QUORUM),
                        row(1, 1, 1));
         }
     }
