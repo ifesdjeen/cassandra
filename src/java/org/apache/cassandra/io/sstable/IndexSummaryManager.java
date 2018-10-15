@@ -68,7 +68,7 @@ public class IndexSummaryManager implements IndexSummaryManagerMBean
     static
     {
         instance = new IndexSummaryManager();
-        MBeanWrapper.instance.registerMBean(MBeanWrapper.instance, MBEAN_NAME);
+        MBeanWrapper.instance.registerMBean(instance, MBEAN_NAME);
     }
 
     private IndexSummaryManager()
