@@ -193,7 +193,11 @@ public class CassandraMetricsRegistry extends MetricRegistry
         else
             throw new IllegalArgumentException("Unknown metric type: " + metric.getClass());
 
-        mBeanServer.registerMBean(mbean, name);
+        try
+        {
+            mBeanServer.registerMBean(mbean, name);
+        }
+        catch (Exception ignored) {}
     }
 
     private void registerAlias(MetricName existingName, MetricName aliasName)
@@ -206,7 +210,10 @@ public class CassandraMetricsRegistry extends MetricRegistry
 
     private void removeAlias(MetricName name)
     {
-        MBeanWrapper.instance.unregisterMBean(name.getMBeanName());
+        try
+        {
+            MBeanWrapper.instance.unregisterMBean(name.getMBeanName());
+        } catch (Exception ignored) {}
     }
     
     /**

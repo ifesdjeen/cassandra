@@ -23,13 +23,12 @@ import javax.management.MBeanServer;
 import javax.management.MalformedObjectNameException;
 import javax.management.ObjectName;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
+/**
+ * Helper class to avoid catching and rethrowing checked exceptions on MBean and
+ * allow turning of MBean registration for test purposes.
+ */
 public interface MBeanWrapper
 {
-    static final Logger logger = LoggerFactory.getLogger(MBeanWrapper.class);
-
     static final MBeanWrapper instance = Boolean.getBoolean("org.apache.cassandra.disable_mbrean_registration") ?
                                          new NoOpMBeanWrapper() :
                                          new PlatformMBeanWrapper();
@@ -62,7 +61,6 @@ public interface MBeanWrapper
             }
             catch (Exception e)
             {
-                logger.error("Error registering MBean", e);
                 throw new RuntimeException(e);
             }
         }
@@ -75,7 +73,6 @@ public interface MBeanWrapper
             }
             catch (MalformedObjectNameException e)
             {
-                logger.error("Error registering MBean", e);
                 throw new RuntimeException(e);
             }
         }
@@ -94,7 +91,6 @@ public interface MBeanWrapper
             }
             catch (MalformedObjectNameException e)
             {
-                logger.error("Error while checking if MBean is registered", e);
                 throw new RuntimeException(e);
             }
         }
@@ -107,7 +103,6 @@ public interface MBeanWrapper
             }
             catch (Exception e)
             {
-                logger.error("Error unregistering MBean", e);
                 throw new RuntimeException(e);
             }
         }
@@ -120,7 +115,6 @@ public interface MBeanWrapper
             }
             catch (MalformedObjectNameException e)
             {
-                logger.error("Error registering MBean", e);
                 throw new RuntimeException(e);
             }
         }
