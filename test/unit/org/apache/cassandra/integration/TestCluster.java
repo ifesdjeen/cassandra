@@ -24,6 +24,7 @@ import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -31,12 +32,15 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.function.BiFunction;
 
+import com.google.common.collect.Sets;
 import com.google.common.io.Files;
+import com.google.common.util.concurrent.Futures;
 
 import org.apache.cassandra.concurrent.NamedThreadFactory;
 import org.apache.cassandra.db.ReadResponse;
@@ -55,6 +59,7 @@ import org.apache.cassandra.utils.Pair;
 public class TestCluster implements AutoCloseable
 {
     static String KEYSPACE = "distributed_test_keyspace";
+    private static ExecutorService exec = Executors.newCachedThreadPool(new NamedThreadFactory("cluster-async-tasks"));
 
     // App class loader, holding classpath URLs
     private static final URLClassLoader contextClassLoader = (URLClassLoader) Thread.currentThread().getContextClassLoader();
@@ -156,7 +161,6 @@ public class TestCluster implements AutoCloseable
         List<Future<?>> waitFor = new ArrayList<>(instances.size());
         for (Instance instance : instances)
             waitFor.add(exec.submit(instance::launch));
-        exec.shutdown();
         FBUtilities.waitOnFutures(waitFor);
         return new TestCluster(root, instances);
     }
@@ -164,25 +168,45 @@ public class TestCluster implements AutoCloseable
     @Override
     public void close()
     {
-//        Set<Thread> threadSet1 = Thread.getAllStackTraces().keySet();
+        List<Future<?>> futures = new ArrayList<>();
         for (Instance instance : instances)
-            instance.shutdown();
+            futures.add(exec.submit(() -> instance.shutdown()));
 
+//        withThreadLeakCheck(futures);
         FileUtils.deleteRecursive(root);
-//        Set<Thread> threadSet = Thread.getAllStackTraces().keySet();
-//
-//        threadSet = Sets.difference(threadSet, Collections.singletonMap(Thread.currentThread(), null).keySet());
-//        if (!threadSet.isEmpty())
-//        {
-//            for (Thread thread : threadSet)
-//            {
-//                System.out.println(thread);
-//                System.out.println(Arrays.toString(thread.getStackTrace()));
-//            }
-//            throw new RuntimeException("Not all threads have shut down: " + threadSet);
-//        }
+
     }
 
+    // We do not want this check to run every time until we fix problems with tread stops
+    private void withThreadLeakCheck(List<Future<?>> futures)
+    {
+        for (Future<?> future : futures)
+        {
+            try
+            {
+                future.get();
+            }
+            catch (Exception e)
+            {
+                System.out.println("Exception caught while shutting down " + e.getMessage());
+                e.printStackTrace();
+            }
+
+        }
+
+        Set<Thread> threadSet = Thread.getAllStackTraces().keySet();
+
+        threadSet = Sets.difference(threadSet, Collections.singletonMap(Thread.currentThread(), null).keySet());
+        if (!threadSet.isEmpty())
+        {
+            for (Thread thread : threadSet)
+            {
+                System.out.println(thread);
+                System.out.println(Arrays.toString(thread.getStackTrace()));
+            }
+            throw new RuntimeException("Not all threads have shut down: " + threadSet);
+        }
+    }
     /**
      * Initializes a class loader shared between the classes
      */
