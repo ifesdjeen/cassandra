@@ -60,15 +60,14 @@ public abstract class MemtablePool
         return new SubPool(limit, cleanThreshold);
     }
 
-    @VisibleForTesting
-    public MemtableCleanerThread<?> getCleaner()
-    {
-        return cleaner;
-    }
-
     MemtableCleanerThread<?> getCleaner(Runnable cleaner)
     {
         return cleaner == null ? null : new MemtableCleanerThread<>(this, cleaner);
+    }
+
+    public void shutdown()
+    {
+        cleaner.shutdown();
     }
 
     public abstract MemtableAllocator newAllocator();

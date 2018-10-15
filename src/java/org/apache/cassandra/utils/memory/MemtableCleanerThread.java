@@ -18,60 +18,70 @@
  */
 package org.apache.cassandra.utils.memory;
 
+import org.apache.cassandra.concurrent.InfiniteLoopExecutor;
 import org.apache.cassandra.utils.concurrent.WaitQueue;
 
 /**
  * A thread that reclaims memory from a MemtablePool on demand.  The actual reclaiming work is delegated to the
  * cleaner Runnable, e.g., FlushLargestColumnFamily
  */
-public class MemtableCleanerThread<P extends MemtablePool> extends Thread
+public class MemtableCleanerThread<P extends MemtablePool> extends InfiniteLoopExecutor
 {
-    /** The pool we're cleaning */
-    final P pool;
+    private static class Clean<P extends MemtablePool> implements InterruptibleRunnable
+    {
+        /** The pool we're cleaning */
+        final P pool;
 
-    /** should ensure that at least some memory has been marked reclaiming after completion */
-    final Runnable cleaner;
+        /** should ensure that at least some memory has been marked reclaiming after completion */
+        final Runnable cleaner;
 
-    /** signalled whenever needsCleaning() may return true */
-    final WaitQueue wait = new WaitQueue();
+        /** signalled whenever needsCleaning() may return true */
+        final WaitQueue wait = new WaitQueue();
+
+        private Clean(P pool, Runnable cleaner)
+        {
+            this.pool = pool;
+            this.cleaner = cleaner;
+        }
+
+        boolean needsCleaning()
+        {
+            return pool.onHeap.needsCleaning() || pool.offHeap.needsCleaning();
+        }
+
+        @Override
+        public void run() throws InterruptedException
+        {
+            if (needsCleaning())
+            {
+                cleaner.run();
+            }
+            else
+            {
+                final WaitQueue.Signal signal = wait.register();
+                if (!needsCleaning())
+                    signal.await();
+                else
+                    signal.cancel();
+            }
+        }
+    }
+
+    private final Runnable trigger;
+    private MemtableCleanerThread(Clean<P> clean)
+    {
+        super(clean.pool.getClass().getSimpleName() + "Cleaner", clean);
+        this.trigger = clean.wait::signal;
+    }
 
     MemtableCleanerThread(P pool, Runnable cleaner)
     {
-        super(pool.getClass().getSimpleName() + "Cleaner");
-        this.pool = pool;
-        this.cleaner = cleaner;
-        setDaemon(true);
-    }
-
-    boolean needsCleaning()
-    {
-        return pool.onHeap.needsCleaning() || pool.offHeap.needsCleaning();
+        this(new Clean<>(pool, cleaner));
     }
 
     // should ONLY be called when we really think it already needs cleaning
     public void trigger()
     {
-        wait.signal();
-    }
-
-    @Override
-    public void run()
-    {
-        while (true)
-        {
-            while (!needsCleaning())
-            {
-                final WaitQueue.Signal signal = wait.register();
-                if (!needsCleaning())
-                    signal.awaitUninterruptibly();
-                else
-                    signal.cancel();
-
-                if (Thread.currentThread().isInterrupted())
-                    return;
-            }
-
-            cleaner.run();
-        }
+        trigger.run();
     }
 }

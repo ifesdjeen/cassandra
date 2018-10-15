@@ -366,8 +366,7 @@ public class Instance extends InvokableInstance
 //            for (ExecutorService executor : SharedExecutorPool.SHARED.executors)
 //                error = shutdownAndWait(error, executor);
 
-            Memtable.MEMORY_POOL.getCleaner().interrupt();
-            Memtable.MEMORY_POOL.getCleaner().trigger();
+            Memtable.MEMORY_POOL.shutdown();
 
             Throwables.maybeFail(error);
         });
