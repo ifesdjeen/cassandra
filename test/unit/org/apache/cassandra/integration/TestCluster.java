@@ -43,6 +43,8 @@ import com.google.common.io.Files;
 import com.google.common.util.concurrent.Futures;
 
 import org.apache.cassandra.concurrent.NamedThreadFactory;
+import org.apache.cassandra.db.Mutation;
+import org.apache.cassandra.db.ReadCommand;
 import org.apache.cassandra.db.ReadResponse;
 import org.apache.cassandra.db.WriteResponse;
 import org.apache.cassandra.io.util.DataInputBuffer;
@@ -243,13 +245,15 @@ public class TestCluster implements AutoCloseable
             {
                 try
                 {
-                    DataOutputBuffer buf = new DataOutputBuffer(1024);
-                    message.serialize(buf, MessagingService.current_version);
+                    DataOutputBuffer out = new DataOutputBuffer(1024);
 
                     MessageIn response;
-                    if (message.verb == MessagingService.Verb.MUTATION)
+                    if (message.verb == MessagingService.Verb.MUTATION ||
+                        message.verb == MessagingService.Verb.READ_REPAIR)
                     {
-                        ByteBuffer responseBB = writeHandler.apply(to, buf.buffer());
+                        MessageOut<Mutation> mutationMessage = (MessageOut<Mutation>) message;
+                        Mutation.serializer.serialize(mutationMessage.payload, out, MessagingService.current_version);
+                        ByteBuffer responseBB = writeHandler.apply(to, out.buffer());
                         DataInputBuffer dib = new DataInputBuffer(responseBB, false);
                         WriteResponse writeResponse = WriteResponse.serializer.deserialize(dib, MessagingService.current_version);
 
@@ -260,7 +264,9 @@ public class TestCluster implements AutoCloseable
                     }
                     else if (message.verb == MessagingService.Verb.READ)
                     {
-                        ByteBuffer responseBB = readHandler.apply(to, buf.buffer());
+                        MessageOut<ReadCommand> readCommandMessage = (MessageOut<ReadCommand>) message;
+                        ReadCommand.serializer.serialize(readCommandMessage.payload, out, MessagingService.current_version);
+                        ByteBuffer responseBB = readHandler.apply(to, out.buffer());
                         DataInputBuffer dib = new DataInputBuffer(responseBB, false);
                         ReadResponse readResponse = ReadResponse.serializer.deserialize(dib, MessagingService.current_version);
 
@@ -286,6 +292,7 @@ public class TestCluster implements AutoCloseable
 
             public boolean allowIncomingMessage(MessageIn message, int id)
             {
+                System.out.println("Incoming Message: " + message);
                 return true;
             }
         }));

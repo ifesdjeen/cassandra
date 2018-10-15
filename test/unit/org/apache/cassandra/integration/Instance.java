@@ -77,6 +77,7 @@ import org.apache.cassandra.net.IMessageSink;
 import org.apache.cassandra.net.MessageIn;
 import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
+import org.apache.cassandra.net.async.BaseMessageInHandler;
 import org.apache.cassandra.schema.SchemaConstants;
 import org.apache.cassandra.service.ActiveRepairService;
 import org.apache.cassandra.service.ClientState;
@@ -84,6 +85,7 @@ import org.apache.cassandra.service.PendingRangeCalculatorService;
 import org.apache.cassandra.service.QueryState;
 import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.transport.messages.ResultMessage;
+import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.Throwables;
 import org.apache.cassandra.utils.concurrent.Ref;
@@ -262,15 +264,10 @@ public class Instance extends InvokableInstance
             try
             {
                 DataInputBuffer dib = new DataInputBuffer(in, false);
-                // TODO: refactor to use MessagingService / MessageIn
-                dib.skipBytes(16);
-                dib.readUnsignedVInt();
-
                 Mutation cmd = Mutation.serializer.deserialize(dib, MessagingService.current_version);
                 cmd.apply();
 
-                // TODO: deliver MessageOut instead of just a response
-                buf = new DataOutputBuffer(1024 * 8);
+                buf = new DataOutputBuffer(1024);
                 WriteResponse.serializer.serialize(WriteResponse.createMessage().payload,
                                                    buf,
                                                    MessagingService.current_version);
@@ -291,10 +288,6 @@ public class Instance extends InvokableInstance
             try
             {
                 DataInputBuffer dib = new DataInputBuffer(in, false);
-                // TODO: refactor to use MessagingService / MessageIn
-                dib.skipBytes(16);
-                dib.readUnsignedVInt();
-
                 ReadCommand cmd = ReadCommand.serializer.deserialize(dib, MessagingService.current_version);
                 ReadResponse response;
                 try (ReadExecutionController executionController = cmd.executionController();
@@ -303,8 +296,7 @@ public class Instance extends InvokableInstance
                     response = cmd.createResponse(iterator);
                 }
 
-                // TODO: deliver MessageOut instead of just a response
-                buf = new DataOutputBuffer(1024 * 8);
+                buf = new DataOutputBuffer(1024);
                 ReadResponse.serializer.serialize(response, buf, MessagingService.current_version);
             }
             catch (IOException e)
