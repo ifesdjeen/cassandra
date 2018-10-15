@@ -43,17 +43,20 @@ import org.apache.cassandra.cql3.QueryHandler;
 import org.apache.cassandra.cql3.QueryOptions;
 import org.apache.cassandra.cql3.QueryProcessor;
 import org.apache.cassandra.cql3.UntypedResultSet;
+import org.apache.cassandra.cql3.statements.ModificationStatement;
 import org.apache.cassandra.cql3.statements.SelectStatement;
 import org.apache.cassandra.cql3.statements.schema.CreateTableStatement;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.db.Keyspace;
 import org.apache.cassandra.db.Memtable;
+import org.apache.cassandra.db.Mutation;
 import org.apache.cassandra.db.ReadCommand;
 import org.apache.cassandra.db.ReadExecutionController;
 import org.apache.cassandra.db.ReadQuery;
 import org.apache.cassandra.db.ReadResponse;
 import org.apache.cassandra.db.SystemKeyspace;
+import org.apache.cassandra.db.WriteResponse;
 import org.apache.cassandra.db.commitlog.CommitLog;
 import org.apache.cassandra.db.compaction.CompactionManager;
 import org.apache.cassandra.db.partitions.PartitionIterator;
@@ -148,7 +151,7 @@ public class Instance extends InvokableInstance
         });
     }
 
-    public UntypedResultSet executeInternal(String query, Object... args)
+    public Object[][] executeInternal(String query, Object... args)
     {
         return callOnInstance(() ->
         {
@@ -157,7 +160,7 @@ public class Instance extends InvokableInstance
                     QueryProcessor.makeInternalOptions(prepared.statement, args));
 
             if (result instanceof ResultMessage.Rows)
-                return UntypedResultSet.create(((ResultMessage.Rows)result).result);
+                return RowUtil.toObjects((ResultMessage.Rows)result);
             else
                 return null;
         });
@@ -216,69 +219,68 @@ public class Instance extends InvokableInstance
 
     public InetAddressAndPort getBroadcastAddress() { return callOnInstance(FBUtilities::getBroadcastAddressAndPort); }
 
-    private static Object[][] doCoordinatorRead(String query, BiFunction<InetAddressAndPort, ByteBuffer, ByteBuffer> response)
+    private static Object[][] doCoordinatorWrite(String query)
     {
-        // TODO: internal calls are not correct here
+        CQLStatement prepared = QueryProcessor.getStatement(query, ClientState.forInternalCalls());
+        assert prepared instanceof ModificationStatement;
+        ModificationStatement modificationStatement = (ModificationStatement) prepared;
+
+        modificationStatement.execute(QueryState.forInternalCalls(),
+                                      QueryOptions.DEFAULT,
+                                      System.nanoTime());
+
+        return new Object[][] {};
+    }
+
+    private static Object[][] doCoordinatorRead(String query)
+    {
         CQLStatement prepared = QueryProcessor.getStatement(query, ClientState.forInternalCalls());
         assert prepared instanceof SelectStatement;
         SelectStatement selectStatement = (SelectStatement) prepared;
         ReadQuery readQuery = selectStatement.getQuery(QueryOptions.DEFAULT, FBUtilities.nowInSeconds());
 
-        MessagingService.instance().addMessageSink(new IMessageSink()
-        {
-            public boolean allowOutgoingMessage(MessageOut message, int id, InetAddressAndPort to)
-            {
-                try
-                {
-                    DataOutputBuffer buf = new DataOutputBuffer(1024);
-                    message.serialize(buf, MessagingService.current_version);
-
-                    ByteBuffer responseBB = response.apply(to, buf.buffer());
-
-                    DataInputBuffer dib = new DataInputBuffer(responseBB, false);
-                    ReadResponse readResponse = ReadResponse.serializer.deserialize(dib, MessagingService.current_version);
-
-                    MessagingService.instance().receive(
-                            new MessageIn<>(
-                                    to, readResponse, Collections.emptyMap(),
-                                    MessagingService.Verb.REQUEST_RESPONSE,
-                                    MessagingService.current_version,
-                                    System.nanoTime()
-                            ), id
-                    );
-                }
-                catch (IOException e)
-                {
-                    e.printStackTrace();
-                }
-                return false;
-            }
-
-            public boolean allowIncomingMessage(MessageIn message, int id)
-            {
-                return true;
-            }
-        });
-
         PartitionIterator pi = readQuery.execute(ConsistencyLevel.ALL, ClientState.forInternalCalls(), System.nanoTime());
         ResultMessage.Rows rows = selectStatement.processResults(pi, QueryOptions.DEFAULT, FBUtilities.nowInSeconds(), 10);
-        Object[][] result = new Object[rows.result.rows.size()][];
-        List<ColumnSpecification> specs = rows.result.metadata.names;
-        for (int i = 0; i < rows.result.rows.size(); i++)
-        {
-            List<ByteBuffer> row = rows.result.rows.get(i);
-            result[i] = new Object[row.size()];
-            for (int j = 0; j < row.size(); j++)
-            {
-                result[i][j] = specs.get(j).type.getSerializer().deserialize(row.get(j));
-            }
-        }
-        return result;
+        return RowUtil.toObjects(rows);
     }
 
-    public Object[][] coordinatorRead(String query, BiFunction<InetAddressAndPort, ByteBuffer, ByteBuffer> responseHandler)
+    public Object[][] coordinatorWrite(String query)
     {
-        return appliesOnInstance(Instance::doCoordinatorRead).apply(query, responseHandler);
+        return appliesOnInstance(Instance::doCoordinatorWrite).apply(query);
+    }
+
+    public Object[][] coordinatorRead(String query)
+    {
+        return appliesOnInstance(Instance::doCoordinatorRead).apply(query);
+    }
+
+    public ByteBuffer handleWrite(ByteBuffer bb)
+    {
+        return appliesOnInstance((SerializableFunction<ByteBuffer, ByteBuffer>) in ->
+        {
+            DataOutputBuffer buf;
+            try
+            {
+                DataInputBuffer dib = new DataInputBuffer(in, false);
+                // TODO: refactor to use MessagingService / MessageIn
+                dib.skipBytes(16);
+                dib.readUnsignedVInt();
+
+                Mutation cmd = Mutation.serializer.deserialize(dib, MessagingService.current_version);
+                cmd.apply();
+
+                // TODO: deliver MessageOut instead of just a response
+                buf = new DataOutputBuffer(1024 * 8);
+                WriteResponse.serializer.serialize(WriteResponse.createMessage().payload,
+                                                   buf,
+                                                   MessagingService.current_version);
+            }
+            catch (IOException e)
+            {
+                throw new RuntimeException(e);
+            }
+            return buf.buffer();
+        }).apply(bb);
     }
 
     public ByteBuffer handleRead(ByteBuffer bb)
@@ -304,7 +306,8 @@ public class Instance extends InvokableInstance
                 // TODO: deliver MessageOut instead of just a response
                 buf = new DataOutputBuffer(1024 * 8);
                 ReadResponse.serializer.serialize(response, buf, MessagingService.current_version);
-            } catch (IOException e)
+            }
+            catch (IOException e)
             {
                 throw new RuntimeException(e);
             }

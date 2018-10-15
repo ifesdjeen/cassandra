@@ -22,10 +22,10 @@ import org.junit.Test;
 
 import static org.apache.cassandra.integration.TestCluster.KEYSPACE;
 
-public class DistributedReadTest extends DistributedTestBase
+public class DistributedReadWritePathTest extends DistributedTestBase
 {
     @Test
-    public void testSimpleRead() throws Throwable
+    public void coordinatorRead() throws Throwable
     {
         try (TestCluster cluster = TestCluster.create(3))
         {
@@ -42,4 +42,37 @@ public class DistributedReadTest extends DistributedTestBase
         }
     }
 
+    @Test
+    public void coordinatorWrite() throws Throwable
+    {
+        try (TestCluster cluster = TestCluster.create(3))
+        {
+            cluster.schemaChange("CREATE TABLE " + KEYSPACE + ".tbl (pk int, ck int, v int, PRIMARY KEY (pk, ck)) WITH read_repair='none'");
+
+            cluster.coordinatorWrite("INSERT INTO " + KEYSPACE + ".tbl (pk, ck, v) VALUES (1, 1, 1)");
+
+            for (int i = 0; i < 3; i++)
+            {
+                assertRows(cluster.get(0).executeInternal("SELECT * FROM " + KEYSPACE + ".tbl WHERE pk = 1"),
+                           row(1, 1, 1));
+            }
+
+            assertRows(cluster.coordinatorRead("SELECT * FROM " + KEYSPACE + ".tbl WHERE pk = 1"),
+                       row(1, 1, 1));
+        }
+    }
+    @Test
+    public void readRepairTest() throws Throwable
+    {
+        try (TestCluster cluster = TestCluster.create(3))
+        {
+            cluster.schemaChange("CREATE TABLE " + KEYSPACE + ".tbl (pk int, ck int, v int, PRIMARY KEY (pk, ck)) WITH read_repair='none'");
+
+            cluster.get(0).executeInternal("INSERT INTO " + KEYSPACE + ".tbl (pk, ck, v) VALUES (1, 1, 1)");
+            cluster.get(1).executeInternal("INSERT INTO " + KEYSPACE + ".tbl (pk, ck, v) VALUES (1, 1, 1)");
+
+            assertRows(cluster.coordinatorRead("SELECT * FROM " + KEYSPACE + ".tbl WHERE pk = 1"),
+                       row(1, 1, 1));
+        }
+    }
 }

@@ -19,9 +19,12 @@
 package org.apache.cassandra.integration;
 
 import java.io.File;
+import java.io.IOException;
 import java.net.URL;
 import java.net.URLClassLoader;
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -36,8 +39,16 @@ import java.util.function.BiFunction;
 import com.google.common.io.Files;
 
 import org.apache.cassandra.concurrent.NamedThreadFactory;
+import org.apache.cassandra.db.ReadResponse;
+import org.apache.cassandra.db.WriteResponse;
+import org.apache.cassandra.io.util.DataInputBuffer;
+import org.apache.cassandra.io.util.DataOutputBuffer;
 import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.locator.InetAddressAndPort;
+import org.apache.cassandra.net.IMessageSink;
+import org.apache.cassandra.net.MessageIn;
+import org.apache.cassandra.net.MessageOut;
+import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.Pair;
 
@@ -92,10 +103,15 @@ public class TestCluster implements AutoCloseable
         return get(0);
     }
 
+    public Object[][] coordinatorWrite(String statement)
+    {
+        return coordinator().coordinatorWrite(String.format(statement, KEYSPACE));
+
+    }
+
     public Object[][] coordinatorRead(String statement)
     {
-        return coordinator().coordinatorRead(String.format(statement, KEYSPACE),
-                                             appliesOnInstance(Instance::handleRead));
+        return coordinator().coordinatorRead(String.format(statement, KEYSPACE));
 
     }
 
@@ -107,6 +123,9 @@ public class TestCluster implements AutoCloseable
             Instance instance = cluster.get(i);
             instance.initializeRing();
         }
+        cluster.coordinator().appliesOnInstance(TestCluster::registerCoordinatorCallbacks)
+               .apply(cluster.appliesOnInstance(Instance::handleWrite),
+                      cluster.appliesOnInstance(Instance::handleRead));
         cluster.schemaChange("CREATE KEYSPACE " + KEYSPACE + " WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 3};");
         return cluster;
     }
@@ -132,6 +151,7 @@ public class TestCluster implements AutoCloseable
             instanceConfigs.add(instanceConfig);
             token += increment;
         }
+
         ExecutorService exec = Executors.newCachedThreadPool(new NamedThreadFactory("launch"));
         List<Future<?>> waitFor = new ArrayList<>(instances.size());
         for (Instance instance : instances)
@@ -188,6 +208,65 @@ public class TestCluster implements AutoCloseable
     {
         URL[] urls = contextClassLoader.getURLs();
         return new Instance.InstanceClassLoader(urls, classNames::contains, commonClassLoader);
+    }
+
+    public static Void registerCoordinatorCallbacks(BiFunction<InetAddressAndPort, ByteBuffer, ByteBuffer> writeHandler,
+                                                    BiFunction<InetAddressAndPort, ByteBuffer, ByteBuffer> readHandler)
+    {
+        MessagingService.instance().addMessageSink((new IMessageSink()
+        {
+            public boolean allowOutgoingMessage(MessageOut message, int id, InetAddressAndPort to)
+            {
+                try
+                {
+                    DataOutputBuffer buf = new DataOutputBuffer(1024);
+                    message.serialize(buf, MessagingService.current_version);
+
+                    MessageIn response;
+                    if (message.verb == MessagingService.Verb.MUTATION)
+                    {
+                        ByteBuffer responseBB = writeHandler.apply(to, buf.buffer());
+                        DataInputBuffer dib = new DataInputBuffer(responseBB, false);
+                        WriteResponse writeResponse = WriteResponse.serializer.deserialize(dib, MessagingService.current_version);
+
+                        response = new MessageIn<>(to, writeResponse, Collections.emptyMap(),
+                                                   MessagingService.Verb.REQUEST_RESPONSE,
+                                                   MessagingService.current_version,
+                                                   System.nanoTime());
+                    }
+                    else if (message.verb == MessagingService.Verb.READ)
+                    {
+                        ByteBuffer responseBB = readHandler.apply(to, buf.buffer());
+                        DataInputBuffer dib = new DataInputBuffer(responseBB, false);
+                        ReadResponse readResponse = ReadResponse.serializer.deserialize(dib, MessagingService.current_version);
+
+                        response = new MessageIn<>(to, readResponse, Collections.emptyMap(),
+                                                   MessagingService.Verb.REQUEST_RESPONSE,
+                                                   MessagingService.current_version,
+                                                   System.nanoTime());
+                    }
+                    else
+                    {
+                        throw new RuntimeException("Do now know how to handle message: " + message);
+                    }
+
+                    MessagingService.instance().receive(response, id);
+                }
+                catch (IOException e)
+                {
+                    e.printStackTrace();
+                }
+
+                return false;
+            }
+
+            public boolean allowIncomingMessage(MessageIn message, int id)
+            {
+                return true;
+            }
+        }));
+
+        return null;
     }
 
     public <I, O> BiFunction<InetAddressAndPort, I, O> appliesOnInstance(BiFunction<Instance, I, O> f)
