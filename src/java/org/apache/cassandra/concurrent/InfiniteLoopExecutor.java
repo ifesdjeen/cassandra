@@ -45,18 +45,21 @@ public class InfiniteLoopExecutor
 
     private void loop()
     {
-        while (true)
+        while (!isShutdown)
         {
             try
             {
-                while (!isShutdown)
-                    runnable.run();
+                runnable.run();
             }
             catch (InterruptedException ie)
             {
                 if (isShutdown)
                     return;
                 logger.error("Interrupted while executing {}, but not shutdown; continuing with loop", runnable, ie);
+            }
+            catch (Throwable t)
+            {
+                logger.error("Exception thrown by runnable, continuing with loop", t);
             }
         }
     }
@@ -77,5 +80,4 @@ public class InfiniteLoopExecutor
     {
         thread.join(unit.toMillis(time));
     }
-
 }
