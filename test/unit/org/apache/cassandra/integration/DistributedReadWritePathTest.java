@@ -38,7 +38,7 @@ public class DistributedReadWritePathTest extends DistributedTestBase
             cluster.get(2).executeInternal("INSERT INTO " + KEYSPACE + ".tbl (pk, ck, v) VALUES (1, 3, 3)");
 
             assertRows(cluster.coordinatorRead("SELECT * FROM " + KEYSPACE + ".tbl WHERE pk = 1",
-                                               ConsistencyLevel.QUORUM),
+                                               ConsistencyLevel.ALL),
                        row(1, 1, 1),
                        row(1, 2, 2),
                        row(1, 3, 3));
