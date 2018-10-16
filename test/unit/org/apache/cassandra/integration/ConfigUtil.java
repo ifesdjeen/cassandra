@@ -93,9 +93,7 @@ public class ConfigUtil
     {
         try
         {
-            String url = System.getProperty("cassandra.config");
-            if (url == null)
-                url = new File("conf/cassandra.yaml").toURI().toURL().toString();
+            String url = new File("test/conf/cassandra.yaml").toURI().toURL().toString();
             YamlConfigurationLoader loader = new YamlConfigurationLoader();
             return loader.loadConfig(new URL(url));
         }
