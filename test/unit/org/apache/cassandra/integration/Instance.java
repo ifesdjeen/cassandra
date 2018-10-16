@@ -34,6 +34,8 @@ import java.util.concurrent.TimeUnit;
 
 import org.apache.cassandra.batchlog.BatchlogManager;
 import org.apache.cassandra.concurrent.ScheduledExecutors;
+import org.apache.cassandra.concurrent.SharedExecutorPool;
+import org.apache.cassandra.concurrent.StageManager;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.config.YamlConfigurationLoader;
 import org.apache.cassandra.cql3.CQLStatement;
@@ -340,21 +342,13 @@ public class Instance extends InvokableInstance
             error = runAndMergeThrowable(error, ColumnFamilyStore::shutdownPostFlushExecutor);
             error = runAndMergeThrowable(error, ColumnFamilyStore::shutdownReclaimExecutor);
             error = runAndMergeThrowable(error, ColumnFamilyStore::shutdownPerDiskFlushExecutors);
-            error = shutdownAndWait(error, ScheduledExecutors.scheduledTasks);
-            error = shutdownAndWait(error, ScheduledExecutors.optionalTasks);
-            error = shutdownAndWait(error, ScheduledExecutors.scheduledFastTasks);
-            error = shutdownAndWait(error, ScheduledExecutors.nonPeriodicTasks);
+            error = runAndMergeThrowable(error, ScheduledExecutors::shutdownAndWait);
             error = runAndMergeThrowable(error, PendingRangeCalculatorService.instance::shutdownExecutor);
             error = runAndMergeThrowable(error, BufferPool::shutdownLocalCleaner);
             error = runAndMergeThrowable(error, Ref::shutdownReferenceReaper);
-
-            // PENDING SEP Patch
-//            for (ExecutorService stage : StageManager.stages.values())
-//                error = shutdownAndWait(error, stage);
-//            for (ExecutorService executor : SharedExecutorPool.SHARED.executors)
-//                error = shutdownAndWait(error, executor);
-
-            Memtable.MEMORY_POOL.shutdown();
+            error = runAndMergeThrowable(error, StageManager::shutdownAndWait);
+            error = runAndMergeThrowable(error, SharedExecutorPool::shutdownSharedPool);
+            error = runAndMergeThrowable(error, Memtable.MEMORY_POOL::shutdown);
 
             Throwables.maybeFail(error);
         });
@@ -363,7 +357,6 @@ public class Instance extends InvokableInstance
     private static Throwable shutdownAndWait(Throwable existing, ExecutorService executor)
     {
         return runAndMergeThrowable(existing, () -> {
-            executor.shutdown();
             executor.shutdownNow();
             executor.awaitTermination(5, TimeUnit.SECONDS);
             assert executor.isTerminated() && executor.isShutdown() : executor;

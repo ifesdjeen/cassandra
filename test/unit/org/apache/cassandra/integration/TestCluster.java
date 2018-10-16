@@ -207,22 +207,9 @@ public class TestCluster implements AutoCloseable
     // We do not want this check to run every time until we fix problems with tread stops
     private void withThreadLeakCheck(List<Future<?>> futures)
     {
-        for (Future<?> future : futures)
-        {
-            try
-            {
-                future.get();
-            }
-            catch (Exception e)
-            {
-                System.out.println("Exception caught while shutting down " + e.getMessage());
-                e.printStackTrace();
-            }
-
-        }
+        FBUtilities.waitOnFutures(futures);
 
         Set<Thread> threadSet = Thread.getAllStackTraces().keySet();
-
         threadSet = Sets.difference(threadSet, Collections.singletonMap(Thread.currentThread(), null).keySet());
         if (!threadSet.isEmpty())
         {
@@ -231,7 +218,7 @@ public class TestCluster implements AutoCloseable
                 System.out.println(thread);
                 System.out.println(Arrays.toString(thread.getStackTrace()));
             }
-            throw new RuntimeException("Not all threads have shut down: " + threadSet);
+            throw new RuntimeException(String.format("Not all threads have shut down. %d threads are still running: %s", threadSet.size(), threadSet));
         }
     }
     /**
