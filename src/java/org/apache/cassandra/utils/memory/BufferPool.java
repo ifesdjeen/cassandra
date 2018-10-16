@@ -32,7 +32,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import io.netty.util.concurrent.FastThreadLocal;
-import org.apache.cassandra.concurrent.NamedThreadFactory;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.io.compress.BufferType;
 import org.apache.cassandra.io.util.FileUtils;
@@ -494,7 +493,9 @@ public class BufferPool
     private static final ConcurrentLinkedQueue<LocalPoolRef> localPoolReferences = new ConcurrentLinkedQueue<>();
 
     private static final ReferenceQueue<Object> localPoolRefQueue = new ReferenceQueue<>();
-    private static final InfiniteLoopExecutor EXEC = new InfiniteLoopExecutor("LocalPool-Cleaner", () ->
+    private static final InfiniteLoopExecutor EXEC = new InfiniteLoopExecutor("LocalPool-Cleaner", BufferPool::cleanupOneReference).start();
+
+    private static void cleanupOneReference() throws InterruptedException
     {
         Object obj = localPoolRefQueue.remove(100);
         if (obj instanceof LocalPoolRef)
@@ -502,8 +503,7 @@ public class BufferPool
             ((LocalPoolRef) obj).release();
             localPoolReferences.remove(obj);
         }
-
-    }).start();
+    }
 
     private static ByteBuffer allocateDirectAligned(int capacity)
     {

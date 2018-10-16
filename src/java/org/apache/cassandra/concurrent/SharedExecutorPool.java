@@ -57,7 +57,7 @@ import static org.apache.cassandra.concurrent.SEPWorker.Work;
 public class SharedExecutorPool
 {
 
-    public static final SharedExecutorPool SHARED = new SharedExecutorPool("SharedPool");
+    static final SharedExecutorPool SHARED = new SharedExecutorPool("SharedPool");
 
     // the name assigned to workers in the pool, and the id suffix
     final String poolName;

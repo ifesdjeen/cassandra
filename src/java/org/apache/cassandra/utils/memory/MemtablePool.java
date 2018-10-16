@@ -18,6 +18,7 @@
  */
 package org.apache.cassandra.utils.memory;
 
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLongFieldUpdater;
 
 import com.google.common.annotations.VisibleForTesting;
@@ -65,9 +66,10 @@ public abstract class MemtablePool
         return cleaner == null ? null : new MemtableCleanerThread<>(this, cleaner);
     }
 
-    public void shutdown()
+    public void shutdown() throws InterruptedException
     {
         cleaner.shutdown();
+        cleaner.awaitTermination(60, TimeUnit.SECONDS);
     }
 
     public abstract MemtableAllocator newAllocator();
