@@ -25,7 +25,6 @@ import java.net.URL;
 import java.net.UnknownHostException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
@@ -41,23 +40,18 @@ import org.apache.cassandra.cql3.CQLStatement;
 import org.apache.cassandra.cql3.QueryHandler;
 import org.apache.cassandra.cql3.QueryOptions;
 import org.apache.cassandra.cql3.QueryProcessor;
-import org.apache.cassandra.cql3.statements.ModificationStatement;
-import org.apache.cassandra.cql3.statements.SelectStatement;
 import org.apache.cassandra.cql3.statements.schema.CreateTableStatement;
 import org.apache.cassandra.db.ColumnFamilyStore;
-import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.db.Keyspace;
 import org.apache.cassandra.db.Memtable;
 import org.apache.cassandra.db.Mutation;
 import org.apache.cassandra.db.ReadCommand;
 import org.apache.cassandra.db.ReadExecutionController;
-import org.apache.cassandra.db.ReadQuery;
 import org.apache.cassandra.db.ReadResponse;
 import org.apache.cassandra.db.SystemKeyspace;
 import org.apache.cassandra.db.WriteResponse;
 import org.apache.cassandra.db.commitlog.CommitLog;
 import org.apache.cassandra.db.compaction.CompactionManager;
-import org.apache.cassandra.db.partitions.PartitionIterator;
 import org.apache.cassandra.db.partitions.UnfilteredPartitionIterator;
 import org.apache.cassandra.dht.IPartitioner;
 import org.apache.cassandra.dht.Token;
@@ -69,7 +63,6 @@ import org.apache.cassandra.index.SecondaryIndexManager;
 import org.apache.cassandra.integration.log.InstanceIDDefiner;
 import org.apache.cassandra.io.util.DataInputBuffer;
 import org.apache.cassandra.io.util.DataOutputBuffer;
-import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.schema.SchemaConstants;
@@ -83,8 +76,6 @@ import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.Throwables;
 import org.apache.cassandra.utils.concurrent.Ref;
 import org.apache.cassandra.utils.memory.BufferPool;
-
-import static org.junit.Assert.assertTrue;
 
 public class Instance extends InvokableInstance
 {
@@ -314,14 +305,11 @@ public class Instance extends InvokableInstance
         try
         {
             mkdirs();
-            String testConfPath = "test/conf/logback-dtest.xml";
             int id = config.num;
             runOnInstance(() -> {
                 InstanceIDDefiner.instanceId = id;
             });
-            FileUtils.copyFile(root,
-                               new File(testConfPath));
-            System.setProperty("logback.configurationFile", "file://" + root + "/logback-dtest.xml");
+
             ConfigUtil.writeConfigFile(new File(root, "node" + config.num + "/cassandra.conf"), ConfigUtil.generateConfig(config));
             initializeCassandraInstance("file://" + root + "/node" + config.num + "/cassandra.conf");
         }

@@ -23,7 +23,9 @@ import java.io.IOException;
 import java.io.Serializable;
 import java.net.URL;
 import java.net.URLClassLoader;
-import java.nio.ByteBuffer;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -40,22 +42,11 @@ import java.util.function.BiFunction;
 import java.util.function.Consumer;
 
 import com.google.common.collect.Sets;
-import com.google.common.io.Files;
 
 import org.apache.cassandra.concurrent.NamedThreadFactory;
 import org.apache.cassandra.db.ConsistencyLevel;
-import org.apache.cassandra.db.Mutation;
-import org.apache.cassandra.db.ReadCommand;
-import org.apache.cassandra.db.ReadResponse;
-import org.apache.cassandra.db.WriteResponse;
-import org.apache.cassandra.io.util.DataInputBuffer;
-import org.apache.cassandra.io.util.DataOutputBuffer;
 import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.locator.InetAddressAndPort;
-import org.apache.cassandra.net.IMessageSink;
-import org.apache.cassandra.net.MessageIn;
-import org.apache.cassandra.net.MessageOut;
-import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.Pair;
 
@@ -125,7 +116,7 @@ public class TestCluster implements AutoCloseable
 
     public static TestCluster create(int nodeCount) throws Throwable
     {
-        TestCluster cluster = create(nodeCount, Files.createTempDir());
+        TestCluster cluster = create(nodeCount, Files.createTempDirectory("dtests").toFile());
         for (int i = 0; i < nodeCount; i++)
         {
             Instance instance = cluster.get(i);
@@ -148,6 +139,8 @@ public class TestCluster implements AutoCloseable
     public static TestCluster create(int nodeCount, File root) throws Throwable
     {
         root.mkdirs();
+        setupLogging(root);
+
         ClassLoader common = initializeCommonClassLoader();
         List<Instance> instances = new ArrayList<>();
         long token = Long.MIN_VALUE + 1, increment = 2 * (Long.MAX_VALUE / nodeCount);
@@ -162,6 +155,26 @@ public class TestCluster implements AutoCloseable
 
         FBUtilities.waitOnFutures(runOnAll(instances, Instance::launch, exec));
         return new TestCluster(root, instances);
+    }
+
+    private static void setupLogging(File root)
+    {
+        try
+        {
+            String testConfPath = "test/conf/logback-dtest.xml";
+            Path logConfPath = Paths.get(root.getPath(), "/logback-dtest.xml");
+            if (!logConfPath.toFile().exists())
+            {
+                System.out.println("logConfPath.toFile().exists() = " + logConfPath.toFile().exists());
+                Files.copy(new File(testConfPath).toPath(),
+                           logConfPath);
+            }
+            System.setProperty("logback.configurationFile", "file://" + logConfPath);
+        }
+        catch (IOException e)
+        {
+            throw new RuntimeException(e);
+        }
     }
 
     public List<Future<?>> runOnAll(Consumer<Instance> action)
