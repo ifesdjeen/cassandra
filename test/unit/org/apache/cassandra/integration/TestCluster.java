@@ -20,6 +20,7 @@ package org.apache.cassandra.integration;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.Serializable;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.ByteBuffer;
@@ -32,15 +33,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.function.BiFunction;
+import java.util.function.Consumer;
 
 import com.google.common.collect.Sets;
 import com.google.common.io.Files;
-import com.google.common.util.concurrent.Futures;
 
 import org.apache.cassandra.concurrent.NamedThreadFactory;
 import org.apache.cassandra.db.ConsistencyLevel;
@@ -159,21 +159,32 @@ public class TestCluster implements AutoCloseable
             token += increment;
         }
 
-        ExecutorService exec = Executors.newCachedThreadPool(new NamedThreadFactory("launch"));
-        List<Future<?>> waitFor = new ArrayList<>(instances.size());
-        for (Instance instance : instances)
-            waitFor.add(exec.submit(instance::launch));
-        FBUtilities.waitOnFutures(waitFor);
+        FBUtilities.waitOnFutures(runOnAll(instances, Instance::launch, exec));
         return new TestCluster(root, instances);
+    }
+
+    public List<Future<?>> runOnAll(Consumer<Instance> action)
+    {
+        return runOnAll(instances, action, exec);
+    }
+
+    public static List<Future<?>> runOnAll(List<Instance> instances, Consumer<Instance> action, ExecutorService exec)
+    {
+        Consumer<Integer> byIdx = runOnInstance(instances, action);
+        List<Future<?>> futures = new ArrayList<>();
+        for (Instance instance : instances)
+        {
+            int idx = instance.config.num - 1;
+            Future<?> f = exec.submit(() -> instance.consumesOnInstance((Consumer<Integer> captured) -> captured.accept(idx)).accept(byIdx));
+            futures.add(f);
+        }
+        return futures;
     }
 
     @Override
     public void close()
     {
-        List<Future<?>> futures = new ArrayList<>();
-        for (Instance instance : instances)
-            futures.add(exec.submit(() -> instance.shutdown()));
-
+        List<Future<?>> futures = runOnAll(Instance::shutdown);
 //        withThreadLeakCheck(futures);
         FileUtils.deleteRecursive(root);
 
@@ -305,5 +316,10 @@ public class TestCluster implements AutoCloseable
         return (endpoint, input) -> f.apply(get(endpoint), input);
     }
 
+
+    public static Consumer<Integer> runOnInstance(List<Instance> instances, Consumer<Instance> f)
+    {
+        return (idx) -> f.accept(instances.get(idx));
+    }
 }
 
