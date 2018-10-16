@@ -66,6 +66,7 @@ import org.apache.cassandra.integration.log.InstanceIDDefiner;
 import org.apache.cassandra.io.util.DataInputBuffer;
 import org.apache.cassandra.io.util.DataOutputBuffer;
 import org.apache.cassandra.locator.InetAddressAndPort;
+import org.apache.cassandra.net.MessageIn;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.schema.SchemaConstants;
 import org.apache.cassandra.service.ActiveRepairService;
@@ -196,7 +197,7 @@ public class Instance extends InvokableInstance
 
                 // check that all nodes are in token metadata
                 for (int i = 0; i < tokens.size(); ++i)
-                    assertTrue(storageService.getTokenMetadata().isMember(hosts.get(i)));
+                    assert storageService.getTokenMetadata().isMember(hosts.get(i));
             }
             catch (Throwable e) // UnknownHostException
             {
@@ -206,41 +207,6 @@ public class Instance extends InvokableInstance
     }
 
     public InetAddressAndPort getBroadcastAddress() { return callOnInstance(FBUtilities::getBroadcastAddressAndPort); }
-
-    private static Object[][] doCoordinatorWrite(String query, int consistencyLevel)
-    {
-        CQLStatement prepared = QueryProcessor.getStatement(query, ClientState.forInternalCalls());
-        assert prepared instanceof ModificationStatement;
-        ModificationStatement modificationStatement = (ModificationStatement) prepared;
-
-        modificationStatement.execute(QueryState.forInternalCalls(),
-                                      QueryOptions.forInternalCalls(ConsistencyLevel.fromCode(consistencyLevel), Collections.emptyList()),
-                                      System.nanoTime());
-
-        return new Object[][] {};
-    }
-
-    private static Object[][] doCoordinatorRead(String query, int consistencyLevel)
-    {
-        CQLStatement prepared = QueryProcessor.getStatement(query, ClientState.forInternalCalls());
-        assert prepared instanceof SelectStatement;
-        SelectStatement selectStatement = (SelectStatement) prepared;
-        ReadQuery readQuery = selectStatement.getQuery(QueryOptions.DEFAULT, FBUtilities.nowInSeconds());
-
-        PartitionIterator pi = readQuery.execute(ConsistencyLevel.fromCode(consistencyLevel), ClientState.forInternalCalls(), System.nanoTime());
-        ResultMessage.Rows rows = selectStatement.processResults(pi, QueryOptions.DEFAULT, FBUtilities.nowInSeconds(), 10);
-        return RowUtil.toObjects(rows);
-    }
-
-    public Object[][] coordinatorWrite(String query, int consistencyLevel)
-    {
-        return appliesOnInstance(Instance::doCoordinatorWrite).apply(query, consistencyLevel);
-    }
-
-    public Object[][] coordinatorRead(String query, int consistencyLevel)
-    {
-        return appliesOnInstance(Instance::doCoordinatorRead).apply(query, consistencyLevel);
-    }
 
     public ByteBuffer handleWrite(ByteBuffer bb)
     {

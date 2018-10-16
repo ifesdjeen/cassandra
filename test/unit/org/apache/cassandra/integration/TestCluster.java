@@ -20,7 +20,6 @@ package org.apache.cassandra.integration;
 
 import java.io.File;
 import java.io.IOException;
-import java.io.Serializable;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.file.Files;
@@ -41,6 +40,7 @@ import java.util.concurrent.Future;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
 
+import com.google.common.collect.Iterables;
 import com.google.common.collect.Sets;
 
 import org.apache.cassandra.concurrent.NamedThreadFactory;
@@ -77,6 +77,7 @@ public class TestCluster implements AutoCloseable
 
     private final File root;
     private final List<Instance> instances;
+    private final Coordinator coordinator;
     private final Map<InetAddressAndPort, Instance> instanceMap;
 
     private TestCluster(File root, List<Instance> instances) throws Throwable
@@ -86,6 +87,7 @@ public class TestCluster implements AutoCloseable
         this.instanceMap = new HashMap<>();
         for (Instance instance : instances)
             instanceMap.put(instance.getBroadcastAddress(), instance);
+        this.coordinator = new Coordinator(this, instances.get(0));
     }
 
     public Instance get(int idx)
@@ -98,9 +100,9 @@ public class TestCluster implements AutoCloseable
         return instanceMap.get(addr);
     }
 
-    public Instance coordinator()
+    public Coordinator coordinator()
     {
-        return get(0);
+        return coordinator;
     }
 
     public Object[][] coordinatorWrite(String statement, ConsistencyLevel consistencyLevel)
@@ -122,9 +124,7 @@ public class TestCluster implements AutoCloseable
             Instance instance = cluster.get(i);
             instance.initializeRing();
         }
-        cluster.coordinator().appliesOnInstance(TestCluster::registerCoordinatorCallbacks)
-               .apply(cluster.appliesOnInstance(Instance::handleWrite),
-                      cluster.appliesOnInstance(Instance::handleRead));
+        cluster.coordinator.init();
         cluster.schemaChange("CREATE KEYSPACE " + KEYSPACE + " WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 3};");
         return cluster;
     }
@@ -245,78 +245,13 @@ public class TestCluster implements AutoCloseable
     public static ClassLoader getInstanceClassLoader(ClassLoader commonClassLoader)
     {
         URL[] urls = contextClassLoader.getURLs();
-        return new Instance.InstanceClassLoader(urls, classNames::contains, commonClassLoader);
-    }
-
-    public static Void registerCoordinatorCallbacks(BiFunction<InetAddressAndPort, ByteBuffer, ByteBuffer> writeHandler,
-                                                    BiFunction<InetAddressAndPort, ByteBuffer, ByteBuffer> readHandler)
-    {
-        MessagingService.instance().addMessageSink((new IMessageSink()
-        {
-            public boolean allowOutgoingMessage(MessageOut message, int id, InetAddressAndPort to)
-            {
-                try
-                {
-                    DataOutputBuffer out = new DataOutputBuffer(1024);
-
-                    MessageIn response;
-                    if (message.verb == MessagingService.Verb.MUTATION ||
-                        message.verb == MessagingService.Verb.READ_REPAIR)
-                    {
-                        MessageOut<Mutation> mutationMessage = (MessageOut<Mutation>) message;
-                        Mutation.serializer.serialize(mutationMessage.payload, out, MessagingService.current_version);
-                        ByteBuffer responseBB = writeHandler.apply(to, out.buffer());
-                        DataInputBuffer dib = new DataInputBuffer(responseBB, false);
-                        WriteResponse writeResponse = WriteResponse.serializer.deserialize(dib, MessagingService.current_version);
-
-                        response = new MessageIn<>(to, writeResponse, Collections.emptyMap(),
-                                                   MessagingService.Verb.REQUEST_RESPONSE,
-                                                   MessagingService.current_version,
-                                                   System.nanoTime());
-                    }
-                    else if (message.verb == MessagingService.Verb.READ)
-                    {
-                        MessageOut<ReadCommand> readCommandMessage = (MessageOut<ReadCommand>) message;
-                        ReadCommand.serializer.serialize(readCommandMessage.payload, out, MessagingService.current_version);
-                        ByteBuffer responseBB = readHandler.apply(to, out.buffer());
-                        DataInputBuffer dib = new DataInputBuffer(responseBB, false);
-                        ReadResponse readResponse = ReadResponse.serializer.deserialize(dib, MessagingService.current_version);
-
-                        response = new MessageIn<>(to, readResponse, Collections.emptyMap(),
-                                                   MessagingService.Verb.REQUEST_RESPONSE,
-                                                   MessagingService.current_version,
-                                                   System.nanoTime());
-                    }
-                    else
-                    {
-                        throw new RuntimeException("Do now know how to handle message: " + message);
-                    }
-
-                    MessagingService.instance().receive(response, id);
-                }
-                catch (IOException e)
-                {
-                    e.printStackTrace();
-                }
-
-                return false;
-            }
-
-            public boolean allowIncomingMessage(MessageIn message, int id)
-            {
-                System.out.println("Incoming Message: " + message);
-                return true;
-            }
-        }));
-
-        return null;
+        return new Instance.InstanceClassLoader(urls, sharedClassNames::contains, commonClassLoader);
     }
 
     public <I, O> BiFunction<InetAddressAndPort, I, O> appliesOnInstance(BiFunction<Instance, I, O> f)
     {
         return (endpoint, input) -> f.apply(get(endpoint), input);
     }
-
 
     public static Consumer<Integer> runOnInstance(List<Instance> instances, Consumer<Instance> f)
     {
