@@ -99,14 +99,7 @@ public class AuthCache<K, V> implements AuthCacheMBean
 
     protected void unregisterMBean()
     {
-        try
-        {
-            MBeanWrapper.instance.unregisterMBean(getObjectName());
-        }
-        catch (Exception e)
-        {
-            logger.warn("Error unregistering {} cache mbean", name, e);
-        }
+        MBeanWrapper.instance.unregisterMBean(getObjectName(), true);
     }
 
     protected String getObjectName()
