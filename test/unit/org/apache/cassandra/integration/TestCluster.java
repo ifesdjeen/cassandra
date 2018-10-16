@@ -67,7 +67,8 @@ public class TestCluster implements AutoCloseable
     // App class loader, holding classpath URLs
     private static final URLClassLoader contextClassLoader = (URLClassLoader) Thread.currentThread().getContextClassLoader();
 
-    static Class<?>[] commonClasses = new Class[]
+    // Classes that have to be shared between instances, for configuration or returning values
+    static Class<?>[] sharedClasses = new Class[]
             {
                 Pair.class,
                 InstanceConfig.class,
@@ -81,7 +82,7 @@ public class TestCluster implements AutoCloseable
                 InvokableInstance.InstanceFunction.class
             };
 
-    static Set<String> classNames = new HashSet<>();
+    static Set<String> sharedClassNames = new HashSet<String>();
 
     private final File root;
     private final List<Instance> instances;
@@ -225,9 +226,9 @@ public class TestCluster implements AutoCloseable
      */
     private static ClassLoader initializeCommonClassLoader() throws ClassNotFoundException
     {
-        for (Class<?> k : commonClasses)
+        for (Class<?> k : sharedClasses)
         {
-            classNames.add(k.getName());
+            sharedClassNames.add(k.getName());
         }
 
         // Extension class loader
@@ -235,7 +236,7 @@ public class TestCluster implements AutoCloseable
 
         URL[] urls = contextClassLoader.getURLs();
         ClassLoader cl = new URLClassLoader(urls, rootClassLoader);
-        for (Class<?> k : commonClasses)
+        for (Class<?> k : sharedClasses)
             cl.loadClass(k.getName());
 
         return contextClassLoader;
