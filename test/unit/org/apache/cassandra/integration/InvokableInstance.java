@@ -38,7 +38,7 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
-public class InvokableInstance
+public abstract class InvokableInstance
 {
     public final InstanceConfig config;
     final File root;
