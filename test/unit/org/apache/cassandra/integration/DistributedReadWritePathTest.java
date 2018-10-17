@@ -77,15 +77,14 @@ public class DistributedReadWritePathTest extends DistributedTestBase
             cluster.get(0).executeInternal("INSERT INTO " + KEYSPACE + ".tbl (pk, ck, v) VALUES (1, 1, 1)");
             cluster.get(1).executeInternal("INSERT INTO " + KEYSPACE + ".tbl (pk, ck, v) VALUES (1, 1, 1)");
 
-            // Verify that data got repaired to the third node
-            for (int i = 0; i < 3; i++)
-            {
-                assertRows(cluster.get(0).executeInternal("SELECT * FROM " + KEYSPACE + ".tbl WHERE pk = 1"),
-                           row(1, 1, 1));
-            }
+            assertRows(cluster.get(2).executeInternal("SELECT * FROM " + KEYSPACE + ".tbl WHERE pk = 1"));
 
             assertRows(cluster.coordinatorRead("SELECT * FROM " + KEYSPACE + ".tbl WHERE pk = 1",
                                                ConsistencyLevel.QUORUM),
+                       row(1, 1, 1));
+
+            // Verify that data got repaired to the third node
+            assertRows(cluster.get(2).executeInternal("SELECT * FROM " + KEYSPACE + ".tbl WHERE pk = 1"),
                        row(1, 1, 1));
         }
     }
