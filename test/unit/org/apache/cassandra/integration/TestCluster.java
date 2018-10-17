@@ -178,6 +178,11 @@ public class TestCluster implements AutoCloseable
             instance.schemaChange(statement, sharedId);
     }
 
+    public void schemaChange(String statement, int instance) throws Throwable
+    {
+        get(instance).schemaChange(statement, null);
+    }
+
     public static TestCluster create(int nodeCount, File root) throws Throwable
     {
         root.mkdirs();

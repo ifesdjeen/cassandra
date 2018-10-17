@@ -18,6 +18,7 @@
 
 package org.apache.cassandra.integration;
 
+import org.junit.Assert;
 import org.junit.Test;
 
 import org.apache.cassandra.db.ConsistencyLevel;
@@ -110,6 +111,66 @@ public class DistributedReadWritePathTest extends DistributedTestBase
 
             // Data was not repaired
             assertRows(cluster.get(2).executeInternal("SELECT * FROM " + KEYSPACE + ".tbl WHERE pk = 1"));
+        }
+    }
+
+    @Test
+    public void writeWithSchemaDisagreement() throws Throwable
+    {
+        try (TestCluster cluster = TestCluster.create(3))
+        {
+            cluster.schemaChange("CREATE TABLE " + KEYSPACE + ".tbl (pk int, ck int, v1 int, PRIMARY KEY (pk, ck)) WITH read_repair='blocking'");
+
+            cluster.get(0).executeInternal("INSERT INTO " + KEYSPACE + ".tbl (pk, ck, v1) VALUES (1, 1, 1)");
+            cluster.get(1).executeInternal("INSERT INTO " + KEYSPACE + ".tbl (pk, ck, v1) VALUES (1, 1, 1)");
+            cluster.get(2).executeInternal("INSERT INTO " + KEYSPACE + ".tbl (pk, ck, v1) VALUES (1, 1, 1)");
+
+            // Introduce schema disagreement
+            cluster.schemaChange("ALTER TABLE " + KEYSPACE + ".tbl ADD v2 int", 0);
+
+            Exception thrown = null;
+            try
+            {
+                cluster.coordinatorWrite("INSERT INTO " + KEYSPACE + ".tbl (pk, ck, v1, v2) VALUES (2, 2, 2, 2)",
+                                         ConsistencyLevel.QUORUM);
+            }
+            catch (RuntimeException e)
+            {
+                thrown = e;
+            }
+
+            Assert.assertTrue(thrown.getMessage().contains("Exception occurred on the node"));
+            Assert.assertTrue(thrown.getCause().getMessage().contains("Unknown column v2 during deserialization"));
+        }
+    }
+
+    @Test
+    public void readWithSchemaDisagreement() throws Throwable
+    {
+        try (TestCluster cluster = TestCluster.create(3))
+        {
+            cluster.schemaChange("CREATE TABLE " + KEYSPACE + ".tbl (pk int, ck int, v1 int, PRIMARY KEY (pk, ck)) WITH read_repair='blocking'");
+
+            cluster.get(0).executeInternal("INSERT INTO " + KEYSPACE + ".tbl (pk, ck, v1) VALUES (1, 1, 1)");
+            cluster.get(1).executeInternal("INSERT INTO " + KEYSPACE + ".tbl (pk, ck, v1) VALUES (1, 1, 1)");
+            cluster.get(2).executeInternal("INSERT INTO " + KEYSPACE + ".tbl (pk, ck, v1) VALUES (1, 1, 1)");
+
+            // Introduce schema disagreement
+            cluster.schemaChange("ALTER TABLE " + KEYSPACE + ".tbl ADD v2 int", 0);
+
+            Exception thrown = null;
+            try
+            {
+                assertRows(cluster.coordinatorRead("SELECT * FROM " + KEYSPACE + ".tbl WHERE pk = 1",
+                                                   ConsistencyLevel.ALL),
+                           row(1, 1, 1, null));
+            }
+            catch (Exception e)
+            {
+                thrown = e;
+            }
+            Assert.assertTrue(thrown.getMessage().contains("Exception occurred on the node"));
+            Assert.assertTrue(thrown.getCause().getMessage().contains("Unknown column v2 during deserialization"));
         }
     }
 }

@@ -66,7 +66,6 @@ import org.apache.cassandra.integration.log.InstanceIDDefiner;
 import org.apache.cassandra.io.util.DataInputBuffer;
 import org.apache.cassandra.io.util.DataOutputBuffer;
 import org.apache.cassandra.locator.InetAddressAndPort;
-import org.apache.cassandra.net.MessageIn;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.schema.SchemaConstants;
 import org.apache.cassandra.service.ActiveRepairService;
@@ -210,6 +209,7 @@ public class Instance extends InvokableInstance
 
     public ByteBuffer handleWrite(ByteBuffer bb)
     {
+        InetAddressAndPort addr = getBroadcastAddress();
         return appliesOnInstance((SerializableFunction<ByteBuffer, ByteBuffer>) in ->
         {
             DataOutputBuffer buf;
@@ -224,9 +224,10 @@ public class Instance extends InvokableInstance
                                                    buf,
                                                    MessagingService.current_version);
             }
-            catch (IOException e)
+            catch (Exception e)
             {
-                throw new RuntimeException(e);
+                throw new RuntimeException("Exception occurred on the node: " + addr,
+                                           e);
             }
             return buf.buffer();
         }).apply(bb);
@@ -234,6 +235,7 @@ public class Instance extends InvokableInstance
 
     public ByteBuffer handleRead(ByteBuffer bb)
     {
+        InetAddressAndPort addr = getBroadcastAddress();
         return appliesOnInstance((SerializableFunction<ByteBuffer, ByteBuffer>) in ->
         {
             DataOutputBuffer buf;
@@ -251,9 +253,10 @@ public class Instance extends InvokableInstance
                 buf = new DataOutputBuffer(1024);
                 ReadResponse.serializer.serialize(response, buf, MessagingService.current_version);
             }
-            catch (IOException e)
+            catch (Exception e)
             {
-                throw new RuntimeException(e);
+                throw new RuntimeException("Exception occurred on the node " + addr,
+                                           e);
             }
             return buf.buffer();
         }).apply(bb);
