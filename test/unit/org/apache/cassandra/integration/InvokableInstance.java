@@ -120,6 +120,7 @@ public abstract class InvokableInstance
         }
     }
 
+    @SuppressWarnings("unused") // called through method invocation
     public static Object deserializeOneObject(byte[] bytes)
     {
         try (ByteArrayInputStream bais = new ByteArrayInputStream(bytes);
