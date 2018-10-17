@@ -21,6 +21,7 @@ package org.apache.cassandra.integration;
 import org.junit.Test;
 
 import org.apache.cassandra.db.ConsistencyLevel;
+import org.apache.cassandra.net.MessagingService;
 
 import static org.apache.cassandra.integration.TestCluster.KEYSPACE;
 
@@ -86,6 +87,29 @@ public class DistributedReadWritePathTest extends DistributedTestBase
             // Verify that data got repaired to the third node
             assertRows(cluster.get(2).executeInternal("SELECT * FROM " + KEYSPACE + ".tbl WHERE pk = 1"),
                        row(1, 1, 1));
+        }
+    }
+
+    @Test
+    public void failingReadRepairTest() throws Throwable
+    {
+        try (TestCluster cluster = TestCluster.create(3))
+        {
+            cluster.schemaChange("CREATE TABLE " + KEYSPACE + ".tbl (pk int, ck int, v int, PRIMARY KEY (pk, ck)) WITH read_repair='blocking'");
+
+            cluster.get(0).executeInternal("INSERT INTO " + KEYSPACE + ".tbl (pk, ck, v) VALUES (1, 1, 1)");
+            cluster.get(1).executeInternal("INSERT INTO " + KEYSPACE + ".tbl (pk, ck, v) VALUES (1, 1, 1)");
+
+            assertRows(cluster.get(2).executeInternal("SELECT * FROM " + KEYSPACE + ".tbl WHERE pk = 1"));
+
+            cluster.dropMessagesFor(cluster.get(2).getBroadcastAddress(),
+                                    MessagingService.Verb.READ_REPAIR);
+            assertRows(cluster.coordinatorRead("SELECT * FROM " + KEYSPACE + ".tbl WHERE pk = 1",
+                                               ConsistencyLevel.QUORUM),
+                       row(1, 1, 1));
+
+            // Data was not repaired
+            assertRows(cluster.get(2).executeInternal("SELECT * FROM " + KEYSPACE + ".tbl WHERE pk = 1"));
         }
     }
 }

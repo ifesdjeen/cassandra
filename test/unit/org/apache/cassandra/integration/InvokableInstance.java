@@ -80,6 +80,12 @@ public abstract class InvokableInstance
     public interface SerializableBiFunction<I1, I2, O> extends BiFunction<I1, I2, O>, Serializable {}
     public <I1, I2, O> SerializableBiFunction<I1, I2, O> appliesOnInstance(SerializableBiFunction<I1, I2, O> f) { return (SerializableBiFunction<I1, I2, O>) transferOneObject(f); }
 
+    public interface SerializableTriFunction<I1, I2, I3, O> extends Serializable
+    {
+        O apply(I1 i1, I2 i2, I3 i3);
+    }
+    public <I1, I2, I3, O> SerializableTriFunction<I1, I2, I3, O> appliesOnInstance(SerializableTriFunction<I1, I2, I3, O> f) { return (SerializableTriFunction<I1, I2, I3, O>) transferOneObject(f); }
+
     public interface InstanceFunction<I, O> extends SerializableBiFunction<Instance, I, O> {}
 
     // E must be a functional interface, and lambda must be implemented by a lambda function

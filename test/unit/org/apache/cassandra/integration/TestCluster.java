@@ -46,6 +46,7 @@ import org.apache.cassandra.concurrent.NamedThreadFactory;
 import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.locator.InetAddressAndPort;
+import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.Pair;
 
@@ -93,15 +94,17 @@ public class TestCluster implements AutoCloseable
                 InvokableInstance.SerializableBiConsumer.class,
                 InvokableInstance.SerializableFunction.class,
                 InvokableInstance.SerializableBiFunction.class,
+                InvokableInstance.SerializableTriFunction.class,
                 InvokableInstance.InstanceFunction.class
             };
 
-    static Set<String> sharedClassNames = new HashSet<String>();
+    static Set<String> sharedClassNames = new HashSet<>();
 
     private final File root;
     private final List<Instance> instances;
     private final Coordinator coordinator;
     private final Map<InetAddressAndPort, Instance> instanceMap;
+    private final VerbFilter verbFilter;
 
     private TestCluster(File root, List<Instance> instances) throws Throwable
     {
@@ -111,6 +114,7 @@ public class TestCluster implements AutoCloseable
         for (Instance instance : instances)
             instanceMap.put(instance.getBroadcastAddress(), instance);
         this.coordinator = new Coordinator(this, instances.get(0));
+        this.verbFilter = new VerbFilter();
     }
 
     public Instance get(int idx)
@@ -126,6 +130,21 @@ public class TestCluster implements AutoCloseable
     public Coordinator coordinator()
     {
         return coordinator;
+    }
+
+    public void dropMessagesFor(Object... pairs)
+    {
+        verbFilter.dropMessagesFor(pairs);
+    }
+
+    public void resetFilter()
+    {
+        this.verbFilter.reset();
+    }
+
+    public BiFunction<InetAddressAndPort, String, Boolean> getFilter()
+    {
+        return verbFilter;
     }
 
     public Object[][] coordinatorWrite(String statement, ConsistencyLevel consistencyLevel)

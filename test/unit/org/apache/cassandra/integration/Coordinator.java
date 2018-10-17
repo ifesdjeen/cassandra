@@ -68,7 +68,8 @@ public class Coordinator
     {
         instance.appliesOnInstance(Coordinator::registerCallbacks)
                 .apply(cluster.appliesOnInstance(Instance::handleWrite),
-                       cluster.appliesOnInstance(Instance::handleRead));
+                       cluster.appliesOnInstance(Instance::handleRead),
+                       cluster.getFilter());
     }
 
     private static Object[][] doCoordinatorWrite(String query, int consistencyLevel)
@@ -107,13 +108,19 @@ public class Coordinator
     }
 
     public static Void registerCallbacks(BiFunction<InetAddressAndPort, ByteBuffer, ByteBuffer> writeHandler,
-                                         BiFunction<InetAddressAndPort, ByteBuffer, ByteBuffer> readHandler)
+                                         BiFunction<InetAddressAndPort, ByteBuffer, ByteBuffer> readHandler,
+                                         BiFunction<InetAddressAndPort, String, Boolean> filter)
     {
         MessagingService.instance().addMessageSink((new IMessageSink()
         {
             public boolean allowOutgoingMessage(MessageOut message, int id, InetAddressAndPort to)
             {
                 System.out.println("RECEIVED IN MSG: " + message);
+                if (!filter.apply(to, message.verb.toString()))
+                {
+                    System.out.println("Dropping filtered message: " + message);
+                    return false;
+                }
                 try
                 {
                     DataOutputBuffer out = new DataOutputBuffer(1024);
