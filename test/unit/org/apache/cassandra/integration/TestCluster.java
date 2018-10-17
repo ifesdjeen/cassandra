@@ -40,19 +40,39 @@ import java.util.concurrent.Future;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
 
-import com.google.common.collect.Iterables;
 import com.google.common.collect.Sets;
 
 import org.apache.cassandra.concurrent.NamedThreadFactory;
 import org.apache.cassandra.db.ConsistencyLevel;
-import org.apache.cassandra.io.util.DataOutputBuffer;
 import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.locator.InetAddressAndPort;
-import org.apache.cassandra.net.IMessageSink;
-import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.Pair;
 
+/**
+ * TestCluster creates, initializes and manages Cassandra instances ({@link Instance}.
+ *
+ * All instances created under the same cluster will have a shared ClassLoader that'll preload
+ * common classes required for configuration and communication (byte buffers, primitives, config
+ * objects etc). Shared classes are listed in {@link TestCluster#sharedClasses}.
+ *
+ * Each instance has its own class loader that will load logging, yaml libraries and all non-shared
+ * Cassandra package classes. The rule of thumb is that we'd like to have all Cassandra-specific things
+ * (unless explitily shared through the common classloader) on a per-classloader basis in order to
+ * allow creating more than one instance of DatabaseDescriptor and other Cassandra singletones.
+ *
+ * All actions (reading, writing, schema changes, etc) are executed by serializing lambda/runnables,
+ * transferring them to instance-specific classloaders, deserializing and running them there. Most of
+ * the things can be simply captured in closure or passed through `apply` method of the wrapped serializable
+ * function/callable. You can use {@link InvokableInstance#{applies|runs|consumes}OnInstance} for executing
+ * code on specific instance.
+ *
+ * Each instance has its own logger. Each instance log line will contain INSTANCE{instance_id}.
+ *
+ * As of today, messaging is faked by hooking into MessagingService, so we're not using usual Cassandra
+ * handlers for internode to have more control over it. Messaging is wired by passing verbs manually.
+ * coordinator-handling code and hooks to the callbacks can be found in {@link Coordinator}.
+ */
 public class TestCluster implements AutoCloseable
 {
     static String KEYSPACE = "distributed_test_keyspace";
@@ -168,7 +188,6 @@ public class TestCluster implements AutoCloseable
             Path logConfPath = Paths.get(root.getPath(), "/logback-dtest.xml");
             if (!logConfPath.toFile().exists())
             {
-                System.out.println("logConfPath.toFile().exists() = " + logConfPath.toFile().exists());
                 Files.copy(new File(testConfPath).toPath(),
                            logConfPath);
             }
