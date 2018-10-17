@@ -569,7 +569,7 @@ public class CassandraDaemon
         {
             applyConfig();
 
-            MBeanWrapper.instance.registerMBean(new StandardMBean(new NativeAccess(), NativeAccessMBean.class), MBEAN_NAME, true);
+            MBeanWrapper.instance.registerMBean(new StandardMBean(new NativeAccess(), NativeAccessMBean.class), MBEAN_NAME, MBeanWrapper.OnException.LOG);
 
             if (FBUtilities.isWindows)
             {

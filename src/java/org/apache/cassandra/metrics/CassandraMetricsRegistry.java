@@ -158,7 +158,7 @@ public class CassandraMetricsRegistry extends MetricRegistry
     {
         boolean removed = remove(name.getMetricName());
 
-        mBeanServer.unregisterMBean(name.getMBeanName(), true);
+        mBeanServer.unregisterMBean(name.getMBeanName(), MBeanWrapper.OnException.IGNORE);
         return removed;
     }
 
@@ -189,7 +189,8 @@ public class CassandraMetricsRegistry extends MetricRegistry
         else
             throw new IllegalArgumentException("Unknown metric type: " + metric.getClass());
 
-        mBeanServer.registerMBean(mbean, name, true);
+        if (!mBeanServer.isRegistered(name))
+            mBeanServer.registerMBean(mbean, name, MBeanWrapper.OnException.LOG);
     }
 
     private void registerAlias(MetricName existingName, MetricName aliasName)
@@ -202,7 +203,8 @@ public class CassandraMetricsRegistry extends MetricRegistry
 
     private void removeAlias(MetricName name)
     {
-        MBeanWrapper.instance.unregisterMBean(name.getMBeanName(), true);
+        if (mBeanServer.isRegistered(name.getMBeanName()))
+            MBeanWrapper.instance.unregisterMBean(name.getMBeanName(), MBeanWrapper.OnException.IGNORE);
     }
     
     /**

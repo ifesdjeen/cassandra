@@ -99,7 +99,7 @@ public class AuthCache<K, V> implements AuthCacheMBean
 
     protected void unregisterMBean()
     {
-        MBeanWrapper.instance.unregisterMBean(getObjectName(), true);
+        MBeanWrapper.instance.unregisterMBean(getObjectName(), MBeanWrapper.OnException.LOG);
     }
 
     protected String getObjectName()

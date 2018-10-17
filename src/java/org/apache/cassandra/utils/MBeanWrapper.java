@@ -19,6 +19,7 @@
 package org.apache.cassandra.utils;
 
 import java.lang.management.ManagementFactory;
+import java.util.function.Consumer;
 import javax.management.MBeanServer;
 import javax.management.MalformedObjectNameException;
 import javax.management.ObjectName;
@@ -39,56 +40,56 @@ public interface MBeanWrapper
                                          new PlatformMBeanWrapper();
 
     // Passing true for graceful will log exceptions instead of rethrowing them
-    public void registerMBean(Object obj, ObjectName mbeanName, boolean graceful);
+    public void registerMBean(Object obj, ObjectName mbeanName, OnException onException);
     default void registerMBean(Object obj, ObjectName mbeanName)
     {
-        registerMBean(obj, mbeanName, false);
+        registerMBean(obj, mbeanName, OnException.THROW);
     }
 
-    public void registerMBean(Object obj, String mbeanName, boolean graceful);
+    public void registerMBean(Object obj, String mbeanName, OnException onException);
     default void registerMBean(Object obj, String mbeanName)
     {
-        registerMBean(obj, mbeanName, false);
+        registerMBean(obj, mbeanName, OnException.THROW);
     }
 
-    public boolean isRegistered(ObjectName mbeanName, boolean graceful);
+    public boolean isRegistered(ObjectName mbeanName, OnException onException);
     default boolean isRegistered(ObjectName mbeanName)
     {
-        return isRegistered(mbeanName, false);
+        return isRegistered(mbeanName, OnException.THROW);
     }
 
-    public boolean isRegistered(String mbeanName, boolean graceful);
+    public boolean isRegistered(String mbeanName, OnException onException);
     default boolean isRegistered(String mbeanName)
     {
-        return isRegistered(mbeanName, false);
+        return isRegistered(mbeanName, OnException.THROW);
     }
 
-    public void unregisterMBean(ObjectName mbeanName, boolean graceful);
+    public void unregisterMBean(ObjectName mbeanName, OnException onException);
     default void unregisterMBean(ObjectName mbeanName)
     {
-        unregisterMBean(mbeanName, false);
+        unregisterMBean(mbeanName, OnException.THROW);
     }
 
-    public void unregisterMBean(String mbeanName, boolean graceful);
+    public void unregisterMBean(String mbeanName, OnException onException);
     default void unregisterMBean(String mbeanName)
     {
-        unregisterMBean(mbeanName, false);
+        unregisterMBean(mbeanName, OnException.THROW);
     }
 
     static class NoOpMBeanWrapper implements MBeanWrapper
     {
-        public void registerMBean(Object obj, ObjectName mbeanName, boolean graceful) {}
-        public void registerMBean(Object obj, String mbeanName, boolean graceful) {}
-        public boolean isRegistered(ObjectName mbeanName, boolean graceful) { return false; }
-        public boolean isRegistered(String mbeanName, boolean graceful) { return false; }
-        public void unregisterMBean(ObjectName mbeanName, boolean graceful) {}
-        public void unregisterMBean(String mbeanName, boolean graceful) {}
+        public void registerMBean(Object obj, ObjectName mbeanName, OnException onException) {}
+        public void registerMBean(Object obj, String mbeanName, OnException onException) {}
+        public boolean isRegistered(ObjectName mbeanName, OnException onException) { return false; }
+        public boolean isRegistered(String mbeanName, OnException onException) { return false; }
+        public void unregisterMBean(ObjectName mbeanName, OnException onException) {}
+        public void unregisterMBean(String mbeanName, OnException onException) {}
     }
 
     static class PlatformMBeanWrapper implements MBeanWrapper
     {
         private final MBeanServer mbs = ManagementFactory.getPlatformMBeanServer();
-        public void registerMBean(Object obj, ObjectName mbeanName, boolean graceful)
+        public void registerMBean(Object obj, ObjectName mbeanName, OnException onException)
         {
             try
             {
@@ -96,14 +97,11 @@ public interface MBeanWrapper
             }
             catch (Exception e)
             {
-                if (graceful)
-                    logger.error("Error while registering MBean", e);
-                else
-                    throw new RuntimeException(e);
+                onException.handler.accept(e);
             }
         }
 
-        public void registerMBean(Object obj, String mbeanName, boolean graceful)
+        public void registerMBean(Object obj, String mbeanName, OnException onException)
         {
             try
             {
@@ -111,14 +109,11 @@ public interface MBeanWrapper
             }
             catch (Exception e)
             {
-                if (graceful)
-                    logger.error("Error while registering MBean", e);
-                else
-                    throw new RuntimeException(e);
+                onException.handler.accept(e);
             }
         }
 
-        public boolean isRegistered(ObjectName mbeanName, boolean graceful)
+        public boolean isRegistered(ObjectName mbeanName, OnException onException)
         {
             try
             {
@@ -126,15 +121,12 @@ public interface MBeanWrapper
             }
             catch (Exception e)
             {
-                if (graceful)
-                    logger.error("Error while checking if MBean is registered", e);
-                else
-                    throw new RuntimeException(e);
+                onException.handler.accept(e);
             }
             return false;
         }
 
-        public boolean isRegistered(String mbeanName, boolean graceful)
+        public boolean isRegistered(String mbeanName, OnException onException)
         {
             try
             {
@@ -142,15 +134,12 @@ public interface MBeanWrapper
             }
             catch (Exception e)
             {
-                if (graceful)
-                    logger.error("Error while checking if MBean is registered", e);
-                else
-                    throw new RuntimeException(e);
+                onException.handler.accept(e);
             }
             return false;
         }
 
-        public void unregisterMBean(ObjectName mbeanName, boolean graceful)
+        public void unregisterMBean(ObjectName mbeanName, OnException onException)
         {
             try
             {
@@ -158,14 +147,11 @@ public interface MBeanWrapper
             }
             catch (Exception e)
             {
-                if (graceful)
-                    logger.error("Error while unregistering MBean", e);
-                else
-                    throw new RuntimeException(e);
+                onException.handler.accept(e);
             }
         }
 
-        public void unregisterMBean(String mbeanName, boolean graceful)
+        public void unregisterMBean(String mbeanName, OnException onException)
         {
             try
             {
@@ -173,11 +159,21 @@ public interface MBeanWrapper
             }
             catch (Exception e)
             {
-                if (graceful)
-                    logger.error("Error while unregistering MBean", e);
-                else
-                    throw new RuntimeException(e);
+                onException.handler.accept(e);
             }
+        }
+    }
+
+    public enum OnException
+    {
+        THROW(e -> { throw new RuntimeException(e); }),
+        LOG(e -> { logger.error("Error in MBean wrapper: ", e); }),
+        IGNORE(e -> {});
+
+        private Consumer<Exception> handler;
+        OnException(Consumer<Exception> handler)
+        {
+            this.handler = handler;
         }
     }
 }

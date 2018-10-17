@@ -45,7 +45,7 @@ public class BlacklistedDirectories implements BlacklistedDirectoriesMBean
     private BlacklistedDirectories()
     {
         // Register this instance with JMX
-        MBeanWrapper.instance.registerMBean(this, MBEAN_NAME, true);
+        MBeanWrapper.instance.registerMBean(this, MBEAN_NAME, MBeanWrapper.OnException.LOG);
     }
 
     public Set<File> getUnreadableDirectories()
