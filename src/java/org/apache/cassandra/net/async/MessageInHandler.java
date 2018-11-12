@@ -18,9 +18,7 @@
 
 package org.apache.cassandra.net.async;
 
-import java.io.DataInputStream;
 import java.io.IOException;
-import java.net.InetAddress;
 import java.util.Collections;
 import java.util.EnumMap;
 import java.util.List;
@@ -31,10 +29,6 @@ import java.util.function.BooleanSupplier;
 import com.google.common.primitives.Ints;
 import org.apache.cassandra.io.IVersionedSerializer;
 import org.apache.cassandra.io.util.DataInputPlus;
-import org.apache.cassandra.io.util.DataOutputBuffer;
-import org.apache.cassandra.io.util.DataOutputPlus;
-import org.apache.cassandra.net.CallbackInfo;
-import org.apache.cassandra.net.CompactEndpointSerializationHelper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

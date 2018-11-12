@@ -83,12 +83,10 @@ import org.apache.cassandra.utils.memory.BufferPool;
 public class Instance extends InvokableInstance
 {
     public final InstanceConfig config;
-    final File root;
 
-    public Instance(File root, InstanceConfig config, ClassLoader classLoader)
+    public Instance(InstanceConfig config, ClassLoader classLoader)
     {
         super(classLoader);
-        this.root = root;
         this.config = config;
     }
 

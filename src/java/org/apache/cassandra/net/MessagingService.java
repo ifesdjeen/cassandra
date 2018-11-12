@@ -469,10 +469,9 @@ public final class MessagingService implements MessagingServiceMBean
         {
             CallbackInfo callback = MessagingService.instance().getRegisteredCallback(id);
             if (callback == null)
-            {
                 return null;
-            }
-            serializer = (IVersionedSerializer) callback.serializer;
+
+            serializer = callback.serializer;
         }
         return serializer;
     }

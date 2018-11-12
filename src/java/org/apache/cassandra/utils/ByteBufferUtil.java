@@ -492,7 +492,7 @@ public class ByteBufferUtil
         else if (obj instanceof String)
             return ByteBufferUtil.bytes((String) obj);
         else
-            throw new IllegalArgumentException(String.format("Can not convert value %s of type %s",
+            throw new IllegalArgumentException(String.format("Cannot convert value %s of type %s",
                                                              obj,
                                                              obj.getClass()));
     }

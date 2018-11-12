@@ -31,7 +31,7 @@ import java.util.function.IntFunction;
 public class InstanceClassLoader extends URLClassLoader
 {
     // Classes that have to be shared between instances, for configuration or returning values
-    private static Class<?>[] commonClasses = new Class[]
+    private final static Class<?>[] commonClasses = new Class[]
             {
                     Pair.class,
                     InstanceConfig.class,

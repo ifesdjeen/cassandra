@@ -22,12 +22,7 @@ import java.nio.ByteBuffer;
 import java.util.List;
 
 import org.apache.cassandra.cql3.ColumnSpecification;
-import org.apache.cassandra.cql3.QueryOptions;
-import org.apache.cassandra.db.ConsistencyLevel;
-import org.apache.cassandra.db.partitions.PartitionIterator;
-import org.apache.cassandra.service.ClientState;
 import org.apache.cassandra.transport.messages.ResultMessage;
-import org.apache.cassandra.utils.FBUtilities;
 
 public class RowUtil
 {

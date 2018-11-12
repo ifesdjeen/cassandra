@@ -181,7 +181,7 @@ public class TestCluster implements AutoCloseable
         for (int i = 0 ; i < nodeCount ; ++i)
         {
             InstanceConfig instanceConfig = InstanceConfig.generate(i + 1, root, String.valueOf(token));
-            instances.add(new Instance(root, instanceConfig, classLoaderFactory.apply(i + 1)));
+            instances.add(new Instance(instanceConfig, classLoaderFactory.apply(i + 1)));
             token += increment;
         }
 
