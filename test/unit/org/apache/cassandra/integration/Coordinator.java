@@ -23,6 +23,7 @@ import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
 import java.util.function.Consumer;
 
 import org.apache.cassandra.cql3.CQLStatement;
@@ -73,13 +74,6 @@ public class Coordinator
         {
             return new Object[][]{};
         }
-    }
-
-    public void schemaChange(String query, Consumer<UUID> waitCallback)
-    {
-        execute(query, ConsistencyLevel.ALL);
-        UUID coordinatorUUID = instance.getSchemaVersion();
-        waitCallback.accept(coordinatorUUID);
     }
 
     public Object[][] execute(String query, ConsistencyLevel consistencyLevel, Object... boundValues)

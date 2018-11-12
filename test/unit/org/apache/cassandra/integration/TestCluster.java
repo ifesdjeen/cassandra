@@ -34,6 +34,7 @@ import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.function.Consumer;
 import java.util.function.IntFunction;
 import java.util.stream.Collectors;
 
@@ -41,11 +42,15 @@ import com.google.common.collect.Sets;
 
 import org.apache.cassandra.concurrent.NamedThreadFactory;
 import org.apache.cassandra.db.ColumnFamilyStore;
+import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.db.Keyspace;
+import org.apache.cassandra.diag.DiagnosticEventService;
 import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.net.MessagingService;
+import org.apache.cassandra.schema.SchemaEvent;
 import org.apache.cassandra.utils.FBUtilities;
+import org.apache.cassandra.utils.concurrent.ChangeSignal;
 
 /**
  * TestCluster creates, initializes and manages Cassandra instances ({@link Instance}.
@@ -146,17 +151,64 @@ public class TestCluster implements AutoCloseable
 
     public void schemaChange(String query)
     {
-        coordinator.schemaChange(query,
-                                 // Wait for schema propagation on other nodes
-                                 (newVersion) -> {
-                                     for (Instance instance : instances)
-                                     {
-                                         if (!instance.equals(coordinator().instance));
-                                         {
-                                             instance.waitForSchemaToSettle(newVersion);
-                                         }
-                                     }
-                                 });
+        try (SchemaChangeMonitor monitor = new SchemaChangeMonitor())
+        {
+            // execute the schema change
+            coordinator().execute(query, ConsistencyLevel.ALL);
+            monitor.waitForAgreement();
+        }
+    }
+
+    /**
+     * Will wait for a schema change AND agreement that occurs after it is created
+     * (or after the prior invocation to waitForAgreement)
+     *
+     * Works by simply waking up whenever any instance indicates a schema change, then
+     * iterating all nodes to check if their schema versions agree; if any disagree, it
+     * waits for another signal.
+     *
+     * This could perhaps be made a little more robust, but this should more than suffice.
+     */
+    public class SchemaChangeMonitor implements AutoCloseable
+    {
+        final List<Runnable> cleanup;
+        ChangeSignal signal = new ChangeSignal();
+        ChangeSignal.Monitor monitor = signal.monitor();
+
+        public SchemaChangeMonitor()
+        {
+            this.cleanup = new ArrayList<>(instances.size());
+            for (Instance instance : instances)
+            {
+                cleanup.add(
+                        instance.appliesOnInstance(
+                                (Runnable runnable) -> {
+                                    Consumer<SchemaEvent> consumer = event -> runnable.run();
+                                    DiagnosticEventService.instance().subscribe(SchemaEvent.class, SchemaEvent.SchemaEventType.VERSION_UPDATED, consumer);
+                                    return (Runnable) () -> DiagnosticEventService.instance().unsubscribe(SchemaEvent.class, consumer);
+                                }
+                        ).apply(signal::signal)
+                );
+            }
+        }
+
+        @Override
+        public void close()
+        {
+            for (Runnable runnable : cleanup)
+                runnable.run();
+        }
+
+        public void waitForAgreement()
+        {
+            // wait for the schemas to change and agree
+            while (true)
+            {
+                monitor.awaitUninterruptibly();
+                if (1 == instances.stream().map(Instance::getSchemaVersion).distinct().count())
+                    break;
+            }
+        }
     }
 
     public void schemaChange(String statement, int instance)

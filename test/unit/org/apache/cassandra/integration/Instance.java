@@ -109,31 +109,9 @@ public class Instance extends InvokableInstance
 
     public UUID getSchemaVersion()
     {
-        return callOnInstance(() -> {
-            return Schema.instance.getVersion();
-        });
-    }
-
-    public void waitForSchemaToSettle(UUID version)
-    {
-        waitForSchemaToSettle(version, 60, TimeUnit.SECONDS);
-    }
-
-    public void waitForSchemaToSettle(UUID version, long time, TimeUnit unit)
-    {
-        runOnInstance(() -> {
-            long now = System.currentTimeMillis();
-            long period = unit.toMillis(time);
-
-            while (System.currentTimeMillis() - now <= period)
-            {
-                if (version.equals(Schema.instance.getVersion()))
-                    return;
-                Uninterruptibles.sleepUninterruptibly(100, TimeUnit.MILLISECONDS);
-            }
-
-            throw new RuntimeException("Schema changes did not propagate");
-        });
+        // we do not use method reference syntax here, because we need to invoke on the node-local schema instance
+        //noinspection Convert2MethodRef
+        return callOnInstance(() -> Schema.instance.getVersion());
     }
 
     public void schemaChange(String query)
@@ -266,6 +244,7 @@ public class Instance extends InvokableInstance
         config.endpoint_snitch = SimpleSnitch.class.getName();
         config.seed_provider = new ParameterizedClass(SimpleSeedProvider.class.getName(),
                                                       Collections.singletonMap("seeds", "127.0.0.1:7010"));
+        config.diagnostic_events_enabled = true; // necessary for schema change monitoring
 
         // Overrides
         config.partitioner = overrides.partitioner;
