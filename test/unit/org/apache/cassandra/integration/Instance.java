@@ -20,8 +20,6 @@ package org.apache.cassandra.integration;
 
 import java.io.File;
 import java.io.IOException;
-import java.net.MalformedURLException;
-import java.net.URL;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -37,8 +35,9 @@ import org.apache.cassandra.batchlog.BatchlogManager;
 import org.apache.cassandra.concurrent.ScheduledExecutors;
 import org.apache.cassandra.concurrent.SharedExecutorPool;
 import org.apache.cassandra.concurrent.StageManager;
+import org.apache.cassandra.config.Config;
 import org.apache.cassandra.config.DatabaseDescriptor;
-import org.apache.cassandra.config.YamlConfigurationLoader;
+import org.apache.cassandra.config.ParameterizedClass;
 import org.apache.cassandra.cql3.CQLStatement;
 import org.apache.cassandra.cql3.QueryHandler;
 import org.apache.cassandra.cql3.QueryOptions;
@@ -60,6 +59,8 @@ import org.apache.cassandra.integration.log.InstanceIDDefiner;
 import org.apache.cassandra.io.util.DataInputBuffer;
 import org.apache.cassandra.io.util.DataOutputBuffer;
 import org.apache.cassandra.locator.InetAddressAndPort;
+import org.apache.cassandra.locator.SimpleSeedProvider;
+import org.apache.cassandra.locator.SimpleSnitch;
 import org.apache.cassandra.net.IMessageSink;
 import org.apache.cassandra.net.MessageDeliveryTask;
 import org.apache.cassandra.net.MessageIn;
@@ -225,8 +226,7 @@ public class Instance extends InvokableInstance
             int id = config.num;
             runOnInstance(() -> InstanceIDDefiner.instanceId = id); // for logging
 
-            config.writeCassandraConfigFile(new File(root, "node" + config.num + "/cassandra.conf"));
-            startup("file://" + root + "/node" + config.num + "/cassandra.conf");
+            startup();
             initializeRing(cluster);
             registerMockMessaging(cluster);
         }
@@ -247,26 +247,48 @@ public class Instance extends InvokableInstance
             new File(dir).mkdirs();
     }
 
-    private void startup(String configUrl)
+    private void startup()
     {
-        runOnInstance(() ->
+        acceptsOnInstance((InstanceConfig config) ->
         {
-            DatabaseDescriptor.daemonInitialization(() ->
-            {
-                try
-                {
-                    return new YamlConfigurationLoader().loadConfig(new URL(configUrl));
-                }
-                catch (MalformedURLException e)
-                {
-                    throw new RuntimeException(e);
-                }
-            });
+            DatabaseDescriptor.daemonInitialization(() -> loadConfig(config));
 
             DatabaseDescriptor.createAllDirectories();
             Keyspace.setInitialized();
             SystemKeyspace.persistLocalMetadata();
-        });
+        }).accept(config);
+    }
+
+
+    public static Config loadConfig(InstanceConfig overrides)
+    {
+        Config config = new Config();
+        // Defaults
+        config.commitlog_sync = Config.CommitLogSync.batch;
+        config.endpoint_snitch = SimpleSnitch.class.getName();
+        config.seed_provider = new ParameterizedClass(SimpleSeedProvider.class.getName(),
+                                                      Collections.singletonMap("seeds", "127.0.0.1:7010"));
+
+        // Overrides
+        config.partitioner = overrides.partitioner;
+        config.broadcast_address = overrides.broadcast_address;
+        config.listen_address = overrides.listen_address;
+        config.broadcast_rpc_address = overrides.broadcast_rpc_address;
+        config.rpc_address = overrides.rpc_address;
+        config.saved_caches_directory = overrides.saved_caches_directory;
+        config.data_file_directories = overrides.data_file_directories;
+        config.commitlog_directory = overrides.commitlog_directory;
+        config.hints_directory = overrides.hints_directory;
+        config.cdc_raw_directory = overrides.cdc_directory;
+        config.concurrent_writes = overrides.concurrent_writes;
+        config.concurrent_counter_writes = overrides.concurrent_counter_writes;
+        config.concurrent_materialized_view_writes = overrides.concurrent_materialized_view_writes;
+        config.concurrent_reads = overrides.concurrent_reads;
+        config.memtable_flush_writers = overrides.memtable_flush_writers;
+        config.concurrent_compactors = overrides.concurrent_compactors;
+        config.memtable_heap_space_in_mb = overrides.memtable_heap_space_in_mb;
+        config.initial_token = overrides.initial_token;
+        return config;
     }
 
     private void initializeRing(TestCluster cluster)
