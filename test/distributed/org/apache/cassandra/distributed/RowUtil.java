@@ -19,9 +19,13 @@
 package org.apache.cassandra.distributed;
 
 import java.nio.ByteBuffer;
+import java.util.Iterator;
 import java.util.List;
 
+import com.google.common.collect.Iterators;
+
 import org.apache.cassandra.cql3.ColumnSpecification;
+import org.apache.cassandra.cql3.UntypedResultSet;
 import org.apache.cassandra.transport.messages.ResultMessage;
 
 public class RowUtil
@@ -43,5 +47,20 @@ public class RowUtil
             }
         }
         return result;
+    }
+
+    public static Iterator<Object[]> toObjects(UntypedResultSet rs)
+    {
+        List<ColumnSpecification> columnSpecs = rs.metadata();
+        return Iterators.transform(rs.iterator(),
+                                   (row) -> {
+                                       Object[] objectRow = new Object[columnSpecs.size()];
+                                       for (int i = 0; i < columnSpecs.size(); i++)
+                                       {
+                                           ColumnSpecification columnSpec = columnSpecs.get(i);
+                                           objectRow[i] = columnSpec.type.compose(row.getBytes(columnSpec.name.toString()));
+                                       }
+                                       return objectRow;
+                                   });
     }
 }

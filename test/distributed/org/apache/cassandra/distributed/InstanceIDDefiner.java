@@ -26,13 +26,13 @@ import ch.qos.logback.core.PropertyDefinerBase;
 public class InstanceIDDefiner extends PropertyDefinerBase
 {
     // Instantiated per classloader, set by Instance
-    public static int instanceId = -1;
+    public static String instanceId = "";
 
     public String getPropertyValue()
     {
-        if (instanceId == -1)
+        if (instanceId == "")
             return "<main>";
         else
-            return "INSTANCE" + instanceId;
+            return "INSTANCE_" + instanceId;
     }
 }

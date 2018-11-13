@@ -24,7 +24,10 @@ import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BiConsumer;
@@ -64,13 +67,18 @@ import org.apache.cassandra.net.MessageIn;
 import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.net.async.MessageInHandler;
+import org.apache.cassandra.net.async.NettyFactory;
+import org.apache.cassandra.repair.SystemDistributedKeyspace;
 import org.apache.cassandra.schema.Schema;
 import org.apache.cassandra.schema.SchemaConstants;
 import org.apache.cassandra.service.ActiveRepairService;
+import org.apache.cassandra.service.CassandraDaemon;
 import org.apache.cassandra.service.ClientState;
 import org.apache.cassandra.service.PendingRangeCalculatorService;
 import org.apache.cassandra.service.QueryState;
+import org.apache.cassandra.service.StorageProxy;
 import org.apache.cassandra.service.StorageService;
+import org.apache.cassandra.tracing.TraceKeyspace;
 import org.apache.cassandra.transport.messages.ResultMessage;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.Throwables;
@@ -80,6 +88,7 @@ import org.apache.cassandra.utils.memory.BufferPool;
 public class Instance extends InvokableInstance
 {
     public final InstanceConfig config;
+    public List<InetAddressAndPort> peers;
 
     public Instance(InstanceConfig config, ClassLoader classLoader)
     {
@@ -111,6 +120,25 @@ public class Instance extends InvokableInstance
         return callOnInstance(() -> Schema.instance.getVersion());
     }
 
+    public void flush(String keyspace, String table)
+    {
+        runOnInstance(() -> Keyspace.open(keyspace).getColumnFamilyStore(table).forceBlockingFlush());
+    }
+
+    public void compact(String keyspace, String table)
+    {
+        runOnInstance(() -> {
+            try
+            {
+                Keyspace.open(keyspace).getColumnFamilyStore(table).forceMajorCompaction();
+            }
+            catch (Throwable e)
+            {
+                throw new RuntimeException(e);
+            }
+        });
+    }
+
     public void schemaChange(String query)
     {
         runOnInstance(() ->
@@ -139,7 +167,7 @@ public class Instance extends InvokableInstance
         BiConsumer<InetAddressAndPort, Message> deliverToInstanceIfNotFiltered = cluster.filters().filter(deliverToInstance);
 
         acceptsOnInstance((BiConsumer<InetAddressAndPort, Message> deliver) ->
-                MessagingService.instance().addMessageSink(new MessageDeliverySink(deliver))
+                          MessagingService.instance().addMessageSink(new MessageDeliverySink(deliver))
         ).accept(deliverToInstanceIfNotFiltered);
     }
 
@@ -191,12 +219,19 @@ public class Instance extends InvokableInstance
         }).accept(message);
     }
 
+    public void repair(String ks, Map<String, String> options)
+    {
+        acceptsOnInstance((String keyspace, Map<String, String> repairOptions) -> {
+            StorageService.instance.repairAsync(keyspace, repairOptions);
+        }).accept(ks, options);
+    }
+
     void launch(TestCluster cluster)
     {
         try
         {
             mkdirs();
-            int id = config.num;
+            String id = config.broadcast_address;
             runOnInstance(() -> InstanceIDDefiner.instanceId = id); // for logging
 
             startup();
@@ -270,7 +305,7 @@ public class Instance extends InvokableInstance
         // This should be done outside instance in order to avoid serializing config
         String partitionerName = config.partitioner;
         List<String> initialTokens = new ArrayList<>();
-        List<InetAddressAndPort> hosts = new ArrayList<>();
+        peers = new CopyOnWriteArrayList<>();
         List<UUID> hostIds = new ArrayList<>();
         for (int i = 1 ; i <= cluster.size() ; ++i)
         {
@@ -278,7 +313,7 @@ public class Instance extends InvokableInstance
             initialTokens.add(config.initial_token);
             try
             {
-                hosts.add(InetAddressAndPort.getByName(config.broadcast_address));
+                peers.add(InetAddressAndPort.getByName(config.broadcast_address));
             }
             catch (UnknownHostException e)
             {
@@ -286,6 +321,8 @@ public class Instance extends InvokableInstance
             }
             hostIds.add(config.hostId);
         }
+
+        List<InetAddressAndPort> hosts = peers;
 
         runOnInstance(() ->
         {
@@ -317,12 +354,33 @@ public class Instance extends InvokableInstance
                 // check that all nodes are in token metadata
                 for (int i = 0; i < tokens.size(); ++i)
                     assert storageService.getTokenMetadata().isMember(hosts.get(i));
+
+//                StorageService.instance.maybeAddOrUpdateKeyspace(TraceKeyspace.metadata());
+//                StorageService.instance.maybeAddOrUpdateKeyspace(SystemDistributedKeyspace.metadata());
+//                MessagingService.instance().listen();
             }
             catch (Throwable e) // UnknownHostException
             {
                 throw new RuntimeException(e);
             }
         });
+    }
+
+    public void markPeerDead(int peer)
+    {
+        acceptsOnInstance((InetAddressAndPort ep) -> {
+            System.out.println("MAKRING DEAD: " + ep);
+            Gossiper.instance.markDead(ep, Gossiper.instance.getEndpointStateForEndpoint(ep));
+        }).accept(peers.get(peer - 1));
+    }
+
+    public void markAllAlive()
+    {
+        acceptsOnInstance((List<InetAddressAndPort> peers) -> {
+            System.out.println("MAKRING ALL ALIVE");
+            for (InetAddressAndPort peer : peers)
+                Gossiper.instance.realMarkAlive(peer, Gossiper.instance.getEndpointStateForEndpoint(peer));
+        }).accept(peers);
     }
 
     void shutdown()

@@ -83,7 +83,7 @@ public class TestCluster implements AutoCloseable
 
     private final File root;
     private final List<Instance> instances;
-    private final Coordinator coordinator;
+    private final List<Coordinator> coordinators;
     private final Map<InetAddressAndPort, Instance> instanceMap;
     private final MessageFilters filters;
 
@@ -92,7 +92,9 @@ public class TestCluster implements AutoCloseable
         this.root = root;
         this.instances = instances;
         this.instanceMap = new HashMap<>();
-        this.coordinator = new Coordinator(instances.get(0));
+        this.coordinators = new ArrayList<>();
+        for (Instance instance : instances)
+            coordinators.add(new Coordinator(instance));
         this.filters = new MessageFilters(this);
     }
 
@@ -113,7 +115,24 @@ public class TestCluster implements AutoCloseable
 
     public Coordinator coordinator()
     {
-        return coordinator;
+        return coordinators.get(0);
+    }
+
+    public Coordinator coordinator(int i)
+    {
+        return coordinators.get(i - 1);
+    }
+
+    public void markAllAlive()
+    {
+        for (Instance instance : instances)
+            instance.markAllAlive();
+    }
+
+    public void markAsDead(int peer)
+    {
+        for (Instance instance : instances)
+            instance.markPeerDead(peer);
     }
 
     /**
@@ -225,12 +244,17 @@ public class TestCluster implements AutoCloseable
         get(instance).schemaChange(statement);
     }
 
-    public static TestCluster create(int nodeCount) throws Throwable
+    public static TestCluster create(int subnet, int nodeCount) throws Throwable
     {
-        return create(nodeCount, Files.createTempDirectory("dtests").toFile());
+        return create(subnet, nodeCount, Files.createTempDirectory("dtests").toFile());
     }
 
-    public static TestCluster create(int nodeCount, File root)
+    public static TestCluster create(int nodeCount) throws Throwable
+    {
+        return create(0, nodeCount, Files.createTempDirectory("dtests").toFile());
+    }
+
+    public static TestCluster create(int subnet, int nodeCount, File root)
     {
         root.mkdirs();
         setupLogging(root);
@@ -241,7 +265,7 @@ public class TestCluster implements AutoCloseable
         long token = Long.MIN_VALUE + 1, increment = 2 * (Long.MAX_VALUE / nodeCount);
         for (int i = 0 ; i < nodeCount ; ++i)
         {
-            InstanceConfig instanceConfig = InstanceConfig.generate(i + 1, root, String.valueOf(token));
+            InstanceConfig instanceConfig = InstanceConfig.generate(subnet, i + 1, root, String.valueOf(token));
             instances.add(new Instance(instanceConfig, classLoaderFactory.apply(i + 1)));
             token += increment;
         }
@@ -304,5 +328,9 @@ public class TestCluster implements AutoCloseable
         }
     }
 
+    public File root()
+    {
+        return root;
+    }
 }
 

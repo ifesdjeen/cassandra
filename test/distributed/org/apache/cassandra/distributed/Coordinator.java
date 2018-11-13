@@ -21,21 +21,29 @@ package org.apache.cassandra.distributed;
 
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
 
 import org.apache.cassandra.cql3.CQLStatement;
 import org.apache.cassandra.cql3.QueryOptions;
 import org.apache.cassandra.cql3.QueryProcessor;
+import org.apache.cassandra.cql3.UntypedResultSet;
+import org.apache.cassandra.cql3.statements.SelectStatement;
 import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.service.ClientState;
 import org.apache.cassandra.service.QueryState;
+import org.apache.cassandra.service.pager.PagingState;
+import org.apache.cassandra.service.pager.QueryPager;
 import org.apache.cassandra.transport.ProtocolVersion;
 import org.apache.cassandra.transport.messages.ResultMessage;
 import org.apache.cassandra.utils.ByteBufferUtil;
+import org.apache.cassandra.utils.FBUtilities;
 
 
 public class Coordinator
 {
+    private final static Object[][] EMPTY = new Object[][]{};
+
     final Instance instance;
 
     public Coordinator(Instance instance)
@@ -43,7 +51,7 @@ public class Coordinator
         this.instance = instance;
     }
 
-    private static Object[][] coordinatorExecute(String query, int consistencyLevel, Object[] bindings)
+    private static Object[][] executeInternal(String query, int consistencyLevel, Object[] bindings)
     {
         CQLStatement prepared = QueryProcessor.getStatement(query, ClientState.forInternalCalls());
         List<ByteBuffer> boundValues = new ArrayList<>();
@@ -56,10 +64,10 @@ public class Coordinator
                                              QueryOptions.create(ConsistencyLevel.fromCode(consistencyLevel),
                                                                  boundValues,
                                                                  false,
-                                                                 10,
+                                                                 Integer.MAX_VALUE,
                                                                  null,
                                                                  null,
-                                                                 ProtocolVersion.V4,
+                                                                 ProtocolVersion.CURRENT,
                                                                  null),
                                              System.nanoTime());
 
@@ -69,12 +77,46 @@ public class Coordinator
         }
         else
         {
-            return new Object[][]{};
+            return EMPTY;
         }
+    }
+
+    private static Iterator<Object[]> executeInternalWithPaging(String query, int consistencyLevel, int pageSize, Object[] bindings)
+    {
+        CQLStatement prepared = QueryProcessor.getStatement(query, ClientState.forInternalCalls());
+
+        List<ByteBuffer> boundValues = new ArrayList<>();
+        for (Object binding : bindings)
+        {
+            boundValues.add(ByteBufferUtil.objectToBytes(binding));
+        }
+
+        SelectStatement select = (SelectStatement)prepared;
+
+        QueryPager pager = select.getQuery(QueryOptions.create(ConsistencyLevel.fromCode(consistencyLevel),
+                                                               boundValues,
+                                                               false,
+                                                               pageSize,
+                                                               null,
+                                                               null,
+                                                               ProtocolVersion.CURRENT,
+                                                               null),
+                                           FBUtilities.nowInSeconds())
+                                 .getPager(null, ProtocolVersion.CURRENT);
+
+        return RowUtil.toObjects(UntypedResultSet.create(select, ConsistencyLevel.fromCode(consistencyLevel),
+                                                         ClientState.forInternalCalls(),
+                                                         pager, pageSize));
     }
 
     public Object[][] execute(String query, ConsistencyLevel consistencyLevel, Object... boundValues)
     {
-        return instance.appliesOnInstance(Coordinator::coordinatorExecute).apply(query, consistencyLevel.code, boundValues);
+        return instance.appliesOnInstance(Coordinator::executeInternal).apply(query, consistencyLevel.code, boundValues);
+    }
+
+    public Iterator<Object[]> executeWithPaging(String query, ConsistencyLevel consistencyLevel, int pageSize, Object... boundValues)
+    {
+        return instance.appliesOnInstance((String q, Integer c, Object[] v) -> Coordinator.executeInternalWithPaging(q, c, pageSize, v))
+                       .apply(query, consistencyLevel.code, boundValues);
     }
 }

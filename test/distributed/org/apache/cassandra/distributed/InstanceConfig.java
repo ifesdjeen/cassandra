@@ -70,13 +70,15 @@ public class InstanceConfig implements Serializable
         this.initial_token = initial_token;
     }
 
-    public static InstanceConfig generate(int nodeNum, File root, String token)
+    public static InstanceConfig generate(int subnet, int nodeNum, File root, String token)
     {
+        String ip = "127.0." + subnet + "." + nodeNum;
+        System.out.println("ip = " + ip);
         return new InstanceConfig(nodeNum,
-                                  "127.0.0." + nodeNum,
-                                  "127.0.0." + nodeNum,
-                                  "127.0.0." + nodeNum,
-                                  "127.0.0." + nodeNum,
+                                  ip,
+                                  ip,
+                                  ip,
+                                  ip,
                                   String.format("%s/node%d/saved_caches", root, nodeNum),
                                   new String[] { String.format("%s/node%d/data", root, nodeNum) },
                                   String.format("%s/node%d/commitlog", root, nodeNum),

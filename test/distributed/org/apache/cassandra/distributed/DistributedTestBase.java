@@ -18,7 +18,10 @@
 
 package org.apache.cassandra.distributed;
 
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Iterator;
+import java.util.List;
 
 import org.junit.Assert;
 import org.junit.BeforeClass;
@@ -33,7 +36,15 @@ public class DistributedTestBase
         System.setProperty("org.apache.cassandra.disable_mbean_registration", "true");
     }
 
-    TestCluster createCluster(int nodeCount) throws Throwable
+    protected TestCluster createCluster(int subnet, int nodeCount) throws Throwable
+    {
+        TestCluster cluster = TestCluster.create(subnet, nodeCount);
+        cluster.schemaChange("CREATE KEYSPACE " + KEYSPACE + " WITH replication = {'class': 'SimpleStrategy', 'replication_factor': " + nodeCount + "};");
+
+        return cluster;
+    }
+
+    protected TestCluster createCluster(int nodeCount) throws Throwable
     {
         TestCluster cluster = TestCluster.create(nodeCount);
         cluster.schemaChange("CREATE KEYSPACE " + KEYSPACE + " WITH replication = {'class': 'SimpleStrategy', 'replication_factor': " + nodeCount + "};");
@@ -53,6 +64,35 @@ public class DistributedTestBase
             Assert.assertTrue(rowsNotEqualErrorMessage(actual, expected),
                               Arrays.equals(expectedRow, actualRow));
         }
+    }
+
+    public static void assertRows(Iterator<Object[]> actual, Iterator<Object[]> expected)
+    {
+        while (actual.hasNext() && expected.hasNext())
+        {
+            Object[] expectedRow = expected.next();
+            Object[] actualRow = actual.next();
+            Assert.assertTrue(rowNotEqualErrorMessage(actualRow, expectedRow),
+                              Arrays.equals(expectedRow, actualRow));
+        }
+
+        Assert.assertEquals(actual.hasNext(), expected.hasNext());
+    }
+
+    public static Object[][] toObjectArray(Iterator<Object[]> iter)
+    {
+        List<Object[]> res = new ArrayList<>();
+        while (iter.hasNext())
+            res.add(iter.next());
+
+        return res.toArray(new Object[res.size()][]);
+    }
+
+    public static String rowNotEqualErrorMessage(Object[] actual, Object[] expected)
+    {
+        return String.format("Expected: %s\nActual:%s\n",
+                             Arrays.toString(expected),
+                             Arrays.toString(actual));
     }
 
     public static String rowsNotEqualErrorMessage(Object[][] actual, Object[][] expected)
