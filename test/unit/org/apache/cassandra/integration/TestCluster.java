@@ -34,6 +34,7 @@ import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.function.IntFunction;
 import java.util.stream.Collectors;
@@ -50,7 +51,7 @@ import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.schema.SchemaEvent;
 import org.apache.cassandra.utils.FBUtilities;
-import org.apache.cassandra.utils.concurrent.ChangeSignal;
+import org.apache.cassandra.utils.concurrent.SimpleCondition;
 
 /**
  * TestCluster creates, initializes and manages Cassandra instances ({@link Instance}.
@@ -172,8 +173,7 @@ public class TestCluster implements AutoCloseable
     public class SchemaChangeMonitor implements AutoCloseable
     {
         final List<Runnable> cleanup;
-        ChangeSignal signal = new ChangeSignal();
-        ChangeSignal.Monitor monitor = signal.monitor();
+        final SimpleCondition agreement = new SimpleCondition();
 
         public SchemaChangeMonitor()
         {
@@ -187,9 +187,15 @@ public class TestCluster implements AutoCloseable
                                     DiagnosticEventService.instance().subscribe(SchemaEvent.class, SchemaEvent.SchemaEventType.VERSION_UPDATED, consumer);
                                     return (Runnable) () -> DiagnosticEventService.instance().unsubscribe(SchemaEvent.class, consumer);
                                 }
-                        ).apply(signal::signal)
+                        ).apply(this::signal)
                 );
             }
+        }
+
+        private void signal()
+        {
+            if (1 == instances.stream().map(Instance::getSchemaVersion).distinct().count())
+                agreement.signalAll();
         }
 
         @Override
@@ -201,12 +207,12 @@ public class TestCluster implements AutoCloseable
 
         public void waitForAgreement()
         {
-            // wait for the schemas to change and agree
-            while (true)
+            try
             {
-                monitor.awaitUninterruptibly();
-                if (1 == instances.stream().map(Instance::getSchemaVersion).distinct().count())
-                    break;
+                agreement.await(1L, TimeUnit.MINUTES);
+            } catch (InterruptedException e)
+            {
+                throw new IllegalStateException("Schema agreement not reached");
             }
         }
     }
