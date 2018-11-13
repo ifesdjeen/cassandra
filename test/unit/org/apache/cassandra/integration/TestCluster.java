@@ -163,11 +163,11 @@ public class TestCluster implements AutoCloseable
 
     /**
      * Will wait for a schema change AND agreement that occurs after it is created
-     * (or after the prior invocation to waitForAgreement)
+     * (and precedes the invocation to waitForAgreement)
      *
-     * Works by simply waking up whenever any instance indicates a schema change, then
-     * iterating all nodes to check if their schema versions agree; if any disagree, it
-     * waits for another signal.
+     * Works by simply checking if all UUIDs agree after any schema version change event,
+     * so long as the waitForAgreement method has been entered (indicating the change has
+     * taken place on the coordinator)
      *
      * This could perhaps be made a little more robust, but this should more than suffice.
      */
