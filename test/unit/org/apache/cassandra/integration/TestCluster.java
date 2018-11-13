@@ -35,6 +35,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 import java.util.function.IntFunction;
 import java.util.stream.Collectors;
@@ -173,6 +174,7 @@ public class TestCluster implements AutoCloseable
     public class SchemaChangeMonitor implements AutoCloseable
     {
         final List<Runnable> cleanup;
+        volatile boolean schemaHasChanged;
         final SimpleCondition agreement = new SimpleCondition();
 
         public SchemaChangeMonitor()
@@ -194,7 +196,7 @@ public class TestCluster implements AutoCloseable
 
         private void signal()
         {
-            if (1 == instances.stream().map(Instance::getSchemaVersion).distinct().count())
+            if (schemaHasChanged && 1 == instances.stream().map(Instance::getSchemaVersion).distinct().count())
                 agreement.signalAll();
         }
 
@@ -207,6 +209,8 @@ public class TestCluster implements AutoCloseable
 
         public void waitForAgreement()
         {
+            schemaHasChanged = true;
+            signal();
             try
             {
                 agreement.await(1L, TimeUnit.MINUTES);
