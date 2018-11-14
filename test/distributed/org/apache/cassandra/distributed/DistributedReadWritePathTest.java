@@ -282,7 +282,7 @@ public class DistributedReadWritePathTest extends DistributedTestBase
 
             // Columns are going to be read and read-repaired as long as they're available
             assertRows(cluster.coordinator().execute("SELECT * FROM " + KEYSPACE + ".tbl WHERE pk = 1",
-                                              ConsistencyLevel.ALL),
+                                                     ConsistencyLevel.ALL),
                        row(1, 1, 1),
                        row(1, 2, 2),
                        row(1, 3, 3));
@@ -327,7 +327,7 @@ public class DistributedReadWritePathTest extends DistributedTestBase
 
             // If somehow replica got new data, reading that data should not be possible, either
             cluster.get(2).executeInternal("INSERT INTO " + KEYSPACE + ".tbl (pk, ck, v1) VALUES (?, ?, ?)",
-                                          1, 1, 100);
+                                           1, 1, 100);
 
             try
             {
