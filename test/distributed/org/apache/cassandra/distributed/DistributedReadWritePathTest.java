@@ -16,7 +16,7 @@
  * limitations under the License.
  */
 
-package org.apache.cassandra.integration;
+package org.apache.cassandra.distributed;
 
 import org.junit.Assert;
 import org.junit.Test;

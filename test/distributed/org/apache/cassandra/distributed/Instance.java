@@ -16,7 +16,7 @@
  * limitations under the License.
  */
 
-package org.apache.cassandra.integration;
+package org.apache.cassandra.distributed;
 
 import java.io.File;
 import java.io.IOException;
@@ -28,8 +28,6 @@ import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BiConsumer;
-
-import com.google.common.util.concurrent.Uninterruptibles;
 
 import org.apache.cassandra.batchlog.BatchlogManager;
 import org.apache.cassandra.concurrent.ScheduledExecutors;
@@ -55,7 +53,6 @@ import org.apache.cassandra.gms.Gossiper;
 import org.apache.cassandra.gms.VersionedValue;
 import org.apache.cassandra.hints.HintsService;
 import org.apache.cassandra.index.SecondaryIndexManager;
-import org.apache.cassandra.integration.log.InstanceIDDefiner;
 import org.apache.cassandra.io.util.DataInputBuffer;
 import org.apache.cassandra.io.util.DataOutputBuffer;
 import org.apache.cassandra.locator.InetAddressAndPort;

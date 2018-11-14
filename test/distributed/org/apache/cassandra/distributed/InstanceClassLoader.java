@@ -16,7 +16,7 @@
  * limitations under the License.
  */
 
-package org.apache.cassandra.integration;
+package org.apache.cassandra.distributed;
 
 import com.google.common.base.Predicate;
 import org.apache.cassandra.locator.InetAddressAndPort;
