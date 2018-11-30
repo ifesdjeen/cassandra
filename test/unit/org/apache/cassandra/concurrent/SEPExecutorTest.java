@@ -42,7 +42,7 @@ public class SEPExecutorTest
     private static void shutdownOnce(int run) throws Throwable
     {
         SharedExecutorPool sharedPool = new SharedExecutorPool("SharedPool");
-        String MAGIC = "IRREPEATABLE_MAGIC_STRING";
+        String MAGIC = "UNREPEATABLE_MAGIC_STRING";
         OutputStream nullOutputStream = new OutputStream() {
             public void write(int b) { }
         };
@@ -55,12 +55,15 @@ public class SEPExecutorTest
             es.execute(() -> nullPrintSteam.println("TEST" + es));
         }
 
+        // shutdown does not guarantee that threads are actually dead once it exits, only that they will stop promptly afterwards
         sharedPool.shutdown();
         for (Thread thread : Thread.getAllStackTraces().keySet())
         {
             if (thread.toString().contains(MAGIC))
             {
-                Assert.fail(thread + " is still running " + Arrays.toString(thread.getStackTrace()));
+                thread.join(100);
+                if (thread.isAlive())
+                    Assert.fail(thread + " is still running " + Arrays.toString(thread.getStackTrace()));
             }
         }
     }
