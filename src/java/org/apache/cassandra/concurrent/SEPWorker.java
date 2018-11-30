@@ -74,11 +74,10 @@ final class SEPWorker extends AtomicReference<SEPWorker.Work> implements Runnabl
         {
             while (true)
             {
-                if (isDead())
-                    return;
-
                 if (isSpinning() && !selfAssign())
                 {
+                    if (pool.shuttingDown)
+                        return;
                     doWaitSpin();
                     continue;
                 }
@@ -172,7 +171,14 @@ final class SEPWorker extends AtomicReference<SEPWorker.Work> implements Runnabl
 
             // if we're being descheduled, place ourselves in the descheduled collection
             if (work.isStop())
+            {
                 pool.descheduled.put(workerId, this);
+                if (pool.shuttingDown)
+                {
+                    pool.terminateWorkers(); // terminate self
+                    return true;
+                }
+            }
 
             // if we're currently stopped, and the new state is not a stop signal
             // (which we can immediately convert to stopped), unpark the worker
@@ -181,13 +187,6 @@ final class SEPWorker extends AtomicReference<SEPWorker.Work> implements Runnabl
             return true;
         }
         return false;
-    }
-
-    void kill() throws InterruptedException
-    {
-        set(Work.DEAD);
-        LockSupport.unpark(thread);
-        thread.join();
     }
 
     // try to assign ourselves an executor with work available
@@ -309,11 +308,6 @@ final class SEPWorker extends AtomicReference<SEPWorker.Work> implements Runnabl
         return get().isSpinning();
     }
 
-    private boolean isDead()
-    {
-        return get().isDead();
-    }
-
     private boolean stop()
     {
         return get().isStop() && compareAndSet(Work.STOP_SIGNALLED, Work.STOPPED);
@@ -359,7 +353,6 @@ final class SEPWorker extends AtomicReference<SEPWorker.Work> implements Runnabl
         static final Work STOPPED = new Work();
         static final Work SPINNING = new Work();
         static final Work WORKING = new Work();
-        static final Work DEAD = new Work ();
 
         final SEPExecutor assigned;
 
@@ -399,11 +392,6 @@ final class SEPWorker extends AtomicReference<SEPWorker.Work> implements Runnabl
         boolean isStopped()
         {
             return this == Work.STOPPED;
-        }
-
-        boolean isDead()
-        {
-            return this == Work.DEAD;
         }
 
         boolean isAssigned()

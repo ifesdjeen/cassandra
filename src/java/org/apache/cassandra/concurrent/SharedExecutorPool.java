@@ -24,6 +24,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.LockSupport;
 
 import com.google.common.annotations.VisibleForTesting;
 
@@ -76,7 +77,8 @@ public class SharedExecutorPool
     final ConcurrentSkipListMap<Long, SEPWorker> spinning = new ConcurrentSkipListMap<>();
     // the collection of threads that have been asked to stop/deschedule - new workers are scheduled from here last
     final ConcurrentSkipListMap<Long, SEPWorker> descheduled = new ConcurrentSkipListMap<>();
-    final List<SEPWorker> workers = new CopyOnWriteArrayList<>();
+
+    volatile boolean shuttingDown = false;
 
     public SharedExecutorPool(String poolName)
     {
@@ -95,7 +97,7 @@ public class SharedExecutorPool
                 return;
 
         if (!work.isStop())
-            workers.add(new SEPWorker(workerId.incrementAndGet(), work, this));
+            new SEPWorker(workerId.incrementAndGet(), work, this);
     }
 
     void maybeStartSpinningWorker()
@@ -116,14 +118,34 @@ public class SharedExecutorPool
 
     public void shutdown() throws InterruptedException
     {
+        shuttingDown = true;
         for (SEPExecutor executor : executors)
-        {
             executor.shutdownNow();
-            executor.awaitTermination(60, TimeUnit.SECONDS);
-        }
 
-        // Make sure the pooled workers waiting for reuse are not left hanging
-        for (SEPWorker worker : workers)
-            worker.kill();
+        terminateWorkers();
+
+        long until = System.nanoTime() + TimeUnit.MINUTES.toNanos(1L);
+        for (SEPExecutor executor : executors)
+            executor.shutdown.await(until - System.nanoTime(), TimeUnit.NANOSECONDS);
+    }
+
+    void terminateWorkers()
+    {
+        assert shuttingDown;
+
+        // to terminate our workers, we only need to ensure they enter the SPINNING state,
+        // so that the pool.shuttingDown boolean is checked.
+
+        // it is possible to fail to assign SPINNING state, but this will only happen if there was work in the process
+        // of being scheduled (in which case it will later enter the spinning state), or it had been otherwise asked
+        // to enter the spinning state; in either case, it will terminate itself, or it may *again* be asked to stop -
+        // but in this case, it will itself invoke terminateWorkers again
+        Map.Entry<Long, SEPWorker> e;
+        while (null != (e = descheduled.pollFirstEntry()))
+            e.getValue().assign(Work.SPINNING, false);
+
+        while (null != (e = spinning.pollFirstEntry()))
+            LockSupport.unpark(e.getValue().thread);
+
     }
 }
