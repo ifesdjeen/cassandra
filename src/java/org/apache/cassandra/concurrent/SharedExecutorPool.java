@@ -17,6 +17,8 @@
  */
 package org.apache.cassandra.concurrent;
 
+import org.apache.cassandra.utils.concurrent.SimpleCondition;
+
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentSkipListMap;
@@ -25,8 +27,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.LockSupport;
-
-import com.google.common.annotations.VisibleForTesting;
 
 import static org.apache.cassandra.concurrent.SEPWorker.Work;
 
@@ -78,7 +78,9 @@ public class SharedExecutorPool
     // the collection of threads that have been asked to stop/deschedule - new workers are scheduled from here last
     final ConcurrentSkipListMap<Long, SEPWorker> descheduled = new ConcurrentSkipListMap<>();
 
-    volatile boolean shuttingDown = false;
+    // stores number of active workers, and a flag indicating we are terminating
+    final AtomicInteger shuttingDown = new AtomicInteger();
+    final SimpleCondition isShutdown = new SimpleCondition();
 
     public SharedExecutorPool(String poolName)
     {
@@ -97,7 +99,7 @@ public class SharedExecutorPool
                 return;
 
         if (!work.isStop())
-            new SEPWorker(workerId.incrementAndGet(), work, this);
+            addWorker(work);
     }
 
     void maybeStartSpinningWorker()
@@ -118,7 +120,7 @@ public class SharedExecutorPool
 
     public void shutdown() throws InterruptedException
     {
-        shuttingDown = true;
+        shuttingDown.getAndUpdate(v -> v | SHUTTING_DOWN);
         for (SEPExecutor executor : executors)
             executor.shutdownNow();
 
@@ -127,11 +129,13 @@ public class SharedExecutorPool
         long until = System.nanoTime() + TimeUnit.MINUTES.toNanos(1L);
         for (SEPExecutor executor : executors)
             executor.shutdown.await(until - System.nanoTime(), TimeUnit.NANOSECONDS);
+
+        isShutdown.await(until - System.nanoTime(), TimeUnit.NANOSECONDS);
     }
 
     void terminateWorkers()
     {
-        assert shuttingDown;
+        assert isShuttingDown();
 
         // to terminate our workers, we only need to ensure they enter the SPINNING state,
         // so that the pool.shuttingDown boolean is checked.
@@ -148,4 +152,34 @@ public class SharedExecutorPool
             LockSupport.unpark(e.getValue().thread);
 
     }
+
+    private static int SHUTTING_DOWN =  0x40000000;
+    private static boolean isShuttingDown(int workerCount) { return (workerCount & SHUTTING_DOWN) != 0; }
+
+    boolean isShuttingDown()
+    {
+        return isShuttingDown(shuttingDown.get());
+    }
+
+    void stoppedWorker()
+    {
+        if (shuttingDown.decrementAndGet() == SHUTTING_DOWN)
+            isShutdown.signalAll();
+    }
+
+    private boolean addWorker(Work work)
+    {
+        while (true)
+        {
+            int cur = shuttingDown.get();
+            if (isShuttingDown(cur))
+                return false;
+            if (shuttingDown.compareAndSet(cur, cur + 1))
+            {
+                new SEPWorker(workerId.incrementAndGet(), work, this);
+                return true;
+            }
+        }
+    }
+
 }
