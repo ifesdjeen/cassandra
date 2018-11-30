@@ -42,7 +42,7 @@ public class SEPExecutorTest
     private static void shutdownOnce(int run) throws Throwable
     {
         SharedExecutorPool sharedPool = new SharedExecutorPool("SharedPool");
-        String MAGIC = "IRREPETABLE_MAGIC_STRING";
+        String MAGIC = "IRREPEATABLE_MAGIC_STRING";
         OutputStream nullOutputStream = new OutputStream() {
             public void write(int b) { }
         };
