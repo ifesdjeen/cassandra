@@ -74,7 +74,7 @@ final class SEPWorker extends AtomicReference<SEPWorker.Work> implements Runnabl
         {
             while (true)
             {
-                if (pool.isShuttingDown())
+                if (pool.shuttingDown)
                     return;
 
                 if (isSpinning() && !selfAssign())
@@ -150,10 +150,6 @@ final class SEPWorker extends AtomicReference<SEPWorker.Work> implements Runnabl
             else
                 logger.error("Unexpected exception killed worker", t);
         }
-        finally
-        {
-            pool.stoppedWorker();
-        }
     }
 
     // try to assign this worker the provided work
@@ -178,7 +174,7 @@ final class SEPWorker extends AtomicReference<SEPWorker.Work> implements Runnabl
             if (work.isStop())
             {
                 pool.descheduled.put(workerId, this);
-                if (pool.isShuttingDown())
+                if (pool.shuttingDown)
                     return true;
             }
 
