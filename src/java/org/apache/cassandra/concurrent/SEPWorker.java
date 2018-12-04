@@ -74,10 +74,11 @@ final class SEPWorker extends AtomicReference<SEPWorker.Work> implements Runnabl
         {
             while (true)
             {
+                if (pool.isShuttingDown())
+                    return;
+
                 if (isSpinning() && !selfAssign())
                 {
-                    if (pool.isShuttingDown())
-                        return;
                     doWaitSpin();
                     continue;
                 }
@@ -178,10 +179,7 @@ final class SEPWorker extends AtomicReference<SEPWorker.Work> implements Runnabl
             {
                 pool.descheduled.put(workerId, this);
                 if (pool.isShuttingDown())
-                {
-                    pool.terminateWorkers(); // terminate self
                     return true;
-                }
             }
 
             // if we're currently stopped, and the new state is not a stop signal
