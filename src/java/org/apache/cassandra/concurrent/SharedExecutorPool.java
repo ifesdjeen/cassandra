@@ -137,7 +137,7 @@ public class SharedExecutorPool
         // it is possible to fail to assign SPINNING state, but this will only happen if there was work in the process
         // of being scheduled (in which case it will later enter the spinning state), or it had been otherwise asked
         // to enter the spinning state; in either case, it will terminate itself, or it may *again* be asked to stop -
-        // but in this case, it will itself invoke terminateWorkers again
+        // in which case it move to shut down from working state.
         Map.Entry<Long, SEPWorker> e;
         while (null != (e = descheduled.pollFirstEntry()))
             e.getValue().assign(Work.SPINNING, false);

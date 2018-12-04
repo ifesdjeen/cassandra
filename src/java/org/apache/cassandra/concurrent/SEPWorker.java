@@ -80,6 +80,7 @@ final class SEPWorker extends AtomicReference<SEPWorker.Work> implements Runnabl
                 if (isSpinning() && !selfAssign())
                 {
                     doWaitSpin();
+                    // we must "continue" here and re-check if pool is shutting down
                     continue;
                 }
 
@@ -121,8 +122,12 @@ final class SEPWorker extends AtomicReference<SEPWorker.Work> implements Runnabl
 
                 // return our work permit, and maybe signal shutdown
                 assigned.returnWorkPermit();
-                if (shutdown && assigned.getActiveTaskCount() == 0)
-                    assigned.shutdown.signalAll();
+                if (shutdown)
+                {
+                    if (assigned.getActiveTaskCount() == 0)
+                        assigned.shutdown.signalAll();
+                    return;
+                }
                 assigned = null;
 
                 // try to immediately reassign ourselves some work; if we fail, start spinning
