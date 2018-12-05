@@ -59,7 +59,7 @@ public class SEPExecutorTest
         sharedPool.shutdown();
         for (Thread thread : Thread.getAllStackTraces().keySet())
         {
-            if (thread.toString().contains(MAGIC))
+            if (thread.getName().contains(MAGIC))
             {
                 thread.join(100);
                 if (thread.isAlive())

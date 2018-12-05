@@ -80,7 +80,8 @@ final class SEPWorker extends AtomicReference<SEPWorker.Work> implements Runnabl
                 if (isSpinning() && !selfAssign())
                 {
                     doWaitSpin();
-                    // we must "continue" here and re-check if pool is shutting down
+                    // if the pool is terminating, but we have been assigned STOP_SIGNALLED, if we do not re-check
+                    // whether the pool is shutting down this thread will go to sleep and block forever
                     continue;
                 }
 

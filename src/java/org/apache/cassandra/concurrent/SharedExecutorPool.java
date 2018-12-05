@@ -131,19 +131,14 @@ public class SharedExecutorPool
     {
         assert shuttingDown;
 
-        // to terminate our workers, we only need to ensure they enter the SPINNING state,
-        // so that the pool.shuttingDown boolean is checked.
-
-        // it is possible to fail to assign SPINNING state, but this will only happen if there was work in the process
-        // of being scheduled (in which case it will later enter the spinning state), or it had been otherwise asked
-        // to enter the spinning state; in either case, it will terminate itself, or it may *again* be asked to stop -
-        // in which case it move to shut down from working state.
+        // To terminate our workers, we only need to unpark thread to make it runnable again,
+        // so that the pool.shuttingDown boolean is checked. If work was already in the process
+        // of being scheduled, worker will terminate upon running the task.
         Map.Entry<Long, SEPWorker> e;
         while (null != (e = descheduled.pollFirstEntry()))
             e.getValue().assign(Work.SPINNING, false);
 
         while (null != (e = spinning.pollFirstEntry()))
             LockSupport.unpark(e.getValue().thread);
-
     }
 }
