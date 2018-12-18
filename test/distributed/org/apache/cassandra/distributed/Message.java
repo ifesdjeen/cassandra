@@ -18,16 +18,17 @@
 
 package org.apache.cassandra.distributed;
 
+import org.apache.cassandra.distributed.api.IMessage;
 import org.apache.cassandra.locator.InetAddressAndPort;
 
 // a container for simplifying the method signature for per-instance message handling/delivery
-public class Message
+public class Message implements IMessage
 {
-    public final int verb;
-    public final byte[] bytes;
-    public final int id;
-    public final int version;
-    public final InetAddressAndPort from;
+    private final int verb;
+    private final byte[] bytes;
+    private final int id;
+    private final int version;
+    private final InetAddressAndPort from;
 
     public Message(int verb, byte[] bytes, int id, int version, InetAddressAndPort from)
     {
@@ -36,6 +37,36 @@ public class Message
         this.id = id;
         this.version = version;
         this.from = from;
+    }
+
+    @Override
+    public int verb()
+    {
+        return verb;
+    }
+
+    @Override
+    public byte[] bytes()
+    {
+        return bytes;
+    }
+
+    @Override
+    public int id()
+    {
+        return id;
+    }
+
+    @Override
+    public int version()
+    {
+        return version;
+    }
+
+    @Override
+    public InetAddressAndPort from()
+    {
+        return from;
     }
 }
 

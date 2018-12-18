@@ -46,6 +46,10 @@ import org.apache.cassandra.concurrent.NamedThreadFactory;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.db.Keyspace;
+import org.apache.cassandra.distributed.api.ICoordinator;
+import org.apache.cassandra.distributed.api.IInstance;
+import org.apache.cassandra.distributed.api.IMessageFilters;
+import org.apache.cassandra.distributed.api.ITestCluster;
 import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.net.MessagingService;
@@ -56,7 +60,7 @@ import org.apache.cassandra.utils.FBUtilities;
  *
  * All instances created under the same cluster will have a shared ClassLoader that'll preload
  * common classes required for configuration and communication (byte buffers, primitives, config
- * objects etc). Shared classes are listed in {@link InstanceClassLoader#commonClasses}.
+ * objects etc). Shared classes are listed in {@link InstanceClassLoader#sharedClassNames}.
  *
  * Each instance has its own class loader that will load logging, yaml libraries and all non-shared
  * Cassandra package classes. The rule of thumb is that we'd like to have all Cassandra-specific things
@@ -75,22 +79,22 @@ import org.apache.cassandra.utils.FBUtilities;
  * handlers for internode to have more control over it. Messaging is wired by passing verbs manually.
  * coordinator-handling code and hooks to the callbacks can be found in {@link Coordinator}.
  */
-public class TestCluster implements AutoCloseable
+public class TestCluster implements ITestCluster, AutoCloseable
 {
     private static ExecutorService exec = Executors.newCachedThreadPool(new NamedThreadFactory("cluster-async-tasks"));
 
     private final File root;
-    private final List<Instance> instances;
-    private final Coordinator coordinator;
-    private final Map<InetAddressAndPort, Instance> instanceMap;
+    private final List<IInstance> instances;
+    private final ICoordinator coordinator;
+    private final Map<InetAddressAndPort, IInstance> instanceMap;
     private final MessageFilters filters;
 
-    private TestCluster(File root, List<Instance> instances)
+    private TestCluster(File root, List<IInstance> instances)
     {
         this.root = root;
         this.instances = instances;
         this.instanceMap = new HashMap<>();
-        this.coordinator = new Coordinator(instances.get(0));
+        this.coordinator = instances.get(0).callOnInstance(Coordinator::new);
         this.filters = new MessageFilters(this);
     }
 
@@ -100,7 +104,7 @@ public class TestCluster implements AutoCloseable
                 .map(i -> exec.submit(() -> i.launch(this)))
                 .collect(Collectors.toList())
         );
-        for (Instance instance : instances)
+        for (IInstance instance : instances)
             instanceMap.put(instance.getBroadcastAddress(), instance);
     }
 
@@ -109,7 +113,7 @@ public class TestCluster implements AutoCloseable
         return instances.size();
     }
 
-    public Coordinator coordinator()
+    public ICoordinator coordinator()
     {
         return coordinator;
     }
@@ -117,19 +121,19 @@ public class TestCluster implements AutoCloseable
     /**
      * WARNING: we index from 1 here, for consistency with inet address!
      */
-    public Instance get(int idx)
+    public IInstance get(int idx)
     {
         return instances.get(idx - 1);
     }
 
-    public Stream<Instance> stream() { return instances.stream(); }
+    public Stream<IInstance> stream() { return instances.stream(); }
 
-    public Instance get(InetAddressAndPort addr)
+    public IInstance get(InetAddressAndPort addr)
     {
         return instanceMap.get(addr);
     }
 
-    MessageFilters filters()
+    public IMessageFilters filters()
     {
         return filters;
     }
@@ -141,7 +145,7 @@ public class TestCluster implements AutoCloseable
 
     public void disableAutoCompaction(String keyspace)
     {
-        for (Instance instance : instances)
+        for (IInstance instance : instances)
         {
             instance.runOnInstance(() -> {
                 for (ColumnFamilyStore cs : Keyspace.open(keyspace).getColumnFamilyStores())
@@ -180,7 +184,7 @@ public class TestCluster implements AutoCloseable
         public void waitForAgreement()
         {
             long start = System.nanoTime();
-            while (1 != instances.stream().map(Instance::getSchemaVersion).distinct().count())
+            while (1 != instances.stream().map(IInstance::getSchemaVersion).distinct().count())
             {
                 if (System.nanoTime() - start > TimeUnit.MINUTES.toNanos(1L))
                     throw new IllegalStateException("Schema agreement not reached");
@@ -206,12 +210,16 @@ public class TestCluster implements AutoCloseable
 
         IntFunction<ClassLoader> classLoaderFactory = InstanceClassLoader.createFactory(
                 (URLClassLoader) Thread.currentThread().getContextClassLoader());
-        List<Instance> instances = new ArrayList<>();
+        List<IInstance> instances = new ArrayList<>();
         long token = Long.MIN_VALUE + 1, increment = 2 * (Long.MAX_VALUE / nodeCount);
         for (int i = 0 ; i < nodeCount ; ++i)
         {
             InstanceConfig instanceConfig = InstanceConfig.generate(i + 1, root, String.valueOf(token));
-            instances.add(new Instance(instanceConfig, classLoaderFactory.apply(i + 1)));
+            ClassLoader classLoader = classLoaderFactory.apply(i + 1);
+            IInstance instance = new InvokableInstance(classLoader)
+                    .appliesOnInstance(Instance::new)
+                    .apply(instanceConfig, classLoader);
+            instances.add(instance);
             token += increment;
         }
 

@@ -18,7 +18,6 @@
 
 package org.apache.cassandra.distributed;
 
-
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
@@ -33,33 +32,27 @@ import org.apache.cassandra.transport.Server;
 import org.apache.cassandra.transport.messages.ResultMessage;
 import org.apache.cassandra.utils.ByteBufferUtil;
 
-
-public class Coordinator
+public class Coordinator implements org.apache.cassandra.distributed.api.ICoordinator
 {
-    final Instance instance;
-
-    public Coordinator(Instance instance)
+    @Override
+    public Object[][] execute(String query, Enum<?> consistencyLevelOrigin, Object... boundValues)
     {
-        this.instance = instance;
-    }
-
-    private static Object[][] coordinatorExecute(String query, int consistencyLevel, Object[] bindings)
-    {
+        ConsistencyLevel consistencyLevel = ConsistencyLevel.valueOf(consistencyLevelOrigin.name());
         CQLStatement prepared = QueryProcessor.getStatement(query, ClientState.forInternalCalls()).statement;
-        List<ByteBuffer> boundValues = new ArrayList<>();
-        for (Object binding : bindings)
+        List<ByteBuffer> boundBBValues = new ArrayList<>();
+        for (Object boundValue : boundValues)
         {
-            boundValues.add(ByteBufferUtil.objectToBytes(binding));
+            boundBBValues.add(ByteBufferUtil.objectToBytes(boundValue));
         }
 
         ResultMessage res = prepared.execute(QueryState.forInternalCalls(),
-                                             QueryOptions.create(ConsistencyLevel.fromCode(consistencyLevel),
-                                                                 boundValues,
-                                                                 false,
-                                                                 10,
-                                                                 null,
-                                                                 null,
-                                                                 Server.VERSION_4));
+                QueryOptions.create(consistencyLevel,
+                        boundBBValues,
+                        false,
+                        10,
+                        null,
+                        null,
+                        Server.VERSION_4));
 
         if (res != null && res.kind == ResultMessage.Kind.ROWS)
         {
@@ -69,10 +62,5 @@ public class Coordinator
         {
             return new Object[][]{};
         }
-    }
-
-    public Object[][] execute(String query, ConsistencyLevel consistencyLevel, Object... boundValues)
-    {
-        return instance.appliesOnInstance(Coordinator::coordinatorExecute).apply(query, consistencyLevel.code, boundValues);
     }
 }

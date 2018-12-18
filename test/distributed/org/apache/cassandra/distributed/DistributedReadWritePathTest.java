@@ -23,11 +23,6 @@ import org.junit.Test;
 
 import org.apache.cassandra.db.ConsistencyLevel;
 
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.locks.LockSupport;
-
-import static org.apache.cassandra.net.MessagingService.Verb.READ_REPAIR;
-
 public class DistributedReadWritePathTest extends DistributedTestBase
 {
     @Test

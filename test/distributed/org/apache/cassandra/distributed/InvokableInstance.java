@@ -18,6 +18,8 @@
 
 package org.apache.cassandra.distributed;
 
+import org.apache.cassandra.distributed.api.IInvokableInstance;
+
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -26,13 +28,8 @@ import java.io.ObjectOutputStream;
 import java.io.Serializable;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
-import java.util.concurrent.Callable;
-import java.util.function.BiConsumer;
-import java.util.function.BiFunction;
-import java.util.function.Consumer;
-import java.util.function.Function;
 
-public abstract class InvokableInstance
+public class InvokableInstance implements IInvokableInstance
 {
     private final ClassLoader classLoader;
     private final Method deserializeOnInstance;
@@ -50,40 +47,39 @@ public abstract class InvokableInstance
         }
     }
 
-    public interface SerializableCallable<T> extends Callable<T>, Serializable { public T call(); }
+    @Override
     public <T> SerializableCallable<T> callsOnInstance(SerializableCallable<T> call) { return (SerializableCallable<T>) transferOneObject(call); }
+    @Override
     public <T> T callOnInstance(SerializableCallable<T> call) { return callsOnInstance(call).call(); }
 
-    public interface SerializableRunnable extends Runnable, Serializable {}
+    @Override
     public SerializableRunnable runsOnInstance(SerializableRunnable run) { return (SerializableRunnable) transferOneObject(run); }
+    @Override
     public void runOnInstance(SerializableRunnable run) { runsOnInstance(run).run(); }
 
-    public interface SerializableConsumer<T> extends Consumer<T>, Serializable {}
+    @Override
     public <T> SerializableConsumer<T> acceptsOnInstance(SerializableConsumer<T> consumer) { return (SerializableConsumer<T>) transferOneObject(consumer); }
 
-    public interface SerializableBiConsumer<T1, T2> extends BiConsumer<T1, T2>, Serializable {}
+    @Override
     public <T1, T2> SerializableBiConsumer<T1, T2> acceptsOnInstance(SerializableBiConsumer<T1, T2> consumer) { return (SerializableBiConsumer<T1, T2>) transferOneObject(consumer); }
 
-    public interface SerializableFunction<I, O> extends Function<I, O>, Serializable {}
+    @Override
     public <I, O> SerializableFunction<I, O> appliesOnInstance(SerializableFunction<I, O> f) { return (SerializableFunction<I, O>) transferOneObject(f); }
 
-    public interface SerializableBiFunction<I1, I2, O> extends BiFunction<I1, I2, O>, Serializable {}
+    @Override
     public <I1, I2, O> SerializableBiFunction<I1, I2, O> appliesOnInstance(SerializableBiFunction<I1, I2, O> f) { return (SerializableBiFunction<I1, I2, O>) transferOneObject(f); }
 
-    public interface SerializableTriFunction<I1, I2, I3, O> extends Serializable
-    {
-        O apply(I1 i1, I2 i2, I3 i3);
-    }
+    @Override
     public <I1, I2, I3, O> SerializableTriFunction<I1, I2, I3, O> appliesOnInstance(SerializableTriFunction<I1, I2, I3, O> f) { return (SerializableTriFunction<I1, I2, I3, O>) transferOneObject(f); }
 
-    public interface InstanceFunction<I, O> extends SerializableBiFunction<Instance, I, O> {}
-
     // E must be a functional interface, and lambda must be implemented by a lambda function
+    @Override
     public <E extends Serializable> E invokesOnInstance(E lambda)
     {
         return (E) transferOneObject(lambda);
     }
 
+    @Override
     public Object transferOneObject(Object object)
     {
         byte[] bytes = serializeOneObject(object);
@@ -101,6 +97,20 @@ public abstract class InvokableInstance
         }
     }
 
+    @SuppressWarnings("unused") // called through method invocation
+    public static Object deserializeOneObject(byte[] bytes)
+    {
+        try (ByteArrayInputStream bais = new ByteArrayInputStream(bytes);
+             ObjectInputStream ois = new ObjectInputStream(bais);)
+        {
+            return ois.readObject();
+        }
+        catch (IOException | ClassNotFoundException e)
+        {
+            throw new RuntimeException(e);
+        }
+    }
+
     private byte[] serializeOneObject(Object object)
     {
         try (ByteArrayOutputStream baos = new ByteArrayOutputStream();
@@ -111,20 +121,6 @@ public abstract class InvokableInstance
             return baos.toByteArray();
         }
         catch (IOException e)
-        {
-            throw new RuntimeException(e);
-        }
-    }
-
-    @SuppressWarnings("unused") // called through method invocation
-    public static Object deserializeOneObject(byte[] bytes)
-    {
-        try (ByteArrayInputStream bais = new ByteArrayInputStream(bytes);
-             ObjectInputStream ois = new ObjectInputStream(bais);)
-        {
-            return ois.readObject();
-        }
-        catch (IOException | ClassNotFoundException e)
         {
             throw new RuntimeException(e);
         }
