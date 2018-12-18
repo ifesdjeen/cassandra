@@ -32,8 +32,12 @@ public interface IInstance extends IInvokableInstance
     void schemaChange(String query);
     IInstanceConfig config();
 
-    // these methods are not for external use, but for simplicity we leave them public and on the normal IInstance interface
+    void startup();
     void shutdown();
-    void launch(ITestCluster cluster);
+    // only to be invoked while the node is shutdown!
+    void setVersion(InstanceVersion version);
+
+    // these methods are not for external use, but for simplicity we leave them public and on the normal IInstance interface
+    void startup(ITestCluster cluster);
     void receiveMessage(Message message);
 }

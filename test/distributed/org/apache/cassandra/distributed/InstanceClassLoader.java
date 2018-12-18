@@ -33,7 +33,7 @@ import java.util.stream.Collectors;
 public class InstanceClassLoader extends URLClassLoader
 {
     // Classes that have to be shared between instances, for configuration or returning values
-    private final static Set<String> sharedClassNames = Arrays.stream(new Class[]
+    private static final Set<String> sharedClassNames = Arrays.stream(new Class[]
             {
                     Pair.class,
                     InstanceConfig.class,
@@ -65,16 +65,19 @@ public class InstanceClassLoader extends URLClassLoader
     private static final Predicate<String> isSharedClass = name ->
             sharedPackageNames.apply(name) || sharedClassNames.contains(name);
 
+    public static interface Factory
+    {
+        InstanceClassLoader create(int id, URL[] urls, ClassLoader sharedClassLoader);
+    }
+
     private final int id; // for debug purposes
     private final ClassLoader sharedClassLoader;
-    private final Predicate<String> isSharedClassName;
 
-    InstanceClassLoader(int id, URL[] urls, Predicate<String> isSharedClassName, ClassLoader sharedClassLoader)
+    InstanceClassLoader(int id, URL[] urls, ClassLoader sharedClassLoader)
     {
         super(urls, null);
         this.id = id;
         this.sharedClassLoader = sharedClassLoader;
-        this.isSharedClassName = isSharedClassName;
     }
 
     @Override
@@ -83,7 +86,7 @@ public class InstanceClassLoader extends URLClassLoader
         // Do not share:
         //  * yaml, which  is a rare exception because it does mess with loading org.cassandra...Config class instances
         //  * most of the rest of Cassandra classes (unless they were explicitly shared) g
-        if (isSharedClassName.apply(name))
+        if (isSharedClass.apply(name))
             return sharedClassLoader.loadClass(name);
 
         return loadClassInternal(name);
@@ -101,12 +104,6 @@ public class InstanceClassLoader extends URLClassLoader
 
             return c;
         }
-    }
-
-    public static IntFunction<ClassLoader> createFactory(URLClassLoader contextClassLoader)
-    {
-        URL[] urls = contextClassLoader.getURLs();
-        return id -> new InstanceClassLoader(id, urls, isSharedClass, contextClassLoader);
     }
 
 }

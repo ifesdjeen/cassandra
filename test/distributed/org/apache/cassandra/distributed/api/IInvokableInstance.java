@@ -54,4 +54,14 @@ public interface IInvokableInstance
 
     Object transferOneObject(Object object);
 
+    public static Consumer<IInvokableInstance> invokable(SerializableRunnable runnable)
+    {
+        return i -> i.runOnInstance(runnable);
+    }
+
+    public static <T> Function<IInvokableInstance, T> invokable(SerializableCallable<T> callable)
+    {
+        return i -> i.callOnInstance(callable);
+    }
+
 }

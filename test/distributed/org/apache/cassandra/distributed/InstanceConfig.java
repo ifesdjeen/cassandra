@@ -21,11 +21,13 @@ package org.apache.cassandra.distributed;
 import org.apache.cassandra.config.Config;
 import org.apache.cassandra.config.ParameterizedClass;
 import org.apache.cassandra.distributed.api.IInstanceConfig;
+import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.locator.SimpleSeedProvider;
 import org.apache.cassandra.locator.SimpleSnitch;
 
 import java.io.File;
 import java.lang.reflect.Field;
+import java.net.UnknownHostException;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Map;
@@ -43,6 +45,19 @@ public class InstanceConfig implements IInstanceConfig
     public UUID hostId() { return hostId; }
     private final Map<String, Object> params = new TreeMap<>();
 
+    @Override
+    public InetAddressAndPort broadcastAddress()
+    {
+        try
+        {
+            return InetAddressAndPort.getByName(getString("broadcast_address"));
+        }
+        catch (UnknownHostException e)
+        {
+            throw new IllegalStateException(e);
+        }
+    }
+
     private InstanceConfig(int num,
                            String broadcast_address,
                            String listen_address,
@@ -52,7 +67,7 @@ public class InstanceConfig implements IInstanceConfig
                            String[] data_file_directories,
                            String commitlog_directory,
                            String hints_directory,
-                           String cdc_directory,
+//                           String cdc_directory,
                            String initial_token)
     {
         this.num = num;
@@ -181,7 +196,7 @@ public class InstanceConfig implements IInstanceConfig
                                   new String[] { String.format("%s/node%d/data", root, nodeNum) },
                                   String.format("%s/node%d/commitlog", root, nodeNum),
                                   String.format("%s/node%d/hints", root, nodeNum),
-                                  String.format("%s/node%d/cdc", root, nodeNum),
+//                                  String.format("%s/node%d/cdc", root, nodeNum),
                                   token);
     }
 

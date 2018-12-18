@@ -53,6 +53,7 @@ import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.distributed.api.IInstance;
 import org.apache.cassandra.distributed.api.IInstanceConfig;
 import org.apache.cassandra.distributed.api.ITestCluster;
+import org.apache.cassandra.distributed.api.InstanceVersion;
 import org.apache.cassandra.gms.ApplicationState;
 import org.apache.cassandra.gms.Gossiper;
 import org.apache.cassandra.gms.VersionedValue;
@@ -194,14 +195,18 @@ public class Instance extends InvokableInstance implements IInstance
         }
     }
 
-    public void launch(ITestCluster cluster)
+    public void startup(ITestCluster cluster)
     {
         try
         {
             mkdirs();
             InstanceIDDefiner.instanceId = config.num();
 
-            startup();
+            Config.setOverrideLoadConfig(() -> loadConfig(config));
+            DatabaseDescriptor.setDaemonInitialized();
+            DatabaseDescriptor.createAllDirectories();
+            Keyspace.setInitialized();
+            SystemKeyspace.persistLocalMetadata();
             initializeRing(cluster);
             registerMockMessaging(cluster);
         }
@@ -222,16 +227,6 @@ public class Instance extends InvokableInstance implements IInstance
             new File(dir).mkdirs();
     }
 
-    private void startup()
-    {
-        Config.setOverrideLoadConfig(() -> loadConfig(config));
-        DatabaseDescriptor.setDaemonInitialized();
-        DatabaseDescriptor.createAllDirectories();
-        Keyspace.setInitialized();
-        SystemKeyspace.persistLocalMetadata();
-    }
-
-
     public static Config loadConfig(IInstanceConfig overrides)
     {
         Config config = new Config();
@@ -250,14 +245,7 @@ public class Instance extends InvokableInstance implements IInstance
         {
             IInstanceConfig config = cluster.get(i).config();
             initialTokens.add(config.getString("initial_token"));
-            try
-            {
-                hosts.add(InetAddressAndPort.getByName(config.getString("broadcast_address")));
-            }
-            catch (UnknownHostException e)
-            {
-                throw new RuntimeException(e);
-            }
+            hosts.add(config.broadcastAddress());
             hostIds.add(config.hostId());
         }
 
@@ -316,6 +304,18 @@ public class Instance extends InvokableInstance implements IInstance
                 Memtable.MEMORY_POOL::shutdown,
                 ScheduledExecutors::shutdownAndWait);
         Throwables.maybeFail(error);
+    }
+
+    @Override
+    public void setVersion(InstanceVersion version)
+    {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public void startup()
+    {
+        throw new UnsupportedOperationException();
     }
 
     private static Throwable runAndMergeThrowable(Throwable existing, ThrowingRunnable runnable)

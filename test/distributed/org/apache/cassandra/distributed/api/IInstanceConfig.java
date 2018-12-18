@@ -18,12 +18,15 @@
 
 package org.apache.cassandra.distributed.api;
 
+import org.apache.cassandra.locator.InetAddressAndPort;
+
 import java.util.UUID;
 
 public interface IInstanceConfig
 {
     int num();
     UUID hostId();
+    InetAddressAndPort broadcastAddress();
 
     // write the specified parameters to the Config object; we do not specify Config as the type to support a Config
     // from any ClassLoader; the implementation must not directly access any fields of the Object, or cast it, but

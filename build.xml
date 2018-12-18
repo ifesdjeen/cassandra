@@ -879,6 +879,16 @@
         </manifest>
       </jar>
 
+      <!-- Test Jar -->
+      <jar jarfile="${build.dir}/${ant.project.name}-test-${version}.jar">
+        <fileset dir="${test.classes}"/>
+        <manifest>
+          <attribute name="Implementation-Title" value="Cassandra"/>
+          <attribute name="Implementation-Version" value="${version}"/>
+          <attribute name="Implementation-Vendor" value="Apache"/>
+        </manifest>
+      </jar>
+
       <!-- Clientutil Jar -->
       <!-- TODO: write maven pom here -->
       <jar jarfile="${build.dir}/${ant.project.name}-clientutil-${version}.jar">
