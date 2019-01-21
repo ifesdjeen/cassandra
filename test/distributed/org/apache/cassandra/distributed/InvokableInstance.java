@@ -155,8 +155,7 @@ public abstract class InvokableInstance
             }
             catch (ExecutionException e)
             {
-                Throwables.maybeFail(e.getCause());
-                throw new AssertionError();
+                throw new RuntimeException(e.getCause());
             }
         };
     }
@@ -174,8 +173,7 @@ public abstract class InvokableInstance
             }
             catch (ExecutionException e)
             {
-                Throwables.maybeFail(e.getCause());
-                throw new AssertionError();
+                throw new RuntimeException(e.getCause());
             }
         };
     }
