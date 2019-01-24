@@ -29,12 +29,14 @@ public class LZ4Compressor implements Compressor
 
     private final net.jpountz.lz4.LZ4Compressor compressor;
     private final LZ4FastDecompressor decompressor;
+    private final boolean usesJNIDecompressor;
 
     private LZ4Compressor()
     {
         final LZ4Factory lz4Factory = LZ4Factory.fastestInstance();
         compressor = lz4Factory.fastCompressor();
         decompressor = lz4Factory.fastDecompressor();
+        usesJNIDecompressor = decompressor.getClass().getName().contains("LZ4JNIFastDecompressor");
     }
 
     public int maxCompressedLength(int length)
@@ -58,6 +60,10 @@ public class LZ4Compressor implements Compressor
     {
         try
         {
+
+            // CASSANDRA-XXXXX: If expected length is larger than it should be, native LZ4 library might segfault.
+            if (usesJNIDecompressor)
+                expectedDecompressedLength = 0;
             return decompressor.decompress(src, offset, expectedDecompressedLength);
         }
         catch (Throwable t)

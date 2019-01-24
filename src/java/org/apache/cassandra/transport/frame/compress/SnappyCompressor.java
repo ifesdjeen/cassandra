@@ -66,12 +66,11 @@ public class SnappyCompressor implements Compressor
     }
 
     @Override
-    public byte[] decompress(byte[] src, int offset, int length, int expectedDecompressedLength) throws IOException
+    public byte[] decompress(byte[] src, int offset, int length, int uncompressedLength) throws IOException
     {
         if (!Snappy.isValidCompressedBuffer(src, 0, length))
             throw new IOException("Provided frame does not appear to be Snappy compressed");
 
-        int uncompressedLength = Snappy.uncompressedLength(src);
         byte[] output = new byte[uncompressedLength];
         Snappy.uncompress(src, offset, length, output, 0);
         return output;

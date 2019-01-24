@@ -22,6 +22,8 @@ import java.io.IOException;
 import java.util.EnumSet;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
+import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.transport.CBUtil;
 import org.apache.cassandra.transport.Frame;
 import org.apache.cassandra.transport.ProtocolException;
@@ -98,23 +100,15 @@ public abstract class CompressingTransformer implements FrameBodyTransformer
         {
             byte[] input = CBUtil.readRawBytes(inputBuf);
             int uncompressedLength = ((input[0] & 0xFF) << 24)
-                                   | ((input[1] & 0xFF) << 16)
-                                   | ((input[2] & 0xFF) << 8)
-                                   | ((input[3] & 0xFF));
-            ByteBuf outputBuf = CBUtil.allocator.heapBuffer(uncompressedLength);
-            try
-            {
-                outputBuf.writeBytes(LZ4Compressor.INSTANCE.decompress(input,
-                                                                       Integer.BYTES,
-                                                                       input.length - Integer.BYTES,
-                                                                       uncompressedLength));
-                return outputBuf;
-            }
-            catch (IOException e)
-            {
-                outputBuf.release();
-                throw e;
-            }
+                                     | ((input[1] & 0xFF) << 16)
+                                     | ((input[2] & 0xFF) << 8)
+                                     | ((input[3] & 0xFF));
+
+            byte[] res = LZ4Compressor.INSTANCE.decompress(input,
+                                                           Integer.BYTES,
+                                                           input.length - Integer.BYTES,
+                                                           uncompressedLength);
+            return Unpooled.wrappedBuffer(res);
         }
     }
 
@@ -148,17 +142,9 @@ public abstract class CompressingTransformer implements FrameBodyTransformer
         {
             byte[] input = CBUtil.readRawBytes(inputBuf);
             int uncompressedLength = org.xerial.snappy.Snappy.uncompressedLength(input);
-            ByteBuf outputBuf = CBUtil.allocator.heapBuffer(uncompressedLength);
-            try
-            {
-                outputBuf.writeBytes(SnappyCompressor.INSTANCE.decompress(input, 0, input.length, uncompressedLength));
-                return outputBuf;
-            }
-            catch (IOException e)
-            {
-                outputBuf.release();
-                throw e;
-            }
+
+            byte[] bytes = SnappyCompressor.INSTANCE.decompress(input, 0, input.length, uncompressedLength);
+            return Unpooled.wrappedBuffer(bytes);
         }
     }
 }
