@@ -18,6 +18,10 @@
 
 package org.apache.cassandra.distributed;
 
+import java.nio.ByteBuffer;
+import java.util.ArrayList;
+import java.util.List;
+
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -30,20 +34,24 @@ public class DistributedReadWritePathTest extends DistributedTestBase
     @Test
     public void coordinatorRead() throws Throwable
     {
-        try (TestCluster cluster = createCluster(3))
+        for (int i = 0; i < 10; i++)
         {
-            cluster.schemaChange("CREATE TABLE " + KEYSPACE + ".tbl (pk int, ck int, v int, PRIMARY KEY (pk, ck)) WITH read_repair='none'");
+            System.out.println("i = " + i);
+            try (TestCluster cluster = createCluster(3))
+            {
+                cluster.schemaChange("CREATE TABLE " + KEYSPACE + ".tbl (pk int, ck int, v int, PRIMARY KEY (pk, ck)) WITH read_repair='none'");
 
-            cluster.get(1).executeInternal("INSERT INTO " + KEYSPACE + ".tbl (pk, ck, v) VALUES (1, 1, 1)");
-            cluster.get(2).executeInternal("INSERT INTO " + KEYSPACE + ".tbl (pk, ck, v) VALUES (1, 2, 2)");
-            cluster.get(3).executeInternal("INSERT INTO " + KEYSPACE + ".tbl (pk, ck, v) VALUES (1, 3, 3)");
+                cluster.get(1).executeInternal("INSERT INTO " + KEYSPACE + ".tbl (pk, ck, v) VALUES (1, 1, 1)");
+                cluster.get(2).executeInternal("INSERT INTO " + KEYSPACE + ".tbl (pk, ck, v) VALUES (1, 2, 2)");
+                cluster.get(3).executeInternal("INSERT INTO " + KEYSPACE + ".tbl (pk, ck, v) VALUES (1, 3, 3)");
 
-            assertRows(cluster.coordinator().execute("SELECT * FROM " + KEYSPACE + ".tbl WHERE pk = ?",
-                                                     ConsistencyLevel.ALL,
-                                                     1),
-                       row(1, 1, 1),
-                       row(1, 2, 2),
-                       row(1, 3, 3));
+                assertRows(cluster.coordinator().execute("SELECT * FROM " + KEYSPACE + ".tbl WHERE pk = ?",
+                                                         ConsistencyLevel.ALL,
+                                                         1),
+                           row(1, 1, 1),
+                           row(1, 2, 2),
+                           row(1, 3, 3));
+            }
         }
     }
 
