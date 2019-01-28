@@ -52,10 +52,10 @@ public class BufferPool
     public static long MEMORY_USAGE_THRESHOLD = DatabaseDescriptor.getFileCacheSizeInMB() * 1024L * 1024L;
 
     @VisibleForTesting
-    public static boolean ALLOCATE_ON_HEAP_WHEN_EXAHUSTED = DatabaseDescriptor.getBufferPoolUseHeapIfExhausted();
+    public static boolean ALLOCATE_ON_HEAP_WHEN_EXAHUSTED = true; //DatabaseDescriptor.getBufferPoolUseHeapIfExhausted();
 
     @VisibleForTesting
-    public static boolean DISABLED = Boolean.parseBoolean(System.getProperty("cassandra.test.disable_buffer_pool", "false"));
+    public static boolean DISABLED = true; //Boolean.parseBoolean(System.getProperty("cassandra.test.disable_buffer_pool", "false"));
 
     @VisibleForTesting
     public static boolean DEBUG = false;
