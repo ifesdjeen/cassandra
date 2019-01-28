@@ -170,20 +170,22 @@ jobs:
             echo "***java tests***"
 
             # get all of our unit test filenames
-            set -eo pipefail && circleci tests glob "$HOME/cassandra/test/unit/**/*.java" > /tmp/all_java_unit_tests.txt	    
-            # append distributed tests
-            set -eo pipefail && circleci tests glob "$HOME/cassandra/test/distributed/**/*.java" | cut -c 37-1000000 | grep "Test\.java$" > /tmp/java_tests_${CIRCLE_NODE_TOTAL - 1}_final.txt
+            set -eo pipefail && circleci tests glob "$HOME/cassandra/test/unit/**/*.java" > /tmp/all_java_unit_tests.txt
+            export LAST_NODE=$((CIRCLE_NODE_TOTAL - 1))
 
-            # split up the unit tests into groups based on the number of containers we have
-            set -eo pipefail && circleci tests split --split-by=timings --timings-type=filename --index=${CIRCLE_NODE_INDEX} --total=${CIRCLE_NODE_TOTAL - 1} /tmp/all_java_unit_tests.txt > /tmp/java_tests_${CIRCLE_NODE_INDEX}.txt
-            set -eo pipefail && cat /tmp/java_tests_${CIRCLE_NODE_INDEX}.txt | cut -c 37-1000000 | grep "Test\.java$" > /tmp/java_tests_${CIRCLE_NODE_INDEX}_final.txt
-            echo "** /tmp/java_tests_${CIRCLE_NODE_INDEX}_final.txt"
-            cat /tmp/java_tests_${CIRCLE_NODE_INDEX}_final.txt
-
-            # set -eo pipefail && circleci tests split --split-by=timings --timings-type=filename --index=${CIRCLE_NODE_INDEX} --total=${CIRCLE_NODE_TOTAL} /tmp/all_java_distributed_tests.txt > /tmp/java_dtests_${CIRCLE_NODE_INDEX}.txt
-            # set +eo pipefail && cat /tmp/java_dtests_${CIRCLE_NODE_INDEX}.txt | cut -c 44-1000000 | grep "Test\.java$" > /tmp/java_dtests_${CIRCLE_NODE_INDEX}_final.txt
-            # echo "** /tmp/java_dtests_${CIRCLE_NODE_INDEX}_final.txt"
-            # cat /tmp/java_dtests_${CIRCLE_NODE_INDEX}_final.txt
+            if [ "$CIRCLE_NODE_INDEX" -eq "$LAST_NODE" ]
+            then
+              # append distributed tests
+              set -eo pipefail && circleci tests glob "$HOME/cassandra/test/distributed/**/*.java" | cut -c 44-1000000 | grep "Test\.java$" > /tmp/java_dtests_${LAST_NODE}_final.txt
+              echo "** /tmp/java_dtests_${LAST_NODE}_final.txt"
+              cat /tmp/java_dtests_${LAST_NODE}_final.txt
+            else
+              # split up the unit tests into groups based on the number of containers we have
+              set -eo pipefail && circleci tests split --split-by=timings --timings-type=filename --index=${CIRCLE_NODE_INDEX} --total=${LAST_NODE} /tmp/all_java_unit_tests.txt > /tmp/java_tests_${CIRCLE_NODE_INDEX}.txt
+              set -eo pipefail && cat /tmp/java_tests_${CIRCLE_NODE_INDEX}.txt | cut -c 37-1000000 | grep "Test\.java$" > /tmp/java_tests_${CIRCLE_NODE_INDEX}_final.txt
+              echo "** /tmp/java_tests_${CIRCLE_NODE_INDEX}_final.txt"
+              cat /tmp/java_tests_${CIRCLE_NODE_INDEX}_final.txt
+            fi
 
       - run:
          name: Run Unit Tests
