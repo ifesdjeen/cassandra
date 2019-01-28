@@ -197,7 +197,8 @@ jobs:
             time mv ~/cassandra /tmp
             cd /tmp/cassandra
             echo "org/apache/cassandra/distributed/DistributedReadWritePathTest.java" > testlist.txt
-            for i in {1..10}; do ant testclasslist -Dtest.classlistfile=./testlist.txt -Dtest.classlistprefix=distributed; done; 
+            # for i in {1..10}; do ant testclasslist -Dtest.classlistfile=./testlist.txt -Dtest.classlistprefix=distributed; done;
+            ant testclasslist -Dtest.classlistfile=./testlist.txt -Dtest.classlistprefix=distributed
          no_output_timeout: 15m
       - store_test_results:
             path: /tmp/cassandra/build/test/output/

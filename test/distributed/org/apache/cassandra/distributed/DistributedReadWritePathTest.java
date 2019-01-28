@@ -34,9 +34,8 @@ public class DistributedReadWritePathTest extends DistributedTestBase
     @Test
     public void coordinatorRead() throws Throwable
     {
-        for (int i = 0; i < 10; i++)
+        for (int i = 0; i < 2; i++)
         {
-            System.out.println("i = " + i);
             try (TestCluster cluster = createCluster(3))
             {
                 cluster.schemaChange("CREATE TABLE " + KEYSPACE + ".tbl (pk int, ck int, v int, PRIMARY KEY (pk, ck)) WITH read_repair='none'");
