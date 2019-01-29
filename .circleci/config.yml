@@ -197,7 +197,7 @@ jobs:
             time mv ~/cassandra /tmp
             cd /tmp/cassandra
             echo "org/apache/cassandra/distributed/DistributedReadWritePathTest.java" > testlist.txt
-            for i in {1..10}; do ant test-distributed; done;
+            ant test-distributed
 
          no_output_timeout: 15m
       - store_test_results:
