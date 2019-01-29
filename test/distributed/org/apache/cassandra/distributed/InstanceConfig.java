@@ -36,10 +36,10 @@ public class InstanceConfig implements Serializable
     public final String commitlog_directory;
     public final String hints_directory;
     public final String cdc_directory;
-    public final int concurrent_writes = 2;
-    public final int concurrent_counter_writes = 2;
-    public final int concurrent_materialized_view_writes = 2;
-    public final int concurrent_reads = 2;
+    public final int concurrent_writes = 1;
+    public final int concurrent_counter_writes = 1;
+    public final int concurrent_materialized_view_writes = 1;
+    public final int concurrent_reads = 1;
     public final int memtable_flush_writers = 1;
     public final int concurrent_compactors = 1;
     public final int memtable_heap_space_in_mb = 10;

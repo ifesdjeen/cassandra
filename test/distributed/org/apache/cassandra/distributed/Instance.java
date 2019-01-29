@@ -273,6 +273,14 @@ public class Instance extends InvokableInstance
         config.concurrent_compactors = overrides.concurrent_compactors;
         config.memtable_heap_space_in_mb = overrides.memtable_heap_space_in_mb;
         config.initial_token = overrides.initial_token;
+        config.key_cache_size_in_mb = 1L;
+        config.prepared_statements_cache_size_mb = 1L;
+        config.row_cache_size_in_mb = 1L;
+        config.counter_cache_size_in_mb = 1L;
+        config.file_cache_size_in_mb = 10;
+        config.memtable_offheap_space_in_mb = 10;
+        config.compaction_throughput_mb_per_sec = 1;
+
         return config;
     }
 
