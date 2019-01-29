@@ -88,7 +88,7 @@ public class InstanceClassLoader extends URLClassLoader
         }
     }
 
-    public static IntFunction<ClassLoader> createFactory(URLClassLoader contextClassLoader)
+    public static IntFunction<InstanceClassLoader> createFactory(URLClassLoader contextClassLoader)
     {
         Set<String> commonClassNames = new HashSet<>();
         for (Class<?> k : commonClasses)

@@ -42,7 +42,6 @@ import com.google.common.collect.Sets;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.apache.cassandra.concurrent.NamedThreadFactory;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.db.Keyspace;
@@ -239,7 +238,7 @@ public class TestCluster implements AutoCloseable
         root.mkdirs();
         setupLogging(root);
 
-        IntFunction<ClassLoader> classLoaderFactory = InstanceClassLoader.createFactory(
+        IntFunction<InstanceClassLoader> classLoaderFactory = InstanceClassLoader.createFactory(
                 (URLClassLoader) Thread.currentThread().getContextClassLoader());
         List<Instance> instances = new ArrayList<>();
         long token = Long.MIN_VALUE + 1, increment = 2 * (Long.MAX_VALUE / nodeCount);
@@ -278,7 +277,16 @@ public class TestCluster implements AutoCloseable
     public void close()
     {
         List<Future<?>> futures = instances.stream()
-                .map(i -> i.isolatedExecutor.submit(i::shutdown))
+                .map(i -> i.isolatedExecutor.submit(() -> {
+                    try
+                    {
+                        i.close();
+                    }
+                    catch (IOException e)
+                    {
+                        logger.error(e.getMessage(), e);
+                    }
+                }))
                 .collect(Collectors.toList());
 
         // Make sure to only delete directory when threads are stopped
