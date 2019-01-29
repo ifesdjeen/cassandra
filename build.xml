@@ -1861,7 +1861,17 @@
     <testparallel testdelegate="testlist"/>
   </target>
 
-    <!-- run microbenchmarks suite -->
+  <target name="test-distributed" depends="build-test" description="Execute unit tests">
+    <testmacro inputdir="${test.distributed.src}" timeout="${test.timeout}" forkmode="once">
+      <jvmarg value="-Dcassandra.ring_delay_ms=1000"/>
+      <jvmarg value="-Dcassandra.tolerate_sstable_size=true"/>
+      <jvmarg value="-Djava.io.tmpdir=${tmp.dir}"/>
+      <jvmarg value="-Dcassandra.skip_sync=true" />
+    </testmacro>
+    <fileset dir="${test.distributed.src}" />
+  </target>
+
+  <!-- run microbenchmarks suite -->
   <target name="microbench" depends="build-jmh">
       <java classname="org.openjdk.jmh.Main"
             fork="true"
