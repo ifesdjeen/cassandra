@@ -238,8 +238,7 @@ public class TestCluster implements AutoCloseable
         root.mkdirs();
         setupLogging(root);
 
-        IntFunction<InstanceClassLoader> classLoaderFactory = InstanceClassLoader.createFactory(
-                (URLClassLoader) Thread.currentThread().getContextClassLoader());
+        IntFunction<InstanceClassLoader> classLoaderFactory = InstanceClassLoader.createFactory(Thread.currentThread().getContextClassLoader());
         List<Instance> instances = new ArrayList<>();
         long token = Long.MIN_VALUE + 1, increment = 2 * (Long.MAX_VALUE / nodeCount);
         for (int i = 0 ; i < nodeCount ; ++i)
