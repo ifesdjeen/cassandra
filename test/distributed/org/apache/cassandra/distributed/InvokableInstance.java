@@ -39,16 +39,17 @@ import java.util.function.Function;
 import org.apache.cassandra.concurrent.NamedThreadFactory;
 import org.apache.cassandra.utils.Throwables;
 
-public abstract class InvokableInstance
+public abstract class InvokableInstance implements Closeable
 {
     protected final ExecutorService isolatedExecutor;
-    private final ClassLoader classLoader;
+    private final InstanceClassLoader classLoader;
     private final Method deserializeOnInstance;
 
-    public InvokableInstance(String name, ClassLoader classLoader)
+    public InvokableInstance(String name, InstanceClassLoader classLoader)
     {
         this.isolatedExecutor = Executors.newCachedThreadPool(new NamedThreadFactory(name, Thread.NORM_PRIORITY, classLoader, new ThreadGroup(name)));
         this.classLoader = classLoader;
+
         try
         {
             this.deserializeOnInstance = classLoader.loadClass(InvokableInstance.class.getName()).getDeclaredMethod("deserializeOneObject", byte[].class);
@@ -205,9 +206,10 @@ public abstract class InvokableInstance
         return (a, b, c) -> invokesOnExecutor(() -> f.apply(a, b, c), invokeOn).call();
     }
 
-    void shutdown()
+    public void close() throws IOException
     {
         isolatedExecutor.shutdownNow();
+        classLoader.close();
     }
 
 }

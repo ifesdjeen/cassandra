@@ -87,7 +87,7 @@ public class Instance extends InvokableInstance
 {
     public final InstanceConfig config;
 
-    public Instance(InstanceConfig config, ClassLoader classLoader)
+    public Instance(InstanceConfig config, InstanceClassLoader classLoader)
     {
         super("node-" + config.num, classLoader);
         this.config = config;
@@ -336,7 +336,7 @@ public class Instance extends InvokableInstance
         });
     }
 
-    void shutdown()
+    public void close() throws IOException
     {
         acceptsOnInstance((ExecutorService executor) -> {
             Throwable error = null;
@@ -370,7 +370,7 @@ public class Instance extends InvokableInstance
             loggerContext.stop();
             Throwables.maybeFail(error);
         }).accept(isolatedExecutor);
-        super.shutdown();
+        super.close();
     }
 
     private static void shutdownAndWait(ExecutorService executor)
