@@ -278,7 +278,7 @@ public class Instance extends InvokableInstance
         config.row_cache_size_in_mb = 1L;
         config.counter_cache_size_in_mb = 1L;
         config.file_cache_size_in_mb = 10;
-        config.memtable_offheap_space_in_mb = 10;
+        config.memtable_offheap_space_in_mb = 1;
         config.compaction_throughput_mb_per_sec = 1;
 
         return config;
