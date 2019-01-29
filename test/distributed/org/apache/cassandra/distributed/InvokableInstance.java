@@ -47,7 +47,7 @@ public abstract class InvokableInstance
 
     public InvokableInstance(String name, ClassLoader classLoader)
     {
-        this.isolatedExecutor = Executors.newCachedThreadPool(new NamedThreadFactory(name, Thread.NORM_PRIORITY, classLoader, new ThreadGroup(name)));
+        this.isolatedExecutor = Executors.newCachedThreadPool(new NamedThreadFactory(name, Thread.NORM_PRIORITY, null, new ThreadGroup(name)));
         this.classLoader = classLoader;
         try
         {
