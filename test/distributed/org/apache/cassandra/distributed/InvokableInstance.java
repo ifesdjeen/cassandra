@@ -20,17 +20,20 @@ package org.apache.cassandra.distributed;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
-import java.io.Closeable;
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.net.URLClassLoader;
 import java.util.concurrent.Callable;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
@@ -70,6 +73,7 @@ public abstract class InvokableInstance
 
     public interface SerializableConsumer<T> extends Consumer<T>, Serializable {}
     public <T> Consumer<T> acceptsOnInstance(SerializableConsumer<T> consumer) { return invokesOnExecutor((SerializableConsumer<T>) transferOneObject(consumer), isolatedExecutor); }
+    public <T> Function<T, CompletableFuture<?>> asyncAcceptsOnInstance(SerializableConsumer<T> consumer) { return asyncInvokesOnExecutor((SerializableConsumer<T>) transferOneObject(consumer), isolatedExecutor); }
 
     public interface SerializableBiConsumer<T1, T2> extends BiConsumer<T1, T2>, Serializable {}
     public <T1, T2> BiConsumer<T1, T2> acceptsOnInstance(SerializableBiConsumer<T1, T2> consumer) { return invokesOnExecutor((SerializableBiConsumer<T1, T2>) transferOneObject(consumer), isolatedExecutor); }
@@ -180,6 +184,11 @@ public abstract class InvokableInstance
         };
     }
 
+    private static <A> Function<A, CompletableFuture<?>> asyncInvokesOnExecutor(SerializableConsumer<A> consumer, ExecutorService invokeOn)
+    {
+        return (a) -> CompletableFuture.runAsync(() -> consumer.accept(a), invokeOn);
+    }
+
     private static <A> Consumer<A> invokesOnExecutor(SerializableConsumer<A> consumer, ExecutorService invokeOn)
     {
         return (a) -> invokesOnExecutor(() -> consumer.accept(a), invokeOn).run();
@@ -205,9 +214,29 @@ public abstract class InvokableInstance
         return (a, b, c) -> invokesOnExecutor(() -> f.apply(a, b, c), invokeOn).call();
     }
 
-    void shutdown()
+    public interface ThrowingRunnable
     {
-        isolatedExecutor.shutdownNow();
+        public void run() throws Throwable;
+
+        public static Runnable toRunnable(ThrowingRunnable runnable)
+        {
+            return () -> {
+                try
+                {
+                    runnable.run();
+                }
+                catch (Throwable throwable)
+                {
+                    throw new RuntimeException(throwable);
+                }
+            };
+        }
     }
 
+    Future<Void> shutdown()
+    {
+        isolatedExecutor.shutdownNow();
+        ThrowingRunnable.toRunnable(((URLClassLoader) classLoader)::close).run();
+        return CompletableFuture.runAsync(ThrowingRunnable.toRunnable(() -> isolatedExecutor.awaitTermination(60, TimeUnit.SECONDS)));
+    }
 }

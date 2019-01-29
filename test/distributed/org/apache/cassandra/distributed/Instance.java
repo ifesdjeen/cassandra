@@ -25,6 +25,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
@@ -33,6 +34,7 @@ import java.util.function.BiConsumer;
 import org.slf4j.LoggerFactory;
 
 import ch.qos.logback.classic.LoggerContext;
+import io.netty.util.concurrent.GlobalEventExecutor;
 import org.apache.cassandra.batchlog.BatchlogManager;
 import org.apache.cassandra.concurrent.ScheduledExecutors;
 import org.apache.cassandra.concurrent.SharedExecutorPool;
@@ -240,6 +242,7 @@ public class Instance extends InvokableInstance
             // (e.g. acceptGroup, inboundGroup, outboundGroup, etc ...). We can remove this
             // once we actually use the MessagingService to communicate between nodes
             NettyFactory.instance.getClass();
+            GlobalEventExecutor.INSTANCE.getClass();
         }).accept(config);
     }
 
@@ -336,9 +339,9 @@ public class Instance extends InvokableInstance
         });
     }
 
-    void shutdown()
+    Future<Void> shutdown()
     {
-        acceptsOnInstance((ExecutorService executor) -> {
+        CompletableFuture<?> future = asyncAcceptsOnInstance((ExecutorService executor) -> {
             Throwable error = null;
             error = parallelRun(error, executor,
                     Gossiper.instance::stop,
@@ -368,9 +371,12 @@ public class Instance extends InvokableInstance
             );
             LoggerContext loggerContext = (LoggerContext) LoggerFactory.getILoggerFactory();
             loggerContext.stop();
+
             Throwables.maybeFail(error);
-        }).accept(isolatedExecutor);
-        super.shutdown();
+            BufferPool.globalPool.reset();
+        }).apply(isolatedExecutor);
+
+        return future.thenRunAsync(super::shutdown);
     }
 
     private static void shutdownAndWait(ExecutorService executor)
@@ -418,10 +424,5 @@ public class Instance extends InvokableInstance
             }
         }
         return accumulate;
-    }
-
-    public static interface ThrowingRunnable
-    {
-        public void run() throws Throwable;
     }
 }

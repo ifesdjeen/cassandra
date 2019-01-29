@@ -1299,7 +1299,8 @@
         <jvmarg line="-javaagent:${basedir}/lib/jamm-${jamm.version}.jar ${additionalagent}" />
         <jvmarg value="-ea"/>
         <jvmarg value="-Dcassandra.debugrefcount=true"/>
-        <jvmarg value="-Xss256k"/>
+        <jvmarg value="-Xss512M"/>
+        <jvmarg value="-Xmx512M" />
         <!-- When we do classloader manipulation SoftReferences can cause memory leaks
              that can OOM our test runs. The next two settings informs our GC
              algorithm to limit the metaspace size and clean up SoftReferences
