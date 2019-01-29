@@ -2480,7 +2480,7 @@ public abstract class SSTableReader extends SSTable implements SelfRefCounted<SS
         if (syncExecutor != null)
         {
             syncExecutor.shutdownNow();
-            syncExecutor.awaitTermination(0, TimeUnit.SECONDS);
+            syncExecutor.awaitTermination(60, TimeUnit.SECONDS);
         }
         resetTidying();
     }

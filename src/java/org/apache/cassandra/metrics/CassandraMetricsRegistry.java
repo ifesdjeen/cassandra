@@ -42,7 +42,7 @@ import org.apache.cassandra.utils.MBeanWrapper;
 public class CassandraMetricsRegistry extends MetricRegistry
 {
     public static final CassandraMetricsRegistry Metrics = new CassandraMetricsRegistry();
-    private final Map<String, ThreadPoolMetrics> threadPoolMetrics = new ConcurrentHashMap<>();
+    public final Map<String, ThreadPoolMetrics> threadPoolMetrics = new ConcurrentHashMap<>();
 
     private final MBeanWrapper mBeanServer = MBeanWrapper.instance;
 

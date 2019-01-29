@@ -42,7 +42,7 @@ public class InstanceConfig implements Serializable
     public final int concurrent_reads = 2;
     public final int memtable_flush_writers = 1;
     public final int concurrent_compactors = 1;
-    public final int memtable_heap_space_in_mb = 10;
+    public final int memtable_heap_space_in_mb = 1;
     public final String initial_token;
 
     private InstanceConfig(int num,

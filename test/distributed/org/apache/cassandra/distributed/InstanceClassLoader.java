@@ -21,9 +21,13 @@ package org.apache.cassandra.distributed;
 import com.google.common.base.Predicate;
 import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.utils.Pair;
+import org.apache.tools.ant.util.SplitClassLoader;
 
+import java.io.File;
+import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLClassLoader;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.function.IntFunction;
@@ -88,13 +92,36 @@ public class InstanceClassLoader extends URLClassLoader
         }
     }
 
-    public static IntFunction<ClassLoader> createFactory(URLClassLoader contextClassLoader)
+    public static IntFunction<InstanceClassLoader> createFactory(ClassLoader contextClassLoader)
     {
         Set<String> commonClassNames = new HashSet<>();
         for (Class<?> k : commonClasses)
             commonClassNames.add(k.getName());
 
-        URL[] urls = contextClassLoader.getURLs();
+        URL[] urls;
+//        if (contextClassLoader instanceof SplitClassLoader)
+//        {
+//            String classpath = ((SplitClassLoader) contextClassLoader).getClasspath();
+//            ArrayList<URL> tmp = new ArrayList<>();
+//
+//            for (String s : classpath.split(":"))
+//            {
+//                try
+//                {
+//                    tmp.add(new File(s).toPath().toUri().toURL());
+//                }
+//                catch (MalformedURLException e)
+//                {
+//                    throw new RuntimeException(e);
+//                }
+//            }
+//            urls = new URL[tmp.size()];
+//            tmp.toArray(urls);
+//        }
+//        else
+//        {
+            urls = ((URLClassLoader) contextClassLoader).getURLs();
+//        }
         return id -> new InstanceClassLoader(id, urls, commonClassNames::contains, contextClassLoader);
     }
 

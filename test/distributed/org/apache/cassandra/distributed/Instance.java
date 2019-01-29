@@ -24,6 +24,7 @@ import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
@@ -33,6 +34,8 @@ import java.util.function.BiConsumer;
 import org.slf4j.LoggerFactory;
 
 import ch.qos.logback.classic.LoggerContext;
+import com.codahale.metrics.Metric;
+import com.codahale.metrics.MetricFilter;
 import org.apache.cassandra.batchlog.BatchlogManager;
 import org.apache.cassandra.concurrent.ScheduledExecutors;
 import org.apache.cassandra.concurrent.SharedExecutorPool;
@@ -63,6 +66,9 @@ import org.apache.cassandra.io.util.DataOutputBuffer;
 import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.locator.SimpleSeedProvider;
 import org.apache.cassandra.locator.SimpleSnitch;
+import org.apache.cassandra.metrics.CassandraMetricsRegistry;
+import org.apache.cassandra.metrics.TableMetrics;
+import org.apache.cassandra.metrics.ThreadPoolMetrics;
 import org.apache.cassandra.net.IMessageSink;
 import org.apache.cassandra.net.MessageDeliveryTask;
 import org.apache.cassandra.net.MessageIn;
@@ -87,7 +93,7 @@ public class Instance extends InvokableInstance
 {
     public final InstanceConfig config;
 
-    public Instance(InstanceConfig config, ClassLoader classLoader)
+    public Instance(InstanceConfig config, InstanceClassLoader classLoader)
     {
         super("node-" + config.num, classLoader);
         this.config = config;
@@ -273,6 +279,14 @@ public class Instance extends InvokableInstance
         config.concurrent_compactors = overrides.concurrent_compactors;
         config.memtable_heap_space_in_mb = overrides.memtable_heap_space_in_mb;
         config.initial_token = overrides.initial_token;
+        config.key_cache_size_in_mb = 1L;
+        config.prepared_statements_cache_size_mb = 1L;
+        config.row_cache_size_in_mb = 1L;
+        config.counter_cache_size_in_mb = 1L;
+        config.file_cache_size_in_mb = 10;
+        config.memtable_offheap_space_in_mb = 1;
+        config.compaction_throughput_mb_per_sec = 1;
+
         return config;
     }
 
@@ -336,7 +350,7 @@ public class Instance extends InvokableInstance
         });
     }
 
-    void shutdown()
+    public void close() throws IOException
     {
         acceptsOnInstance((ExecutorService executor) -> {
             Throwable error = null;
@@ -369,8 +383,18 @@ public class Instance extends InvokableInstance
             LoggerContext loggerContext = (LoggerContext) LoggerFactory.getILoggerFactory();
             loggerContext.stop();
             Throwables.maybeFail(error);
+
+            CassandraMetricsRegistry.Metrics.removeMatching(MetricFilter.ALL);
+            for (ThreadPoolMetrics m : CassandraMetricsRegistry.Metrics.allThreadPoolMetrics())
+                m.release();
+            CassandraMetricsRegistry.Metrics.threadPoolMetrics.clear();
+            TableMetrics.allTableMetrics.clear();
+            TableMetrics.all.clear();
+            MessagingService.instance().metrics.dcLatency.clear();
+            MessagingService.instance().metrics.queueWaitLatency.clear();
         }).accept(isolatedExecutor);
-        super.shutdown();
+
+        super.close();
     }
 
     private static void shutdownAndWait(ExecutorService executor)

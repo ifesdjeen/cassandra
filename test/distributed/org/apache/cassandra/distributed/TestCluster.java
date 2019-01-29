@@ -42,7 +42,11 @@ import com.google.common.collect.Sets;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import io.netty.util.concurrent.FastThreadLocal;
+import io.netty.util.concurrent.FastThreadLocalThread;
+import io.netty.util.internal.InternalThreadLocalMap;
 import org.apache.cassandra.concurrent.NamedThreadFactory;
+
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.db.Keyspace;
@@ -239,8 +243,7 @@ public class TestCluster implements AutoCloseable
         root.mkdirs();
         setupLogging(root);
 
-        IntFunction<ClassLoader> classLoaderFactory = InstanceClassLoader.createFactory(
-                (URLClassLoader) Thread.currentThread().getContextClassLoader());
+        IntFunction<InstanceClassLoader> classLoaderFactory = InstanceClassLoader.createFactory(Thread.currentThread().getContextClassLoader());
         List<Instance> instances = new ArrayList<>();
         long token = Long.MIN_VALUE + 1, increment = 2 * (Long.MAX_VALUE / nodeCount);
         for (int i = 0 ; i < nodeCount ; ++i)
@@ -278,13 +281,34 @@ public class TestCluster implements AutoCloseable
     public void close()
     {
         List<Future<?>> futures = instances.stream()
-                .map(i -> i.isolatedExecutor.submit(i::shutdown))
+                .map(i -> i.isolatedExecutor.submit(() -> {
+                    try
+                    {
+                        i.close();
+                    }
+                    catch (IOException e)
+                    {
+                        logger.error(e.getMessage(), e);
+                    }
+                }))
                 .collect(Collectors.toList());
 
         // Make sure to only delete directory when threads are stopped
         FBUtilities.waitOnFutures(futures, 60, TimeUnit.SECONDS);
         FileUtils.deleteRecursive(root);
 
+                Set<Thread> threadSet = Thread.getAllStackTraces().keySet();
+                for (Thread thread : threadSet)
+                {
+                    if (thread instanceof FastThreadLocalThread)
+                        ((FastThreadLocalThread)thread).setThreadLocalMap(null);
+                }
+
+                InternalThreadLocalMap.remove();
+                InternalThreadLocalMap.destroy();
+
+                FastThreadLocal.removeAll();
+                FastThreadLocal.destroy();
         //withThreadLeakCheck(futures);
         System.gc();
     }
