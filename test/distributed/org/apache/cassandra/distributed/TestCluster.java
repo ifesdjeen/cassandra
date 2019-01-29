@@ -42,7 +42,6 @@ import com.google.common.collect.Sets;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.apache.cassandra.concurrent.NamedThreadFactory;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.db.Keyspace;
@@ -278,7 +277,7 @@ public class TestCluster implements AutoCloseable
     public void close()
     {
         List<Future<?>> futures = instances.stream()
-                .map(i -> i.isolatedExecutor.submit(i::shutdown))
+                .map(Instance::shutdown)
                 .collect(Collectors.toList());
 
         // Make sure to only delete directory when threads are stopped
@@ -286,6 +285,7 @@ public class TestCluster implements AutoCloseable
         FileUtils.deleteRecursive(root);
 
         //withThreadLeakCheck(futures);
+        System.runFinalization();
         System.gc();
     }
 

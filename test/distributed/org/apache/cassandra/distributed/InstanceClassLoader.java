@@ -19,6 +19,8 @@
 package org.apache.cassandra.distributed;
 
 import com.google.common.base.Predicate;
+
+import io.netty.util.concurrent.GlobalEventExecutor;
 import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.utils.Pair;
 
@@ -37,6 +39,7 @@ public class InstanceClassLoader extends URLClassLoader
                     InstanceConfig.class,
                     Message.class,
                     InetAddressAndPort.class,
+                    GlobalEventExecutor.class,
                     InvokableInstance.SerializableBiConsumer.class,
                     InvokableInstance.SerializableBiFunction.class,
                     InvokableInstance.SerializableCallable.class,
