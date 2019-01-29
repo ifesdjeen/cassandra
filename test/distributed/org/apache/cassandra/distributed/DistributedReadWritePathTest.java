@@ -69,8 +69,8 @@ public class DistributedReadWritePathTest extends DistributedTestBase
         }
     }
 
-//    @Test
-    private void readRepairTest() throws Throwable
+    @Test
+    public void readRepairTest() throws Throwable
     {
         try (TestCluster cluster = createCluster(3))
         {
