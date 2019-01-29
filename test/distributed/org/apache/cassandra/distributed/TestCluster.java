@@ -42,6 +42,11 @@ import com.google.common.collect.Sets;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import io.netty.util.concurrent.FastThreadLocal;
+import io.netty.util.concurrent.FastThreadLocalThread;
+import io.netty.util.internal.InternalThreadLocalMap;
+import org.apache.cassandra.concurrent.NamedThreadFactory;
+
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.db.Keyspace;
@@ -292,6 +297,18 @@ public class TestCluster implements AutoCloseable
         FBUtilities.waitOnFutures(futures, 60, TimeUnit.SECONDS);
         FileUtils.deleteRecursive(root);
 
+                Set<Thread> threadSet = Thread.getAllStackTraces().keySet();
+                for (Thread thread : threadSet)
+                {
+                    if (thread instanceof FastThreadLocalThread)
+                        ((FastThreadLocalThread)thread).setThreadLocalMap(null);
+                }
+
+                InternalThreadLocalMap.remove();
+                InternalThreadLocalMap.destroy();
+
+                FastThreadLocal.removeAll();
+                FastThreadLocal.destroy();
         //withThreadLeakCheck(futures);
         System.gc();
     }
