@@ -1864,6 +1864,7 @@
   <target name="test-distributed" depends="build-test" description="Execute unit tests">
     <testmacro inputdir="${test.distributed.src}" timeout="${test.timeout}" forkmode="once">
       <jvmarg value="-DXmx=1024m"/>
+      <jvmarg value="-XX:MaxDirectMemorySize=1024m"/>
       <jvmarg value="-Dlogback.configurationFile=test/conf/logback-dtest.xml"/>
       <jvmarg value="-Dcassandra.test.disable_buffer_pool=true"/>
       <jvmarg value="-Dcassandra.ring_delay_ms=1000"/>
