@@ -196,11 +196,8 @@ jobs:
 
             time mv ~/cassandra /tmp
             cd /tmp/cassandra
-            ant testclasslist -Dtest.classlistfile=/tmp/java_tests_${CIRCLE_NODE_INDEX}_final.txt -Dtest.classlistprefix=unit
-
-            if [ -s "/tmp/java_dtests_${CIRCLE_NODE_INDEX}_final.txt" ]; then
-              ant testclasslist -Dtest.classlistfile=/tmp/java_dtests_${CIRCLE_NODE_INDEX}_final.txt -Dtest.classlistprefix=distributed
-            fi
+            echo "org/apache/cassandra/distributed/DistributedReadWritePathTest.java" > testlist.txt
+            ant testclasslist -Dtest.classlistfile=./testlist.txt -Dtest.classlistprefix=distributed
          no_output_timeout: 15m
       - store_test_results:
             path: /tmp/cassandra/build/test/output/
