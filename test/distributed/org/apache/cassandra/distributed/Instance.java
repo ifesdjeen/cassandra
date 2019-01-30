@@ -345,8 +345,8 @@ public class Instance extends InvokableInstance
                     StorageService.instance::shutdownBGMonitor,
                     Ref::shutdownReferenceReaper,
                     Memtable.MEMORY_POOL::shutdown,
-                    StageManager::shutdownAndWait,
                     MessagingService.instance()::shutdown,
+                    StageManager::shutdownAndWait,
                     SharedExecutorPool.SHARED::shutdown,
                     ScheduledExecutors::shutdownAndWait,
                     SSTableReader::shutdownBlocking);
