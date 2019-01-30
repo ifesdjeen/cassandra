@@ -46,9 +46,9 @@ public abstract class InvokableInstance implements Closeable
     private final InstanceClassLoader classLoader;
     private final Method deserializeOnInstance;
 
-    public InvokableInstance(String name, InstanceClassLoader classLoader)
+    public InvokableInstance(String name, InstanceClassLoader classLoader, ExecutorService executorService)
     {
-        this.isolatedExecutor = Executors.newFixedThreadPool(4, new NamedThreadFactory(name, Thread.NORM_PRIORITY, classLoader, new ThreadGroup(name)));
+        this.isolatedExecutor = executorService;
         this.classLoader = classLoader;
 
         try

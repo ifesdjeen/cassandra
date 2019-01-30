@@ -27,6 +27,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BiConsumer;
@@ -37,6 +38,7 @@ import ch.qos.logback.classic.LoggerContext;
 import com.codahale.metrics.Metric;
 import com.codahale.metrics.MetricFilter;
 import org.apache.cassandra.batchlog.BatchlogManager;
+import org.apache.cassandra.concurrent.NamedThreadFactory;
 import org.apache.cassandra.concurrent.ScheduledExecutors;
 import org.apache.cassandra.concurrent.SharedExecutorPool;
 import org.apache.cassandra.concurrent.StageManager;
@@ -95,7 +97,7 @@ public class Instance extends InvokableInstance
 
     public Instance(InstanceConfig config, InstanceClassLoader classLoader)
     {
-        super("node-" + config.num, classLoader);
+        super("node-" + config.num, classLoader, Executors.newFixedThreadPool(8, new NamedThreadFactory("node-" + config.num, Thread.NORM_PRIORITY, Thread.currentThread().getContextClassLoader(), new ThreadGroup("node-" + config.num))));
         this.config = config;
     }
 
