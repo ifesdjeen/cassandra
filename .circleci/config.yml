@@ -201,7 +201,7 @@ jobs:
             export LAST_NODE=$((CIRCLE_NODE_TOTAL - 1))
             if [ "$CIRCLE_NODE_INDEX" -eq "$LAST_NODE" ]
             then
-              ANT_OPTS="-Xmx512M -XX:MaxDirectMemorySize=128M -XX:MaxMetaspaceSize=128M -Dcassandra.test.disable_buffer_pool=true -Dlogback.configurationFile=test/conf/logback-dtest.xml -XX:SoftRefLRUPolicyMSPerMB=0" ant test-distributed
+              ANT_OPTS="-XX:+UnlockExperimentalVMOptions -XX:+UseCGroupMemoryLimitForHeap -Xmx512M -XX:MaxDirectMemorySize=128M -XX:MaxMetaspaceSize=128M -Dcassandra.test.disable_buffer_pool=true -Dlogback.configurationFile=test/conf/logback-dtest.xml -XX:SoftRefLRUPolicyMSPerMB=0" ant test-distributed
             fi
          no_output_timeout: 15m
       - store_test_results:
