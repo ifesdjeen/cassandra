@@ -285,8 +285,12 @@ public class TestCluster implements AutoCloseable
         FileUtils.deleteRecursive(root);
 
         // withThreadLeakCheck(futures);
-        System.runFinalization();
-        System.gc();
+        for (int i = 0; i < 10; i++)
+        {
+            System.runFinalization();
+            System.gc();
+        }
+
     }
 
     // We do not want this check to run every time until we fix problems with tread stops
