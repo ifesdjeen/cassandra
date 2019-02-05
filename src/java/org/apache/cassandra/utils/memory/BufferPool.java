@@ -64,7 +64,8 @@ public class BufferPool
     private static final ByteBuffer EMPTY_BUFFER = ByteBuffer.allocateDirect(0);
 
     /** A global pool of chunks (page aligned buffers) */
-    private static final GlobalPool globalPool = new GlobalPool();
+    @VisibleForTesting
+    public static final GlobalPool globalPool = new GlobalPool();
 
     /** A thread local pool of chunks, where chunks come from the global pool */
     private static final ThreadLocal<LocalPool> localPool = new ThreadLocal<LocalPool>() {
@@ -209,7 +210,7 @@ public class BufferPool
      *
      * This class is shared by multiple thread local pools and must be thread-safe.
      */
-    static final class GlobalPool
+    public static final class GlobalPool
     {
         /** The size of a bigger chunk, 1-mbit, must be a multiple of CHUNK_SIZE */
         static final int MACRO_CHUNK_SIZE = 1 << 20;
@@ -295,7 +296,7 @@ public class BufferPool
 
         /** This is not thread safe and should only be used for unit testing. */
         @VisibleForTesting
-        void reset()
+        public void reset()
         {
             while (!chunks.isEmpty())
                 chunks.poll().reset();
@@ -304,6 +305,8 @@ public class BufferPool
                 macroChunks.poll().reset();
 
             memoryUsage.set(0);
+            macroChunks.clear();
+            chunks.clear();
         }
     }
 

@@ -16,11 +16,13 @@ high_capacity_env_vars: &high_capacity_env_vars
     <<: *default_env_vars
     CCM_MAX_HEAP_SIZE: 2048M
     CCM_HEAP_NEWSIZE: 512M
+    IS_HIGH_CAPACITY_ENV: 1
 # For environments with limited memory (e.g the free OSS CircleCI Tier)
 resource_constrained_env_vars: &resource_constrained_env_vars
     <<: *default_env_vars
     CCM_MAX_HEAP_SIZE: 1024M
     CCM_HEAP_NEWSIZE: 256M
+    IS_HIGH_CAPACITY_ENV: 0
 # Settings for users who do not have a paid CircleCI account
 default_env_settings: &default_env_settings
     resource_class: medium
@@ -171,8 +173,6 @@ jobs:
 
             # get all of our unit test filenames
             set -eo pipefail && circleci tests glob "$HOME/cassandra/test/unit/**/*.java" > /tmp/all_java_unit_tests.txt
-            # append distributed tests
-            set -eo pipefail && circleci tests glob "$HOME/cassandra/test/distributed/**/test/*.java" > /tmp/all_java_distributed_tests.txt
 
             # split up the unit tests into groups based on the number of containers we have
             set -eo pipefail && circleci tests split --split-by=timings --timings-type=filename --index=${CIRCLE_NODE_INDEX} --total=${CIRCLE_NODE_TOTAL} /tmp/all_java_unit_tests.txt > /tmp/java_tests_${CIRCLE_NODE_INDEX}.txt
@@ -180,10 +180,14 @@ jobs:
             echo "** /tmp/java_tests_${CIRCLE_NODE_INDEX}_final.txt"
             cat /tmp/java_tests_${CIRCLE_NODE_INDEX}_final.txt
 
-            set -eo pipefail && circleci tests split --split-by=timings --timings-type=filename --index=${CIRCLE_NODE_INDEX} --total=${CIRCLE_NODE_TOTAL} /tmp/all_java_distributed_tests.txt > /tmp/java_dtests_${CIRCLE_NODE_INDEX}.txt
-            set +eo pipefail && cat /tmp/java_dtests_${CIRCLE_NODE_INDEX}.txt | cut -c 44-1000000 | grep "Test\.java$" > /tmp/java_dtests_${CIRCLE_NODE_INDEX}_final.txt
-            echo "** /tmp/java_dtests_${CIRCLE_NODE_INDEX}_final.txt"
-            cat /tmp/java_dtests_${CIRCLE_NODE_INDEX}_final.txt
+            # append distributed tests if running on high-capacity environment
+            if [ "${IS_HIGH_CAPACITY_ENV}" -eq "1" ]; then	    
+              set -eo pipefail && circleci tests glob "$HOME/cassandra/test/distributed/**/*.java" > /tmp/all_java_distributed_tests.txt
+              set -eo pipefail && circleci tests split --split-by=timings --timings-type=filename --index=${CIRCLE_NODE_INDEX} --total=${CIRCLE_NODE_TOTAL} /tmp/all_java_distributed_tests.txt > /tmp/java_dtests_${CIRCLE_NODE_INDEX}.txt
+              set +eo pipefail && cat /tmp/java_dtests_${CIRCLE_NODE_INDEX}.txt | cut -c 44-1000000 | grep "Test\.java$" > /tmp/java_dtests_${CIRCLE_NODE_INDEX}_final.txt
+              echo "** /tmp/java_dtests_${CIRCLE_NODE_INDEX}_final.txt"
+              cat /tmp/java_dtests_${CIRCLE_NODE_INDEX}_final.txt
+            fi
 
       - run:
          name: Run Unit Tests

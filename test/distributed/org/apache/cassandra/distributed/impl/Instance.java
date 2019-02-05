@@ -27,6 +27,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 import java.util.function.BiConsumer;
@@ -356,9 +358,9 @@ public class Instance extends IsolatedExecutor implements IInvokableInstance
         }
     }
 
-    public void shutdown()
+    public Future<Void> shutdown()
     {
-        sync((ExecutorService executor) -> {
+        Future<?> future = async((ExecutorService executor) -> {
             Throwable error = null;
             error = parallelRun(error, executor,
                     Gossiper.instance::stop,
@@ -385,11 +387,14 @@ public class Instance extends IsolatedExecutor implements IInvokableInstance
                                 StageManager::shutdownAndWait,
                                 SharedExecutorPool.SHARED::shutdown
             );
+            BufferPool.globalPool.reset();
             LoggerContext loggerContext = (LoggerContext) LoggerFactory.getILoggerFactory();
             loggerContext.stop();
-            super.shutdown();
             Throwables.maybeFail(error);
-        }).accept(isolatedExecutor);
+        }).apply(isolatedExecutor);
+
+        return CompletableFuture.runAsync(ThrowingRunnable.toRunnable(future::get))
+                                .thenRun(super::shutdown);
     }
 
     private static Throwable parallelRun(Throwable accumulate, ExecutorService runOn, ThrowingRunnable ... runnables)
@@ -423,10 +428,5 @@ public class Instance extends IsolatedExecutor implements IInvokableInstance
             }
         }
         return accumulate;
-    }
-
-    public static interface ThrowingRunnable
-    {
-        public void run() throws Throwable;
     }
 }
