@@ -143,13 +143,14 @@ public abstract class AbstractCluster<I extends IInstance> implements ICluster, 
         }
 
         @Override
-        public synchronized void shutdown()
+        public synchronized Future<Void> shutdown()
         {
             if (isShutdown)
                 throw new IllegalStateException();
             isShutdown = true;
-            delegate.shutdown();
+            Future<Void> future = delegate.shutdown();
             delegate = null;
+            return future;
         }
 
         @Override
@@ -375,12 +376,16 @@ public abstract class AbstractCluster<I extends IInstance> implements ICluster, 
     @Override
     public void close()
     {
-        parallelForEach(IInstance::shutdown, 1L, TimeUnit.MINUTES);
+        FBUtilities.waitOnFutures(instances.stream()
+                                           .map(IInstance::shutdown)
+                                           .collect(Collectors.toList()),
+                                  1L, TimeUnit.MINUTES);
 
         // Make sure to only delete directory when threads are stopped
         FileUtils.deleteRecursive(root);
 
         //withThreadLeakCheck(futures);
+        System.runFinalization();
         System.gc();
     }
 
