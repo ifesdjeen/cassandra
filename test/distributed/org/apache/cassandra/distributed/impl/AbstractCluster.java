@@ -153,6 +153,15 @@ public abstract class AbstractCluster<I extends IInstance> implements ICluster, 
         }
 
         @Override
+        public Future<Object> repair(String ks, Map<String, String> options)
+        {
+            if (isShutdown || delegate == null)
+                throw new IllegalStateException("Can't run repair on shutdown node");
+
+            return delegate.repair(ks, options);
+        }
+
+        @Override
         public void receiveMessage(IMessage message)
         {
             IInvokableInstance delegate = this.delegate;

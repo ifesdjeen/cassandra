@@ -23,6 +23,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
@@ -52,7 +53,6 @@ import org.apache.cassandra.db.compaction.CompactionManager;
 import org.apache.cassandra.dht.IPartitioner;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.distributed.api.ICoordinator;
-import org.apache.cassandra.distributed.api.IInstance;
 import org.apache.cassandra.distributed.api.IInstanceConfig;
 import org.apache.cassandra.distributed.api.IListen;
 import org.apache.cassandra.distributed.api.IMessage;
@@ -73,6 +73,7 @@ import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.net.async.MessageInHandler;
 import org.apache.cassandra.net.async.NettyFactory;
+import org.apache.cassandra.repair.SystemDistributedKeyspace;
 import org.apache.cassandra.schema.Schema;
 import org.apache.cassandra.schema.SchemaConstants;
 import org.apache.cassandra.service.ActiveRepairService;
@@ -80,6 +81,7 @@ import org.apache.cassandra.service.ClientState;
 import org.apache.cassandra.service.PendingRangeCalculatorService;
 import org.apache.cassandra.service.QueryState;
 import org.apache.cassandra.service.StorageService;
+import org.apache.cassandra.tracing.TraceKeyspace;
 import org.apache.cassandra.transport.messages.ResultMessage;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.Throwables;
@@ -108,6 +110,7 @@ public class Instance extends IsolatedExecutor implements IInvokableInstance
 
     @Override
     public ICoordinator coordinator()
+
     {
         return new Coordinator(this);
     }
@@ -143,9 +146,41 @@ public class Instance extends IsolatedExecutor implements IInvokableInstance
         return Schema.instance.getVersion();
     }
 
+    @Override
     public void startup()
     {
         throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public Future<Object> repair(String ks, Map<String, String> options)
+    {
+        return async((String k, Map<String, String> opts) -> {
+            int cmd = StorageService.instance.repairAsync(k, opts);
+            long deadline = System.currentTimeMillis() + TimeUnit.MINUTES.toMillis(1);
+
+            while (true)
+            {
+                if (System.currentTimeMillis() > deadline)
+                    throw new RuntimeException("Timed out");
+
+                List<String> status = StorageService.instance.getParentRepairStatus(cmd);
+                // Repair has not yet started
+                if (status == null)
+                    continue;
+                ActiveRepairService.ParentRepairStatus parentRepairStatus = ActiveRepairService.ParentRepairStatus.valueOf(status.get(0));
+
+                switch (parentRepairStatus)
+                {
+                    case FAILED:
+                        throw new RuntimeException("Repair failed: " + status.get(1));
+                    case COMPLETED:
+                        return null;
+                    case IN_PROGRESS:
+                        continue;
+                }
+            }
+        }).apply(ks, options);
     }
 
     @Override
@@ -347,6 +382,11 @@ public class Instance extends IsolatedExecutor implements IInvokableInstance
             // check that all nodes are in token metadata
             for (int i = 0; i < tokens.size(); ++i)
                 assert storageService.getTokenMetadata().isMember(hosts.get(i));
+
+            // TODO: put behind the flag
+            StorageService.instance.maybeAddOrUpdateKeyspace(TraceKeyspace.metadata());
+            StorageService.instance.maybeAddOrUpdateKeyspace(SystemDistributedKeyspace.metadata());
+            MessagingService.instance().listen();
         }
         catch (Throwable e) // UnknownHostException
         {

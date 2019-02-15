@@ -20,7 +20,10 @@ package org.apache.cassandra.distributed.api;
 
 import org.apache.cassandra.locator.InetAddressAndPort;
 
+import java.util.Collections;
+import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.Future;
 
 // The cross-version API requires that an Instance has a constructor signature of (IInstanceConfig, ClassLoader)
 public interface IInstance extends IIsolatedExecutor
@@ -34,6 +37,11 @@ public interface IInstance extends IIsolatedExecutor
     IInstanceConfig config();
     public InetAddressAndPort broadcastAddressAndPort();
     UUID schemaVersion();
+
+    Future<Object> repair(String ks, Map<String, String> options);
+    default Future<Object> repair(String ks) {
+        return repair(ks, Collections.emptyMap());
+    }
 
     void startup();
     void shutdown();

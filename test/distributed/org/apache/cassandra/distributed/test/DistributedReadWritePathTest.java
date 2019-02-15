@@ -18,6 +18,10 @@
 
 package org.apache.cassandra.distributed.test;
 
+import java.util.HashMap;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -287,6 +291,33 @@ public class DistributedReadWritePathTest extends DistributedTestBase
                 }
             }
 
+        }
+    }
+
+    @Test
+    public void repairTest() throws Throwable
+    {
+        try (Cluster cluster = init(Cluster.create(3)))
+        {
+            cluster.schemaChange("CREATE TABLE " + KEYSPACE + ".tbl (pk int, ck int, v int, PRIMARY KEY (pk, ck)) WITH read_repair='none'");
+
+            for (int i = 1; i <= 2; i++)
+            {
+                for (int j = 0; j < 100; j++)
+                {
+                    cluster.get(1).executeInternal("INSERT INTO " + KEYSPACE + ".tbl (pk, ck, v) VALUES (1, ?, ?)", j * i, j);
+                    cluster.get(1).executeInternal("INSERT INTO " + KEYSPACE + ".tbl (pk, ck, v) VALUES (2, ?, ?)", j * i, j);
+                    cluster.get(1).executeInternal("INSERT INTO " + KEYSPACE + ".tbl (pk, ck, v) VALUES (?, ?, ?)", 100 + i, j, j);
+                }
+            }
+
+            cluster.get(1).repair(KEYSPACE).get(1, TimeUnit.MINUTES);
+
+            Object[][] res1 = cluster.get(1).executeInternal("SELECT * FROM " + KEYSPACE + ".tbl");
+            assertRows(cluster.get(2).executeInternal("SELECT * FROM " + KEYSPACE + ".tbl"),
+                       res1);
+            assertRows(cluster.get(3).executeInternal("SELECT * FROM " + KEYSPACE + ".tbl"),
+                       res1);
         }
     }
 }

@@ -1180,7 +1180,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
      * Ensure the schema of a pseudo-system keyspace (a distributed system keyspace: traces, auth and the so-called distributedKeyspace),
      * is up to date with what we expected (creating it if it doesn't exist and updating tables that may have been upgraded).
      */
-    private void maybeAddOrUpdateKeyspace(KeyspaceMetadata expected)
+    public void maybeAddOrUpdateKeyspace(KeyspaceMetadata expected)
     {
         // Note that want to deal with the keyspace and its table a bit differently: for the keyspace definition
         // itself, we want to create it if it doesn't exist yet, but if it does exist, we don't want to modify it,
