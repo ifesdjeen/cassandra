@@ -18,6 +18,10 @@
 package org.apache.cassandra.service;
 
 import java.util.Arrays;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
@@ -25,9 +29,11 @@ import java.util.stream.IntStream;
 
 import com.google.common.collect.Sets;
 import org.junit.After;
+import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
+import org.apache.cassandra.concurrent.NamedThreadFactory;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.transport.Server;
 import org.apache.cassandra.utils.Pair;
@@ -38,6 +44,16 @@ import static org.junit.Assert.assertTrue;
 
 public class NativeTransportServiceTest
 {
+    private static final String THREAD_NAME = "native-transport-service-test-thread-";
+    private static final ExecutorService executor = Executors.newSingleThreadExecutor(new NamedThreadFactory(THREAD_NAME));
+
+    @AfterClass
+    public static void test() throws InterruptedException
+    {
+        executor.shutdown();
+        executor.awaitTermination(1, TimeUnit.MINUTES);
+    }
+
     @BeforeClass
     public static void setupDD()
     {
@@ -181,6 +197,19 @@ public class NativeTransportServiceTest
                     }, false, 1);
     }
 
+    private static void withService(NativeTransportService service, Consumer<NativeTransportService> action)
+    {
+        assert !Thread.currentThread().getName().startsWith(THREAD_NAME) : "Can't execute recursively on the same thread";
+        try
+        {
+            executor.submit(() -> action.accept(service)).get();
+        }
+        catch (InterruptedException | ExecutionException e)
+        {
+            throw new RuntimeException(e);
+        }
+    }
+
     private static void withService(Consumer<NativeTransportService> f)
     {
         withService(f, true, 1);
@@ -188,30 +217,32 @@ public class NativeTransportServiceTest
 
     private static void withService(Consumer<NativeTransportService> f, boolean start, int concurrently)
     {
-        NativeTransportService service = new NativeTransportService();
-        assertFalse(service.isRunning());
-        if (start)
-        {
-            service.start();
-            assertTrue(service.isRunning());
-        }
-        try
-        {
-            if (concurrently == 1)
+        NativeTransportService s = new NativeTransportService();
+        assertFalse(s.isRunning());
+        withService(s, (service) -> {
+            if (start)
             {
-                f.accept(service);
+                service.start();
+                assertTrue(service.isRunning());
             }
-            else
+            try
             {
-                IntStream.range(0, concurrently).parallel().map((int i) -> {
+                if (concurrently == 1)
+                {
                     f.accept(service);
-                    return 1;
-                }).sum();
+                }
+                else
+                {
+                    IntStream.range(0, concurrently).parallel().map((int i) -> {
+                        f.accept(service);
+                        return 1;
+                    }).sum();
+                }
             }
-        }
-        finally
-        {
-            service.stop();
-        }
+            finally
+            {
+                service.stop();
+            }
+        });
     }
 }
