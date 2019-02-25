@@ -189,6 +189,7 @@ jobs:
 
             time mv ~/cassandra /tmp
             cd /tmp/cassandra
+            cat -Dtest.classlistfile=/tmp/java_tests_${CIRCLE_NODE_INDEX}_final.txt
             ant testclasslist -Dtest.classlistfile=/tmp/java_tests_${CIRCLE_NODE_INDEX}_final.txt -Dtest.classlistprefix=unit
 
             if [ "${CIRCLE_NODE_INDEX}" -eq "1" ]; then
