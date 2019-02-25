@@ -43,6 +43,7 @@ public class DistributedReadWritePathTest extends DistributedTestBase
             assertRows(cluster.coordinator(1).execute("SELECT * FROM " + KEYSPACE + ".tbl WHERE pk = ?",
                                                      ConsistencyLevel.ALL,
                                                      1),
+                       row(100, 1, 1),
                        row(1, 1, 1),
                        row(1, 2, 2),
                        row(1, 3, 3));
