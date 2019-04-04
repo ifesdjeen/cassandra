@@ -143,6 +143,7 @@ public abstract class AbstractCluster<I extends IInstance> implements ICluster, 
                 throw new IllegalStateException();
             delegate().startup(AbstractCluster.this);
             isShutdown = false;
+            updateMessagingVersions();
         }
 
         @Override
@@ -177,6 +178,16 @@ public abstract class AbstractCluster<I extends IInstance> implements ICluster, 
                 delegate.shutdown();
                 delegate = null;
             }
+        }
+
+        public int getMessagingVersion()
+        {
+            return delegate().getMessagingVersion();
+        }
+
+        public void setMessagingVersion(InetAddressAndPort endpoint, int version)
+        {
+            delegate().setMessagingVersion(endpoint, version);
         }
     }
 
@@ -250,6 +261,21 @@ public abstract class AbstractCluster<I extends IInstance> implements ICluster, 
                 monitor.waitForAgreement();
             }
         }).run();
+    }
+
+    private void updateMessagingVersions()
+    {
+        for (IInstance reportTo: instances)
+        {
+            for (IInstance reportFrom: instances)
+            {
+                if (reportFrom == reportTo)
+                    continue;
+
+                int minVersion = Math.min(reportFrom.getMessagingVersion(), reportTo.getMessagingVersion());
+                reportTo.setMessagingVersion(reportFrom.broadcastAddressAndPort(), minVersion);
+            }
+        }
     }
 
     /**
