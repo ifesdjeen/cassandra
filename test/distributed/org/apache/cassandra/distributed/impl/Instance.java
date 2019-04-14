@@ -27,7 +27,6 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.function.BiConsumer;
 
@@ -54,7 +53,6 @@ import org.apache.cassandra.db.compaction.CompactionManager;
 import org.apache.cassandra.dht.IPartitioner;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.distributed.api.ICoordinator;
-import org.apache.cassandra.distributed.api.IInstance;
 import org.apache.cassandra.distributed.api.IInstanceConfig;
 import org.apache.cassandra.distributed.api.IListen;
 import org.apache.cassandra.distributed.api.IMessage;
@@ -68,13 +66,11 @@ import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.apache.cassandra.io.util.DataInputBuffer;
 import org.apache.cassandra.io.util.DataOutputBuffer;
 import org.apache.cassandra.locator.InetAddressAndPort;
-import org.apache.cassandra.locator.SimpleSeedProvider;
-import org.apache.cassandra.locator.SimpleSnitch;
 import org.apache.cassandra.net.ProcessMessageTask;
 import org.apache.cassandra.net.Message;
 import org.apache.cassandra.net.MessageSink;
 import org.apache.cassandra.net.MessagingService;
-import org.apache.cassandra.net.async.NettyFactory;
+import org.apache.cassandra.net.async.SocketFactory;
 import org.apache.cassandra.schema.Schema;
 import org.apache.cassandra.schema.SchemaConstants;
 import org.apache.cassandra.service.ActiveRepairService;
@@ -290,9 +286,9 @@ public class Instance extends IsolatedExecutor implements IInvokableInstance
                 }
                 else
                 {
-                    // Even though we don't use MessagingService, access the static NettyFactory
+                    // Even though we don't use MessagingService, access the static SocketFactory
                     // instance here so that we start the static event loop state
-                    NettyFactory.instance.getClass();
+//                    -- not sure what that means?  SocketFactory.instance.getClass();
                     registerMockMessaging(cluster);
                 }
 
