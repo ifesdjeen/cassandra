@@ -141,7 +141,7 @@ public abstract class AbstractCluster<I extends IInstance> implements ICluster, 
         {
             if (!isShutdown)
                 throw new IllegalStateException();
-            delegate().startup(AbstractCluster.this);
+            delegate.startup(AbstractCluster.this);
             isShutdown = false;
             updateMessagingVersions();
         }
@@ -182,12 +182,12 @@ public abstract class AbstractCluster<I extends IInstance> implements ICluster, 
 
         public int getMessagingVersion()
         {
-            return delegate().getMessagingVersion();
+            return delegate.getMessagingVersion();
         }
 
         public void setMessagingVersion(InetAddressAndPort endpoint, int version)
         {
-            delegate().setMessagingVersion(endpoint, version);
+            delegate.setMessagingVersion(endpoint, version);
         }
     }
 
