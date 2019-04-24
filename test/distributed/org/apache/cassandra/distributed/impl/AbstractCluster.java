@@ -179,16 +179,6 @@ public abstract class AbstractCluster<I extends IInstance> implements ICluster, 
                 delegate = null;
             }
         }
-
-        public int getMessagingVersion()
-        {
-            return delegate.getMessagingVersion();
-        }
-
-        public void setMessagingVersion(InetAddressAndPort endpoint, int version)
-        {
-            delegate.setMessagingVersion(endpoint, version);
-        }
     }
 
     protected AbstractCluster(File root, Versions.Version version, List<InstanceConfig> configs, ClassLoader sharedClassLoader)
