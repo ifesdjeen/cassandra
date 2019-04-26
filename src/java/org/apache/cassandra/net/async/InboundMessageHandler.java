@@ -861,7 +861,7 @@ public final class InboundMessageHandler extends ChannelInboundHandlerAdapter
             Ticket t;
             while ((t = queue.peek()) != null)
             {
-                if (!t.call()) // invalidated
+                if (!t.isLive(nanoTime) || !t.call()) // expired or invalidated
                 {
                     queue.poll();
                     continue;
