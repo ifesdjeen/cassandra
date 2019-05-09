@@ -157,6 +157,7 @@ public class Connection implements InboundMessageCallbacks, OutboundMessageCallb
     void serialize(long id, byte[] payload, DataOutputPlus out, int messagingVersion) throws IOException
     {
         verifier.onSerialize(id, messagingVersion);
+        boolean finish = outbound.type() == ConnectionType.LARGE_MESSAGES;
         int length = payload.length;
         switch (MessageGenerator.getInfo(payload))
         {
@@ -168,9 +169,11 @@ public class Connection implements InboundMessageCallbacks, OutboundMessageCallb
                 }
                 break;
             case 2:
+                finish = false;
                 length -= (int)id % payload.length;
                 break;
             case 3:
+                finish = false;
                 length += (int)id & 65535;
                 break;
         }
@@ -178,6 +181,8 @@ public class Connection implements InboundMessageCallbacks, OutboundMessageCallb
         MessageGenerator.write(payload, Math.min(length, payload.length), out, messagingVersion);
         while ((length -= payload.length) > 0)
             out.write(payload, 0, Math.min(length, payload.length));
+        if (finish)
+            verifier.onFinishSerializeLarge(id);
     }
 
     byte[] deserialize(MessageGenerator.Header header, DataInputPlus in, int messagingVersion) throws IOException
