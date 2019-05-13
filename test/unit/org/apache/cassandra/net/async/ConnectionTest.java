@@ -89,7 +89,6 @@ public class ConnectionTest
 
     private final Map<Verb, Supplier<? extends IVersionedAsymmetricSerializer<?, ?>>> serializers = new HashMap<>();
     private final Map<Verb, Supplier<? extends IVerbHandler<?>>> handlers = new HashMap<>();
-    private final Map<Verb, ToLongFunction<TimeUnit>> timeouts = new HashMap<>();
 
     private void unsafeSetSerializer(Verb verb, Supplier<? extends IVersionedAsymmetricSerializer<?, ?>> supplier) throws Throwable
     {
@@ -101,11 +100,6 @@ public class ConnectionTest
         handlers.putIfAbsent(verb, verb.unsafeSetHandler(supplier));
     }
 
-    private void unsafeSetExpiration(Verb verb, ToLongFunction<TimeUnit> expiration) throws Throwable
-    {
-        timeouts.putIfAbsent(verb, verb.unsafeSetExpiration(expiration));
-    }
-
     @After
     public void resetVerbs() throws Throwable
     {
@@ -115,9 +109,6 @@ public class ConnectionTest
         for (Map.Entry<Verb, Supplier<? extends IVerbHandler<?>>> e : handlers.entrySet())
             e.getKey().unsafeSetHandler(e.getValue());
         handlers.clear();
-        for (Map.Entry<Verb, ToLongFunction<TimeUnit>> e : timeouts.entrySet())
-            e.getKey().unsafeSetExpiration(e.getValue());
-        timeouts.clear();
     }
 
     @BeforeClass
