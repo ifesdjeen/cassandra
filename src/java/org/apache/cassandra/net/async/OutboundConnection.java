@@ -396,7 +396,7 @@ public class OutboundConnection
         JVMStabilityInspector.inspectThrowable(t, false);
         releaseCapacity(1, canonicalSize(message));
         errorCount += 1;
-        errorBytes += message.serializedSize(messagingVersion);
+        errorBytes += canonicalSize(message);
         logger.warn("{} dropping message of type {} due to error", id(), message.verb(), t);
         callbacks.onFailedSerialize(message, messagingVersion, t);
     }
