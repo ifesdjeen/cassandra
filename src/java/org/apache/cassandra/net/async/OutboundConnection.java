@@ -184,7 +184,7 @@ public class OutboundConnection
     {
         /** We cannot depend on channel.isOpen, as we may be closing it asynchronously */
         CONNECTED,
-        /** If we are not yet connected */
+        /** If we are not connected */
         DISCONNECTED,
         /** If we are not connected, are trying to connect, and have failed to connect at least once */
         FAILING_TO_CONNECT,
@@ -1006,9 +1006,15 @@ public class OutboundConnection
             JVMStabilityInspector.inspectThrowable(cause, false);
             status = Status.FAILING_TO_CONNECT;
             if (hasPending())
-                connecting = eventLoop.schedule(this::attempt, max(100, retryRateMillis), MILLISECONDS);
+            {
+                Promise<Void> promise = new AsyncPromise<>(eventLoop);
+                eventLoop.schedule(() -> attempt(promise), max(100, retryRateMillis), MILLISECONDS);
+                connecting = promise;
+            }
             else
+            {
                 assert connecting == null;
+            }
 
             retryRateMillis = min(1000, retryRateMillis * 2);
         }
@@ -1072,7 +1078,7 @@ public class OutboundConnection
                     messagingVersion = result.retry().withMessagingVersion;
                     settings = template.withDefaults(type, messagingVersion);
                     settings.endpointToVersion.set(settings.to, messagingVersion);
-                    attempt();
+                    connecting = attempt(null);
                     break;
 
                 case INCOMPATIBLE:
@@ -1096,7 +1102,7 @@ public class OutboundConnection
          *
          * Note: this should only be invoked on the event loop.
          */
-        void attempt()
+        Future<?> attempt(Promise<?> onConnected)
         {
             ++connectionAttempts;
             // system defaults etc might have changed, so refresh before connect
@@ -1107,7 +1113,8 @@ public class OutboundConnection
                 settings = template.withDefaults(type, messagingVersion);
                 assert messagingVersion <= settings.acceptVersions.max;
             }
-            connecting = initiateMessaging(eventLoop, type, settings, messagingVersion)
+
+            Future<?> result = initiateMessaging(eventLoop, type, settings, messagingVersion)
                          .addListener(future -> {
                              connecting = null;
                              if (future.isCancelled())
@@ -1117,6 +1124,11 @@ public class OutboundConnection
                              else
                                  onFailure(future.cause());
                          });
+
+            if (onConnected != null)
+                result.addListener(new PromiseNotifier(onConnected));
+
+            return result;
         }
     }
 
@@ -1152,7 +1164,7 @@ public class OutboundConnection
                     assert eventLoop.inEventLoop();
                     assert connecting == null;
                     assert !isConnected();
-                    new Connect().attempt();
+                    connecting = new Connect().attempt(null);
                 }
                 connecting.addListener(new PromiseNotifier<>(promise));
             }
