@@ -22,7 +22,6 @@ import java.io.IOException;
 import java.net.ConnectException;
 import java.net.InetSocketAddress;
 import java.nio.channels.ClosedChannelException;
-import java.util.Collections;
 import java.util.Objects;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -30,7 +29,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLongFieldUpdater;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
-import java.util.function.Supplier;
 
 import com.google.common.annotations.VisibleForTesting;
 import org.slf4j.Logger;
@@ -40,11 +38,9 @@ import io.netty.channel.Channel;
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
-import io.netty.channel.ChannelPromise;
 import io.netty.channel.EventLoop;
 import io.netty.channel.unix.Errors;
 import io.netty.util.concurrent.Future;
-import io.netty.util.concurrent.GenericFutureListener;
 import io.netty.util.concurrent.Promise;
 import io.netty.util.concurrent.PromiseNotifier;
 import io.netty.util.concurrent.SucceededFuture;
@@ -170,7 +166,7 @@ public class OutboundConnection
     private volatile OutboundConnectionSettings settings;
     // should only be updated while we are disconnected, and by the event loop
     private volatile int messagingVersion;
-    private volatile FrameEncoder.PayloadAllocator payloadAllocator;
+
 
     /*
      * All of the volatile fields may only be updated by the eventLoop.
@@ -184,15 +180,34 @@ public class OutboundConnection
      * Those that are not final, volatile or atomic may only be accessed by the eventLoop; for either read or write.
      */
 
-    /** The underlying Netty channel we are connected to our endpoint via; this may be closed, or null */
-    private volatile Channel channel;
-    /** We cannot depend on channel.isOpen, as we may be closing it asynchronously */
-    private volatile boolean isConnected;
-    /** If we are not connected, are trying to connect, and have failed to connect at least once */
-    private volatile boolean isFailingToConnect;
+    private enum Status
+    {
+        /** We cannot depend on channel.isOpen, as we may be closing it asynchronously */
+        CONNECTED,
+        /** If we are not yet connected */
+        DISCONNECTED,
+        /** If we are not connected, are trying to connect, and have failed to connect at least once */
+        FAILING_TO_CONNECT,
+        /** True => connection is permanently closed. */
+        CLOSED
+    }
 
-    /** True => connection is permanently closed. */
-    private volatile boolean isClosed;
+    private static class ConnectionState
+    {
+        /** The underlying Netty channel we are connected to our endpoint via; this may be closed, or null */
+        private final Channel channel;
+        private final FrameEncoder.PayloadAllocator payloadAllocator;
+
+        public ConnectionState(Channel channel, FrameEncoder.PayloadAllocator payloadAllocator)
+        {
+            this.channel = channel;
+            this.payloadAllocator = payloadAllocator;
+        }
+    }
+
+    private volatile Status status = Status.DISCONNECTED;
+    private volatile ConnectionState connectionState;
+
     /** The connection is being permanently closed */
     private volatile Future<Void> closing;
     /** The connection is being permanently closed in the near future */
@@ -240,7 +255,7 @@ public class OutboundConnection
      */
     public void enqueue(Message message) throws ClosedChannelException
     {
-        if (isClosed())
+        if (isClosing() || isClosed())
             throw new ClosedChannelException();
 
         final int canonicalSize = canonicalSize(message);
@@ -322,7 +337,7 @@ public class OutboundConnection
                 continue;
             }
 
-            if (isFailingToConnect)
+            if (isFailingToConnect())
             {
                 outcome = INSUFFICIENT_ENDPOINT;
                 break;
@@ -590,8 +605,8 @@ public class OutboundConnection
                     stopAndRun.getAndSet(null).run();
                 }
 
-                Channel channel = OutboundConnection.this.channel;
-                if (!isConnected() || !isConnected(channel))
+                ConnectionState connectionState = OutboundConnection.this.connectionState;
+                if (!isConnected() || !isConnected(connectionState))
                 {
                     // if we have messages yet to deliver, or a task to run, we need to reconnect and try again
                     // we try to reconnect before running another stopAndRun so that we do not infinite loop in close
@@ -603,7 +618,7 @@ public class OutboundConnection
                     break;
                 }
 
-                if (!doRun(channel))
+                if (!doRun(connectionState))
                     break;
             }
 
@@ -614,7 +629,7 @@ public class OutboundConnection
          * @return true if we should run again immediately;
          *         always false for eventLoop executor, as want to service other channels
          */
-        abstract boolean doRun(Channel channel);
+        abstract boolean doRun(ConnectionState channel);
 
         /**
          * Schedule a task to run later on the delivery thread while delivery is not in progress,
@@ -670,7 +685,7 @@ public class OutboundConnection
          * If there is more work to be done, we submit ourselves for execution once the eventLoop has time.
          */
         @SuppressWarnings("resource")
-        boolean doRun(Channel channel)
+        boolean doRun(ConnectionState connectionState)
         {
             if (!isWritable)
                 return false;
@@ -692,7 +707,7 @@ public class OutboundConnection
                 if (withLock == null)
                     return false; // we failed to acquire the queue lock, so return; we will be scheduled again when the lock is available
 
-                sending = payloadAllocator.allocate(true, maxSendBytes);
+                sending = connectionState.payloadAllocator.allocate(true, maxSendBytes);
                 DataOutputBufferFixed out = new DataOutputBufferFixed(sending.buffer);
 
                 Message<?> next;
@@ -720,7 +735,7 @@ public class OutboundConnection
 
                             sending.release();
                             sending = null; // set to null to prevent double-release if we fail to allocate our new buffer
-                            sending = payloadAllocator.allocate(true, messageSize);
+                            sending = connectionState.payloadAllocator.allocate(true, messageSize);
                             out = new DataOutputBufferFixed(sending.buffer);
                         }
 
@@ -749,7 +764,7 @@ public class OutboundConnection
 
                 sending.finish();
                 debug.onSendSmallFrame(sendingCount, sendingBytes);
-                ChannelFuture flushResult = AsyncChannelPromise.writeAndFlush(channel, sending);
+                ChannelFuture flushResult = AsyncChannelPromise.writeAndFlush(connectionState.channel, sending);
                 sending = null;
 
                 if (flushResult.isSuccess())
@@ -796,7 +811,7 @@ public class OutboundConnection
                         {
                             errorCount += sendingCountFinal;
                             errorBytes += sendingBytesFinal;
-                            invalidateChannel(channel, future.cause());
+                            invalidateChannel(connectionState, future.cause());
                             debug.onFailedSmallFrame(sendingCountFinal, sendingBytesFinal);
                         }
                     });
@@ -807,7 +822,7 @@ public class OutboundConnection
             {
                 errorCount += sendingCount;
                 errorBytes += sendingBytes;
-                invalidateChannel(channel, t);
+                invalidateChannel(connectionState, t);
             }
             finally
             {
@@ -824,7 +839,7 @@ public class OutboundConnection
             return false;
         }
 
-        private void invalidateChannel(Channel channel, Throwable cause)
+        private void invalidateChannel(ConnectionState connectionState, Throwable cause)
         {
             JVMStabilityInspector.inspectThrowable(cause, false);
             if (isCausedByConnectionReset(cause))
@@ -832,7 +847,7 @@ public class OutboundConnection
             else
                 logger.error("{} channel in potentially inconsistent state after error; closing", id(), cause);
 
-            closeChannelNow(channel);
+            closeChannelNow(connectionState);
         }
 
         void stopAndRunOnEventLoop(Runnable run)
@@ -887,7 +902,7 @@ public class OutboundConnection
             }
         }
 
-        boolean doRun(Channel channel)
+        boolean doRun(ConnectionState connectionState)
         {
             Message<?> send = queue.tryPoll(ApproximateTime.nanoTime(), this::execute);
             if (send == null)
@@ -897,7 +912,7 @@ public class OutboundConnection
             try
             {
                 int messageSize = send.serializedSize(messagingVersion);
-                out = new AsyncMessageOutputPlus(channel, DEFAULT_BUFFER_SIZE, messageSize, payloadAllocator);
+                out = new AsyncMessageOutputPlus(connectionState.channel, DEFAULT_BUFFER_SIZE, messageSize, connectionState.payloadAllocator);
                 // actual message size for this version is larger than permitted maximum
                 if (messageSize > DatabaseDescriptor.getInternodeMaxMessageSizeInBytes())
                     throw new Message.OversizedMessageException(messageSize);
@@ -927,7 +942,7 @@ public class OutboundConnection
                                                || cause instanceof AsyncChannelOutputPlus.FlushException))
                     {
                         // close the channel; this runs on the event loop, so we wait for this to complete to avoid racing with it
-                        closeChannelNow(channel).awaitUninterruptibly();
+                        closeChannelNow(connectionState).awaitUninterruptibly();
                         tryAgain = false;
                     }
                 }
@@ -989,7 +1004,7 @@ public class OutboundConnection
                 noSpamLogger.error("{} failed to connect", id(), cause);
 
             JVMStabilityInspector.inspectThrowable(cause, false);
-            isFailingToConnect = true;
+            status = Status.FAILING_TO_CONNECT;
             if (hasPending())
                 connecting = eventLoop.schedule(this::attempt, max(100, retryRateMillis), MILLISECONDS);
             else
@@ -1004,7 +1019,7 @@ public class OutboundConnection
             {
                 case SUCCESS:
                     // it is expected that close, if successful, has already cancelled us; so we do not need to worry about leaking connections
-                    assert !isClosed;
+                    assert !isClosing() && !isClosed();
                     whileDisconnected.cancel(false);
                     whileDisconnected = null;
                     MessagingSuccess success = result.success();
@@ -1014,16 +1029,16 @@ public class OutboundConnection
                         settings = template.withDefaults(type, messagingVersion);
                     }
                     debug.onConnect(messagingVersion, settings);
-                    payloadAllocator = success.allocator;
-                    channel = success.channel;
+                    ConnectionState connectionState = new ConnectionState(success.channel, success.allocator);
+                    OutboundConnection.this.connectionState = connectionState;
 
-                    channel.pipeline().addLast("handleExceptionalStates", new ChannelInboundHandlerAdapter() {
+                    connectionState.channel.pipeline().addLast("handleExceptionalStates", new ChannelInboundHandlerAdapter() {
                         @Override
                         public void channelInactive(ChannelHandlerContext ctx) {
-                            if (ctx.channel() == channel)
+                            if (ctx.channel() == connectionState.channel)
                             {
                                 logger.info("{} channel closed by provider", id());
-                                closeChannelNow(channel);
+                                closeChannelNow(connectionState);
                             }
                             ctx.fireChannelInactive();
                         }
@@ -1036,12 +1051,11 @@ public class OutboundConnection
                             else
                                 logger.error("{} unexpected error; closing", id(), cause);
 
-                            closeChannelGracefully(channel);
+                            closeChannelGracefully(connectionState);
                         }
                     });
 
-                    isFailingToConnect = false;
-                    isConnected = true;
+                    status = Status.CONNECTED;
                     ++successfulConnections;
 
                     logger.info("{} successfully connected, version = {}, compress = {}, encryption = {}",
@@ -1170,7 +1184,7 @@ public class OutboundConnection
             // delivery will immediately continue after this, triggering a reconnect if necessary;
             // this might mean a slight delay for large message delivery, as the connect will be scheduled
             // asynchronously, so we must wait for a second turn on the eventLoop
-            closeChannelTask(channel).run();
+            closeChannelTask(connectionState).run();
             done.setSuccess(null);
         });
         return done;
@@ -1188,9 +1202,9 @@ public class OutboundConnection
     }
 
     /**
-     * See {@link #closeChannelGracefully(Channel, Promise)}
+     * See {@link #closeChannelTask(ConnectionState, Promise)}
      */
-    private void closeChannelGracefully(Channel closeIfIs)
+    private void closeChannelGracefully(ConnectionState closeIfIs)
     {
         delivery.stopAndRunOnEventLoop(closeChannelTask(closeIfIs));
     }
@@ -1205,7 +1219,7 @@ public class OutboundConnection
      * and promptly get the connection going again; the close is considered to have succeeded as soon as we
      * have set our internal state.
      */
-    private Promise<Void> closeChannelGracefully(Channel closeIfIs, Promise<Void> done)
+    private Promise<Void> closeChannelGracefully(ConnectionState closeIfIs, Promise<Void> done)
     {
         if (!done.setUncancellable())
             throw new IllegalStateException();
@@ -1225,7 +1239,7 @@ public class OutboundConnection
      *
      * Delivery will be executed again if necessary after this completes.
      */
-    private Future<?> closeChannelNow(Channel closeIfIs)
+    private Future<?> closeChannelNow(ConnectionState closeIfIs)
     {
         // TODO: we only really are required to wait until the close completes for Verifier purposes
         //       however, it might be semantically good to do this anyway, as it means we cannot spin
@@ -1241,25 +1255,24 @@ public class OutboundConnection
         return onClose;
     }
 
-    private Runnable closeChannelTask(Channel closeIfIs)
+    private Runnable closeChannelTask(ConnectionState closeIfIs)
     {
         return closeChannelTask(closeIfIs, null);
     }
-    private Runnable closeChannelTask(Channel closeIfIs, Promise<?> onClose)
+
+    private Runnable closeChannelTask(ConnectionState closeIfIs, Promise<?> onClose)
     {
         return () -> {
             Future<?> closeFuture = null;
-            if (closeIfIs != null && channel == closeIfIs)
+            if (closeIfIs != null && connectionState == closeIfIs)
             {
                 // no need to wait until the channel is closed to set ourselves as disconnected (and potentially open a new channel)
-                Channel close = channel;
-                isConnected = false;
-                channel = null;
-                payloadAllocator = null;
+                status = Status.DISCONNECTED;
+                connectionState = null;
                 scheduleMaintenanceWhileDisconnected();
-                closeFuture = close.close().addListener(future -> {
+                closeFuture = closeIfIs.channel.close().addListener(future -> {
                     if (!future.isSuccess())
-                        logger.info("Problem closing channel {}", channel, future.cause());
+                        logger.info("Problem closing channel {}", closeIfIs.channel, future.cause());
                 });
             }
             if (onClose != null)
@@ -1277,7 +1290,7 @@ public class OutboundConnection
      */
     public Future<Void> interrupt()
     {
-        return closeChannelGracefully(channel, new AsyncPromise<>(eventLoop));
+        return closeChannelGracefully(connectionState, new AsyncPromise<>(eventLoop));
     }
 
     /**
@@ -1327,13 +1340,14 @@ public class OutboundConnection
          *   - terminates the delivery thread
          *   - finally, schedules any open channel's closure, and propagates its completion to the close promise
          */
+        System.out.println("BEFORE");
         Runnable eventLoopCleanup = () -> {
+            System.out.println("EVENT");
             Runnable onceNotConnecting = () -> {
                 // start by setting ourselves to definitionally closed
-                Channel closeChannel = channel;
-                isConnected = false;
-                isClosed = true;
-                channel = null;
+                ConnectionState connectionState = OutboundConnection.this.connectionState;
+                OutboundConnection.this.connectionState = null;
+                status = Status.CLOSED;
 
                 try
                 {
@@ -1349,9 +1363,9 @@ public class OutboundConnection
                     whileDisconnected = null;
 
                     // close the channel
-                    if (closeChannel == null) closing.setSuccess(null);
-                    else closeChannel.close().addListener(new PromiseNotifier<>(closing));
-                    closeChannel = null;
+                    if (connectionState == null) closing.setSuccess(null);
+                    else connectionState.channel.close().addListener(new PromiseNotifier<>(closing));
+                    connectionState = null;
                 }
                 catch (Throwable t)
                 {
@@ -1360,8 +1374,8 @@ public class OutboundConnection
                     try
                     {
                         // could be null when we start cleanup
-                        if (closeChannel != null)
-                            closeChannel.close();
+                        if (connectionState != null)
+                            connectionState.channel.close();
                     }
                     catch (Throwable t2)
                     {
@@ -1406,7 +1420,7 @@ public class OutboundConnection
                         delivery.stopAndRunOnEventLoop(eventLoopCleanup);
                     else
                         delivery.stopAndRun(() -> {
-                            if (isFailingToConnect)
+                            if (isFailingToConnect())
                                 clearQueue.run();
                             run();
                         });
@@ -1440,33 +1454,43 @@ public class OutboundConnection
 
     public boolean isConnected()
     {
-        return isConnected;
+        return status == Status.CONNECTED;
     }
 
-    private static boolean isConnected(Channel channel)
+    private static boolean isConnected(ConnectionState connectionState)
     {
-        return channel != null && channel.isOpen();
+        return connectionState != null && connectionState.channel.isOpen();
     }
 
     boolean isClosed()
     {
-        return isClosed;
+        return status == Status.CLOSED;
+    }
+
+    boolean isClosing()
+    {
+        return closing != null;
+    }
+
+    boolean isFailingToConnect()
+    {
+        return status == Status.FAILING_TO_CONNECT;
     }
 
     private String id(boolean includeReal)
     {
-        Channel channel = this.channel;
-        if (!includeReal || channel == null)
+        ConnectionState connectionState = this.connectionState;
+        if (!includeReal || connectionState == null)
             return id();
-        return SocketFactory.channelId(settings.from, (InetSocketAddress) channel.remoteAddress(),
-                                       settings.to, (InetSocketAddress) channel.localAddress(),
-                                       type, channel.id().asShortText());
+        return SocketFactory.channelId(settings.from, (InetSocketAddress) connectionState.channel.remoteAddress(),
+                                       settings.to, (InetSocketAddress) connectionState.channel.localAddress(),
+                                       type, connectionState.channel.id().asShortText());
     }
 
     private String id()
     {
-        Channel channel = this.channel;
-        String channelId = channel != null ? channel.id().asShortText() : "[no-channel]";
+        ConnectionState connectionState = this.connectionState;
+        String channelId = connectionState != null ? connectionState.channel.id().asShortText() : "[no-channel]";
         return SocketFactory.channelId(settings.from, settings.to, type, channelId);
     }
 
@@ -1588,7 +1612,7 @@ public class OutboundConnection
     @VisibleForTesting
     Channel unsafeGetChannel()
     {
-        return channel;
+        return connectionState.channel;
     }
 
     @VisibleForTesting
