@@ -85,11 +85,14 @@ public class Server implements CassandraDaemon.Server
 
     private EventLoopGroup workerGroup;
     private EventExecutor eventExecutorGroup;
+    private final ConfiguredLimit protocolVersionLimit;
 
     private Server (Builder builder)
     {
         this.socket = builder.getSocket();
         this.useSSL = builder.useSSL;
+        this.protocolVersionLimit = builder.getProtocolVersionLimit();
+
         if (builder.workerGroup != null)
         {
             workerGroup = builder.workerGroup;
@@ -188,6 +191,7 @@ public class Server implements CassandraDaemon.Server
         private InetAddress hostAddr;
         private int port = -1;
         private InetSocketAddress socket;
+        private ConfiguredLimit versionLimit;
 
         public Builder withSSL(boolean useSSL)
         {
@@ -219,6 +223,19 @@ public class Server implements CassandraDaemon.Server
             this.port = port;
             this.socket = null;
             return this;
+        }
+
+        public Builder withProtocolVersionLimit(ConfiguredLimit limit)
+        {
+            this.versionLimit = limit;
+            return this;
+        }
+
+        public ConfiguredLimit getProtocolVersionLimit()
+        {
+            if (versionLimit == null)
+                throw new IllegalArgumentException("Missing protocol version limiter");
+            return versionLimit;
         }
 
         public Server build()
@@ -290,7 +307,6 @@ public class Server implements CassandraDaemon.Server
     {
         // Stateless handlers
         private static final Message.ProtocolDecoder messageDecoder = new Message.ProtocolDecoder();
-        private static final Message.ProtocolEncoder messageEncoder = new Message.ProtocolEncoder();
         private static final Frame.Decompressor frameDecompressor = new Frame.Decompressor();
         private static final Frame.Compressor frameCompressor = new Frame.Compressor();
         private static final Frame.Encoder frameEncoder = new Frame.Encoder();
@@ -319,14 +335,14 @@ public class Server implements CassandraDaemon.Server
 
             //pipeline.addLast("debug", new LoggingHandler());
 
-            pipeline.addLast("frameDecoder", new Frame.Decoder(server.connectionFactory));
+            pipeline.addLast("frameDecoder", new Frame.Decoder(server.connectionFactory, server.protocolVersionLimit));
             pipeline.addLast("frameEncoder", frameEncoder);
 
             pipeline.addLast("frameDecompressor", frameDecompressor);
             pipeline.addLast("frameCompressor", frameCompressor);
 
             pipeline.addLast("messageDecoder", messageDecoder);
-            pipeline.addLast("messageEncoder", messageEncoder);
+            pipeline.addLast("messageEncoder", new Message.ProtocolEncoder(server.protocolVersionLimit));
 
             // The exceptionHandler will take care of handling exceptionCaught(...) events while still running
             // on the same EventLoop as all previous added handlers in the pipeline. This is important as the used

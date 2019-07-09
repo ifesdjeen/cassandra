@@ -32,9 +32,9 @@ import io.netty.channel.epoll.Epoll;
 import io.netty.channel.epoll.EpollEventLoopGroup;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.util.concurrent.EventExecutor;
-import io.netty.util.concurrent.Future;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.metrics.ClientMetrics;
+import org.apache.cassandra.transport.ConfiguredLimit;
 import org.apache.cassandra.transport.RequestThreadPoolExecutor;
 import org.apache.cassandra.transport.Server;
 
@@ -51,6 +51,7 @@ public class NativeTransportService
     private boolean initialized = false;
     private EventLoopGroup workerGroup;
     private EventExecutor eventExecutorGroup;
+    private ConfiguredLimit protocolVersionLimit;
 
     /**
      * Creates netty thread pools and event loops.
@@ -75,6 +76,8 @@ public class NativeTransportService
             logger.info("Netty using Java NIO event loop");
         }
 
+        protocolVersionLimit = ConfiguredLimit.newLimit();
+
         int nativePort = DatabaseDescriptor.getNativeTransportPort();
         int nativePortSSL = DatabaseDescriptor.getNativeTransportPortSSL();
         InetAddress nativeAddr = DatabaseDescriptor.getRpcAddress();
@@ -82,6 +85,7 @@ public class NativeTransportService
         org.apache.cassandra.transport.Server.Builder builder = new org.apache.cassandra.transport.Server.Builder()
                                                                 .withEventExecutor(eventExecutorGroup)
                                                                 .withEventLoopGroup(workerGroup)
+                                                                .withProtocolVersionLimit(protocolVersionLimit)
                                                                 .withHost(nativeAddr);
 
         if (!DatabaseDescriptor.getClientEncryptionOptions().enabled)
@@ -149,6 +153,20 @@ public class NativeTransportService
 
         // shutdownGracefully not implemented yet in RequestThreadPoolExecutor
         eventExecutorGroup.shutdown();
+    }
+
+    public int getMaxProtocolVersion()
+    {
+        return protocolVersionLimit.getMaxVersion();
+    }
+
+    public void refreshMaxNegotiableProtocolVersion()
+    {
+        // lowering the max negotiable protocol version is only safe if we haven't already
+        // allowed clients to connect with a higher version. This still allows the max
+        // version to be raised, as that is safe.
+        if (initialized)
+            protocolVersionLimit.updateMaxSupportedVersion();
     }
 
     /**

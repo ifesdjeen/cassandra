@@ -438,6 +438,23 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         return daemon.isNativeTransportRunning();
     }
 
+    public int getMaxNativeProtocolVersion()
+    {
+        if (daemon == null)
+        {
+            throw new IllegalStateException("No configured daemon");
+        }
+        return daemon.getMaxNativeProtocolVersion();
+    }
+
+    private void refreshMaxNativeProtocolVersion()
+    {
+        if (daemon != null)
+        {
+            daemon.refreshMaxNativeProtocolVersion();
+        }
+    }
+
     public void stopTransports()
     {
         if (isInitialized())
@@ -1779,7 +1796,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                 switch (state)
                 {
                     case RELEASE_VERSION:
-                        SystemKeyspace.updatePeerInfo(endpoint, "release_version", value.value, executor);
+                        SystemKeyspace.updatePeerReleaseVersion(endpoint, value.value, this::refreshMaxNativeProtocolVersion, executor);
                         break;
                     case DC:
                         updateTopology(endpoint);
@@ -1856,7 +1873,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
             switch (entry.getKey())
             {
                 case RELEASE_VERSION:
-                    SystemKeyspace.updatePeerInfo(endpoint, "release_version", entry.getValue().value, executor);
+                    SystemKeyspace.updatePeerReleaseVersion(endpoint, entry.getValue().value, this::refreshMaxNativeProtocolVersion, executor);
                     break;
                 case DC:
                     SystemKeyspace.updatePeerInfo(endpoint, "data_center", entry.getValue().value, executor);
