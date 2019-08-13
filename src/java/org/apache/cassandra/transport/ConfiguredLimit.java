@@ -90,29 +90,28 @@ public abstract class ConfiguredLimit implements ProtocolVersionLimit
             maybeUpdateVersion(false);
         }
 
-        public void maybeUpdateVersion(boolean allowLowering)
+        private void maybeUpdateVersion(boolean allowLowering)
         {
             boolean enforceV3Cap = SystemKeyspace.loadPeerVersions()
                                                  .values()
                                                  .stream()
                                                  .anyMatch(v -> v.compareTo(MIN_VERSION_FOR_V4) < 0);
 
-            if (enforceV3Cap)
-            {
-                if (maxVersion > Server.VERSION_3 && !allowLowering)
-                {
-                    logger.info("Detected peers which do not fully support protocol V4, but V4 was previously negotiable. " +
-                                "Not enforcing cap as this can cause issues for older client versions. After the next " +
-                                "restart the server will apply the cap");
-                    return;
-                }
-                logger.info("Detected peers which do not fully support protocol V4. Capping max negotiable version to V3");
-                maxVersion = Server.VERSION_3;
-            }
-            else
+            if (!enforceV3Cap)
             {
                 maxVersion = Server.CURRENT_VERSION;
+                return;
             }
+
+            if (maxVersion > Server.VERSION_3 && !allowLowering)
+            {
+                logger.info("Detected peers which do not fully support protocol V4, but V4 was previously negotiable. " +
+                            "Not enforcing cap as this can cause issues for older client versions. After the next " +
+                            "restart the server will apply the cap");
+                return;
+            }
+            logger.info("Detected peers which do not fully support protocol V4. Capping max negotiable version to V3");
+            maxVersion = Server.VERSION_3;
         }
     }
 }

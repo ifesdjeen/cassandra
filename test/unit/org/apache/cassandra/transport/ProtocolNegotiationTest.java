@@ -70,23 +70,18 @@ public class ProtocolNegotiationTest extends CQLTester
     @Test
     public void testStaticLimit() throws Throwable
     {
-        try
-        {
-            reinitializeNetwork();
-            // No limit enforced to start
-            assertEquals(Integer.MIN_VALUE, DatabaseDescriptor.getNativeProtocolMaxVersionOverride());
-            testConnection(null, ProtocolVersion.V4);
+        reinitializeNetwork();
+        // No limit enforced to start
+        assertEquals(Integer.MIN_VALUE, DatabaseDescriptor.getNativeProtocolMaxVersionOverride());
+        testConnection(null, ProtocolVersion.V4);
 
-            // Update DatabaseDescriptor, then re-initialise the server to force it to read it
-            setStaticLimitInConfig(ProtocolVersion.V3.toInt());
-            reinitializeNetwork();
-            assertEquals(3, DatabaseDescriptor.getNativeProtocolMaxVersionOverride());
-            testConnection(ProtocolVersion.V4, ProtocolVersion.V3);
-            testConnection(ProtocolVersion.V3, ProtocolVersion.V3);
-            testConnection(null, ProtocolVersion.V3);
-        } finally {
-            setStaticLimitInConfig(null);
-        }
+        // Update DatabaseDescriptor, then re-initialise the server to force it to read it
+        setStaticLimitInConfig(ProtocolVersion.V3.toInt());
+        reinitializeNetwork();
+        assertEquals(3, DatabaseDescriptor.getNativeProtocolMaxVersionOverride());
+        testConnection(ProtocolVersion.V4, ProtocolVersion.V3);
+        testConnection(ProtocolVersion.V3, ProtocolVersion.V3);
+        testConnection(null, ProtocolVersion.V3);
     }
 
     @Test
@@ -95,6 +90,7 @@ public class ProtocolNegotiationTest extends CQLTester
         InetAddress peer1 = setupPeer("127.1.0.1", "2.2.0");
         InetAddress peer2 = setupPeer("127.1.0.2", "2.2.0");
         InetAddress peer3 = setupPeer("127.1.0.3", "2.2.0");
+
         reinitializeNetwork();
         try
         {

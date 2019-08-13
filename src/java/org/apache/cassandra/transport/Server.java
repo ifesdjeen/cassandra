@@ -85,7 +85,7 @@ public class Server implements CassandraDaemon.Server
 
     private EventLoopGroup workerGroup;
     private EventExecutor eventExecutorGroup;
-    private final ConfiguredLimit protocolVersionLimit;
+    private final ProtocolVersionLimit protocolVersionLimit;
 
     private Server (Builder builder)
     {
@@ -191,7 +191,7 @@ public class Server implements CassandraDaemon.Server
         private InetAddress hostAddr;
         private int port = -1;
         private InetSocketAddress socket;
-        private ConfiguredLimit versionLimit;
+        private ProtocolVersionLimit versionLimit;
 
         public Builder withSSL(boolean useSSL)
         {
@@ -225,13 +225,13 @@ public class Server implements CassandraDaemon.Server
             return this;
         }
 
-        public Builder withProtocolVersionLimit(ConfiguredLimit limit)
+        public Builder withProtocolVersionLimit(ProtocolVersionLimit limit)
         {
             this.versionLimit = limit;
             return this;
         }
 
-        public ConfiguredLimit getProtocolVersionLimit()
+        public ProtocolVersionLimit getProtocolVersionLimit()
         {
             if (versionLimit == null)
                 throw new IllegalArgumentException("Missing protocol version limiter");

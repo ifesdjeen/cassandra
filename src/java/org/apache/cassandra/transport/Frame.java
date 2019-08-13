@@ -177,7 +177,7 @@ public class Frame
             int version = firstByte & PROTOCOL_VERSION_MASK;
             if (version < Server.MIN_SUPPORTED_VERSION || version > versionCap.getMaxVersion())
                 throw new ProtocolException(String.format("Invalid or unsupported protocol version (%d); the lowest supported version is %d and the greatest is %d",
-                                                          version, Server.MIN_SUPPORTED_VERSION, Server.CURRENT_VERSION),
+                                                          version, Server.MIN_SUPPORTED_VERSION, versionCap.getMaxVersion()),
                                             version < Server.MIN_SUPPORTED_VERSION ? version : null);
 
             // Wait until we have the complete header
