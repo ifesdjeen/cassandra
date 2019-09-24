@@ -21,19 +21,39 @@ package org.apache.cassandra.distributed.test;
 import org.junit.Assert;
 import org.junit.Test;
 
+import com.datastax.driver.core.Session;
 import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.db.Keyspace;
 import org.apache.cassandra.distributed.Cluster;
 import org.apache.cassandra.distributed.impl.IInvokableInstance;
 
+import static org.apache.cassandra.distributed.api.Feature.GOSSIP;
+import static org.apache.cassandra.distributed.api.Feature.NATIVE_TRANSPORT;
 import static org.apache.cassandra.distributed.api.Feature.NETWORK;
 import static org.junit.Assert.assertEquals;
 
 import static org.apache.cassandra.net.Verb.READ_REPAIR_REQ;
 import static org.apache.cassandra.net.OutboundConnections.LARGE_MESSAGE_THRESHOLD;
+import static org.junit.Assert.assertEquals;
 
 public class DistributedReadWritePathTest extends DistributedTestBase
 {
+
+    @Test
+    public void withClientRequests() throws Throwable
+    {
+        try (Cluster c = init(Cluster.create(2,
+                                             config -> config.with(GOSSIP, NETWORK, NATIVE_TRANSPORT))))
+        {
+            com.datastax.driver.core.Cluster cluster = com.datastax.driver.core.Cluster.builder()
+                                                                                       .addContactPoints("127.0.0.1", "127.0.0.2")
+                                                                                       .build();
+            Session session = cluster.connect();
+            session.execute("CREATE TABLE " + KEYSPACE + ".tbl (pk int, ck int, v int, PRIMARY KEY (pk, ck))");
+            session.close();
+            cluster.close();
+        }
+    }
 
     @Test
     public void coordinatorReadTest() throws Throwable

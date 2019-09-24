@@ -153,7 +153,8 @@ public class CassandraDaemon
         }
     }
 
-    static final CassandraDaemon instance = new CassandraDaemon();
+    @VisibleForTesting
+    public static final CassandraDaemon instance = new CassandraDaemon();
 
     private NativeTransportService nativeTransportService;
     private JMXConnectorServer jmxServer;
@@ -438,8 +439,7 @@ public class CassandraDaemon
             NANOSECONDS
         );
 
-        // Native transport
-        nativeTransportService = new NativeTransportService();
+        initializeNativeTransport();
 
         completeSetup();
     }
@@ -568,8 +568,8 @@ public class CassandraDaemon
         // On linux, this doesn't entirely shut down Cassandra, just the RPC server.
         // jsvc takes care of taking the rest down
         logger.info("Cassandra shutting down...");
-        if (nativeTransportService != null)
-            nativeTransportService.destroy();
+        stopNativeTransport();
+
         StorageService.instance.setRpcReady(false);
 
         // On windows, we need to stop the entire system as prunsrv doesn't have the jsvc hooks
@@ -665,6 +665,12 @@ public class CassandraDaemon
         DatabaseDescriptor.daemonInitialization();
     }
 
+    public void initializeNativeTransport()
+    {
+        // Native transport
+        nativeTransportService = new NativeTransportService();
+    }
+
     public void startNativeTransport()
     {
         // We only start transports if bootstrap has completed and we're not in survey mode, OR if we are in
@@ -704,7 +710,7 @@ public class CassandraDaemon
 
     public boolean isNativeTransportRunning()
     {
-        return nativeTransportService != null ? nativeTransportService.isRunning() : false;
+        return nativeTransportService != null && nativeTransportService.isRunning();
     }
 
 

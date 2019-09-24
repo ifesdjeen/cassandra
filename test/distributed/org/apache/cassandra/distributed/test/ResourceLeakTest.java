@@ -44,6 +44,7 @@ import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.SigarLibrary;
 
 import static org.apache.cassandra.distributed.api.Feature.GOSSIP;
+import static org.apache.cassandra.distributed.api.Feature.NATIVE_TRANSPORT;
 import static org.apache.cassandra.distributed.api.Feature.NETWORK;
 
 /* Resource Leak Test - useful when tracking down issues with in-JVM framework cleanup.
@@ -198,5 +199,18 @@ public class ResourceLeakTest extends DistributedTestBase
             Thread.sleep(finalWaitMillis);
         }
         dumpResources("final-gossip-network");
+    }
+
+    @Test
+    public void looperNativeTransportTest() throws Throwable
+    {
+        doTest(2, config -> config.with(NATIVE_TRANSPORT));
+        if (forceCollection)
+        {
+            System.runFinalization();
+            System.gc();
+            Thread.sleep(finalWaitMillis);
+        }
+        dumpResources("final-native");
     }
 }

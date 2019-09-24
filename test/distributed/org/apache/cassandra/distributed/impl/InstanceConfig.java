@@ -55,19 +55,22 @@ public class InstanceConfig implements IInstanceConfig
     public InetAddressAndPort broadcastAddressAndPort()
     {
         if (broadcastAddressAndPort == null)
-        {
-            try
-            {
-                broadcastAddressAndPort = InetAddressAndPort.getByNameOverrideDefaults(getString("broadcast_address"), getInt("storage_port"));
-            }
-            catch (UnknownHostException e)
-            {
-                throw new IllegalStateException(e);
-            }
-        }
+            broadcastAddressAndPort = getAddressAndPortFromConfig("broadcast_address", "storage_port");
+
         return broadcastAddressAndPort;
     }
 
+    private InetAddressAndPort getAddressAndPortFromConfig(String addressProp, String portProp)
+    {
+        try
+        {
+            return InetAddressAndPort.getByNameOverrideDefaults(getString(addressProp), getInt(portProp));
+        }
+        catch (UnknownHostException e)
+        {
+            throw new IllegalStateException(e);
+        }
+    }
     private InstanceConfig(int num,
                            String broadcast_address,
                            String listen_address,
@@ -93,6 +96,7 @@ public class InstanceConfig implements IInstanceConfig
                 .set("cdc_raw_directory", cdc_raw_directory)
                 .set("initial_token", initial_token)
                 .set("partitioner", "org.apache.cassandra.dht.Murmur3Partitioner")
+                .set("start_native_transport", true)
                 .set("concurrent_writes", 2)
                 .set("concurrent_counter_writes", 2)
                 .set("concurrent_materialized_view_writes", 2)
@@ -123,6 +127,13 @@ public class InstanceConfig implements IInstanceConfig
     public InstanceConfig with(Feature featureFlag)
     {
         featureFlags.add(featureFlag);
+        return this;
+    }
+
+    public InstanceConfig with(Feature... flags)
+    {
+        for (Feature flag : flags)
+            featureFlags.add(flag);
         return this;
     }
 
