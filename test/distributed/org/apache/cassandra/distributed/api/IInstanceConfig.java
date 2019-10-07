@@ -18,12 +18,10 @@
 
 package org.apache.cassandra.distributed.api;
 
+import java.util.UUID;
+
 import org.apache.cassandra.distributed.impl.NetworkTopology;
 import org.apache.cassandra.locator.InetAddressAndPort;
-import org.apache.cassandra.utils.Pair;
-
-import java.util.Map;
-import java.util.UUID;
 
 public interface IInstanceConfig
 {

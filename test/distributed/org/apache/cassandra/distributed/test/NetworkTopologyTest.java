@@ -36,7 +36,7 @@ public class NetworkTopologyTest extends DistributedTestBase
     public void namedDcTest() throws Throwable
     {
         try (Cluster cluster = Cluster.build()
-                                      .withNodeIdTopology(Collections.singletonMap(1, Pair.create("somewhere", "rack0")))
+                                      .withNodeIdTopology(Collections.singletonList(Pair.create("somewhere", "rack0")))
                                       .withRack("elsewhere", "firstrack", 1)
                                       .withRack("elsewhere", "secondrack", 2)
                                       .withDC("nearthere", 4)
@@ -88,12 +88,6 @@ public class NetworkTopologyTest extends DistributedTestBase
     @Test(expected = IllegalStateException.class)
     public void noEmptyNodeIdTopologyTest()
     {
-        Cluster.build().withNodeIdTopology(Collections.emptyMap());
-    }
-
-    @Test(expected = IllegalStateException.class)
-    public void noHolesInNodeIdTopologyTest()
-    {
-        Cluster.build().withNodeIdTopology(Collections.singletonMap(2, Pair.create("doomed", "rack")));
+        Cluster.build().withNodeIdTopology(Collections.emptyList());
     }
 }

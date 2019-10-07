@@ -21,6 +21,7 @@ package org.apache.cassandra.distributed.impl;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import org.apache.cassandra.exceptions.ConfigurationException;
@@ -41,12 +42,13 @@ public class NetworkTopology
         map = new HashMap<>(networkTopology.map);
     }
 
-    public static NetworkTopology build(String ipPrefix, int broadcastPort, Map<Integer, Pair<String, String>> nodeIdTopology)
+    public static NetworkTopology build(String ipPrefix, int broadcastPort, List<Pair<String, String>> nodeIdTopology)
     {
         final NetworkTopology topology = new NetworkTopology();
 
-        for (int nodeId = 1; nodeId <= nodeIdTopology.size(); nodeId++)
+        for (int i = 0; i < nodeIdTopology.size(); i++)
         {
+            int nodeId = i + 1;
             String broadcastAddress = ipPrefix + nodeId;
 
             try

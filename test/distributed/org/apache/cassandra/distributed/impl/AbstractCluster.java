@@ -373,7 +373,7 @@ public abstract class AbstractCluster<I extends IInstance> implements ICluster, 
         private final Factory<I, C> factory;
         private int nodeCount;
         private int subnet;
-        private Map<Integer, Pair<String,String>> nodeIdTopology;
+        private List<Pair<String,String>> nodeIdTopology;
         private File root;
         private Versions.Version version;
         private Consumer<InstanceConfig> configUpdater;
@@ -414,18 +414,20 @@ public abstract class AbstractCluster<I extends IInstance> implements ICluster, 
             if (nodeIdTopology != null)
                 throw new IllegalStateException("Network topology already created. Call withDCs/withRacks once or before withDC/withRack calls");
 
-            nodeIdTopology = new HashMap<>();
-            int nodeId = 1;
+            nodeIdTopology = new ArrayList<>();
+            // adjust the node count to match the allocatation
+            final int adjustedNodeCount = dcCount * racksPerDC * nodesPerRack;
+
+            int nodeId = 0;
             for (int dc = 1; dc <= dcCount; dc++)
             {
                 for (int rack = 1; rack <= racksPerDC; rack++)
                 {
                     for (int rackNodeIdx = 0; rackNodeIdx < nodesPerRack; rackNodeIdx++)
-                        nodeIdTopology.put(nodeId++, Pair.create(dcName(dc), rackName(rack)));
+                        nodeIdTopology.add(nodeId++, Pair.create(dcName(dc), rackName(rack)));
                 }
             }
-            // adjust the node count to match the allocatation
-            final int adjustedNodeCount = dcCount * racksPerDC * nodesPerRack;
+
             if (adjustedNodeCount != nodeCount)
             {
                 assert adjustedNodeCount > nodeCount : "withRacks should only ever increase the node count";
@@ -448,25 +450,19 @@ public abstract class AbstractCluster<I extends IInstance> implements ICluster, 
                 if (nodeCount > 0)
                     throw new IllegalStateException("Node count must not be explicitly set, or allocated using withDCs/withRacks");
 
-                nodeIdTopology = new HashMap<>();
+                nodeIdTopology = new ArrayList<>(nodesInRack);
             }
-            for (int nodeId = nodeCount + 1; nodeId <= nodeCount + nodesInRack; nodeId++)
-                nodeIdTopology.put(nodeId, Pair.create(dcName, rackName));
+            for (int nodeId = nodeCount; nodeId < nodeCount + nodesInRack; nodeId++)
+                nodeIdTopology.add(nodeId, Pair.create(dcName, rackName));
 
             nodeCount += nodesInRack;
             return this;
         }
 
-        // Map of node ids to dc and rack - must be contiguous with an entry nodeId 1 to nodeCount
-        public Builder<I, C> withNodeIdTopology(Map<Integer,Pair<String,String>> nodeIdTopology)
+        public Builder<I, C> withNodeIdTopology(List<Pair<String,String>> nodeIdTopology)
         {
             if (nodeIdTopology.isEmpty())
                 throw new IllegalStateException("Topology is empty. It must have an entry for every nodeId.");
-
-            IntStream.rangeClosed(1, nodeIdTopology.size()).forEach(nodeId -> {
-                if (nodeIdTopology.get(nodeId) == null)
-                    throw new IllegalStateException("Topology is missing entry for nodeId " + nodeId);
-            });
 
             if (nodeCount != nodeIdTopology.size())
             {
@@ -475,7 +471,7 @@ public abstract class AbstractCluster<I extends IInstance> implements ICluster, 
 
             }
 
-            this.nodeIdTopology = new HashMap<>(nodeIdTopology);
+            this.nodeIdTopology = new ArrayList<>(nodeIdTopology);
 
             return this;
         }
@@ -513,10 +509,11 @@ public abstract class AbstractCluster<I extends IInstance> implements ICluster, 
                 throw new IllegalStateException("Cluster must have at least one node");
 
             if (nodeIdTopology == null)
-                nodeIdTopology = IntStream.rangeClosed(1, nodeCount).boxed()
-                                          .collect(Collectors.toMap(nodeId -> nodeId,
-                                                                    nodeId -> Pair.create(dcName(0), rackName(0))));
-
+            {
+                nodeIdTopology = IntStream.range(0, nodeCount).boxed()
+                                          .map(nodeId -> Pair.create(dcName(0), rackName(0)))
+                                          .collect(Collectors.toList());
+            }
             root.mkdirs();
             setupLogging(root);
 

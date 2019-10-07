@@ -351,7 +351,8 @@ public class Instance extends IsolatedExecutor implements IInvokableInstance
             {
                 mkdirs();
 
-                assert config.networkTopology().contains(config.broadcastAddressAndPort());
+                assert config.networkTopology().contains(config.broadcastAddressAndPort()) :
+                String.format("Network topology doesn't have %s", config.broadcastAddressAndPort());
                 DistributedTestSnitch.assign(config.networkTopology());
 
                 DatabaseDescriptor.setDaemonInitialized();
