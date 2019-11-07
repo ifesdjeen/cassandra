@@ -41,7 +41,7 @@ public class Listen implements IListen
 
     public Cancel liveMembers(Runnable onChange)
     {
-        return start(onChange, () -> instance.callsOnInstance(() -> Gossiper.instance.getLiveMembers()).call());
+        return start(onChange, instance::liveMemberCount);
     }
 
     protected <T> Cancel start(Runnable onChange, Supplier<T> getValueFunc) {
