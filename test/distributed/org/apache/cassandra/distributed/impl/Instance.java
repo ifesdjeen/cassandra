@@ -548,10 +548,13 @@ public class Instance extends IsolatedExecutor implements IInvokableInstance
                                 .thenRun(super::shutdown);
     }
 
-    // NOTE: This method requires the instance to be initialized and running
     public int liveMemberCount()
     {
-        return callsOnInstance(() -> Gossiper.instance.getLiveMembers().size()).call();
+        return callsOnInstance(() -> {
+            if (!Gossiper.instance.isEnabled())
+                return 0;
+            return Gossiper.instance.getLiveMembers().size();
+        }).call();
     }
 
     private static Throwable parallelRun(Throwable accumulate, ExecutorService runOn, ThrowingRunnable ... runnables)
