@@ -318,6 +318,7 @@ public abstract class AbstractCluster<I extends IInstance> implements ICluster, 
         {
             this.timeOut = timeOut;
             this.timeoutUnit = timeoutUnit;
+            startPolling();
         }
 
         protected void signal()
@@ -338,9 +339,6 @@ public abstract class AbstractCluster<I extends IInstance> implements ICluster, 
         public void waitForCompletion()
         {
             this.changed = true;
-            signal();
-            startPolling();
-            changed = true;
             signal();
             try
             {
@@ -401,8 +399,8 @@ public abstract class AbstractCluster<I extends IInstance> implements ICluster, 
         }
     }
 
-    public class LiveMemberAgreementMonitor extends ChangeMonitor<I> {
-        public LiveMemberAgreementMonitor() {
+    public class AllMembersAliveMonitor extends ChangeMonitor<I> {
+        public AllMembersAliveMonitor() {
             super(60, TimeUnit.SECONDS);
         }
 
@@ -429,12 +427,9 @@ public abstract class AbstractCluster<I extends IInstance> implements ICluster, 
 
     void startup()
     {
-        // With `auto_bootstrap` enabled, starting up the instances using `parallelForEach`
-        // will fail intermittently (and, depending on hardware, > 80% of the time).
-        // Use `forEach` now as any test that explicitly enables `auto_bootstrap` will fail
-        // if we use `parallelForEach`.
-        try (LiveMemberAgreementMonitor monitor = new LiveMemberAgreementMonitor()) {
-            forEach(I::startup);
+        parallelForEach(I::startup, 0, null);
+
+        try (ChangeMonitor monitor = new AllMembersAliveMonitor()) {
             monitor.waitForCompletion();
         }
     }
