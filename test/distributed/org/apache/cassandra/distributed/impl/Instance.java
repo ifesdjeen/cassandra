@@ -411,14 +411,14 @@ public class Instance extends IsolatedExecutor implements IInvokableInstance
                     initializeRing(cluster);
                 }
 
+                StorageService.instance.ensureTraceKeyspace();
+
+                SystemKeyspace.finishStartup();
+
                 if (config.has(NATIVE_PROTOCOL)) {
                     CassandraDaemon.getInstanceForTesting().initializeNativeTransport();
                     CassandraDaemon.getInstanceForTesting().startNativeTransport();
                 }
-
-                StorageService.instance.ensureTraceKeyspace();
-
-                SystemKeyspace.finishStartup();
 
                 if (!FBUtilities.getBroadcastAddress().equals(broadcastAddressAndPort().address))
                     throw new IllegalStateException();
