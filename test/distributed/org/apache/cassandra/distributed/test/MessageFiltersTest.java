@@ -26,7 +26,6 @@ import com.google.common.collect.Sets;
 import org.junit.Assert;
 import org.junit.Test;
 
-import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.distributed.Cluster;
 import org.apache.cassandra.distributed.api.IIsolatedExecutor;
@@ -36,7 +35,6 @@ import org.apache.cassandra.distributed.impl.Instance;
 import org.apache.cassandra.distributed.impl.MessageFilters;
 import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.net.MessageIn;
-import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
 
 public class MessageFiltersTest extends DistributedTestBase

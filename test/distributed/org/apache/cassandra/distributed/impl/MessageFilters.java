@@ -32,17 +32,11 @@ public class MessageFilters implements IMessageFilters
 {
     private final List<Filter> filters = new CopyOnWriteArrayList<>();
 
-    @VisibleForTesting
     public boolean permit(int from, int to, IMessage msg)
-    {
-        return permit(from, to, msg.verb(), () -> msg);
-    }
-
-    public boolean permit(int from, int to, int verb, Supplier<IMessage> msg)
     {
         for (Filter filter : filters)
         {
-            if (filter.matches(from, to, verb, msg))
+            if (filter.matches(from, to, msg))
                 return false;
         }
         return true;
@@ -109,12 +103,12 @@ public class MessageFilters implements IMessageFilters
             return this;
         }
 
-        public boolean matches(int from, int to, int verb, Supplier<IMessage> msg)
+        public boolean matches(int from, int to, IMessage msg)
         {
             return (this.from == null || Arrays.binarySearch(this.from, from) >= 0)
                    && (this.to == null || Arrays.binarySearch(this.to, to) >= 0)
-                   && (this.verbs == null || Arrays.binarySearch(this.verbs, verb) >= 0)
-                   && (this.matcher == null || this.matcher.matches(from, to, msg.get()));
+                   && (this.verbs == null || Arrays.binarySearch(this.verbs, msg.verb()) >= 0)
+                   && (this.matcher == null || this.matcher.matches(from, to, msg));
         }
     }
 

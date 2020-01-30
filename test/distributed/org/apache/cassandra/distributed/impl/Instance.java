@@ -196,7 +196,7 @@ public class Instance extends IsolatedExecutor implements IInvokableInstance
             int fromNum = config().num();
             int toNum = cluster.get(to).config().num();
 
-            if (cluster.filters().permit(fromNum, toNum, message.verb(), () -> message))
+            if (cluster.filters().permit(fromNum, toNum, message))
                 deliverToInstance.accept(to, message);
         };
 
@@ -226,7 +226,7 @@ public class Instance extends IsolatedExecutor implements IInvokableInstance
                 IInstance to = cluster.get(InetAddressAndPort.getByAddressOverrideDefaults(toAddress, instance.config().broadcastAddressAndPort().port));
                 int fromNum = config().num();
                 int toNum = to.config().num();
-                return cluster.filters().permit(fromNum, toNum, message.verb.ordinal(), () -> serializeMessage(message, id, broadcastAddressAndPort(), to.broadcastAddressAndPort()));
+                return cluster.filters().permit(fromNum, toNum, serializeMessage(message, id, broadcastAddressAndPort(), to.broadcastAddressAndPort()));
             }
 
             public boolean allowIncomingMessage(MessageIn message, int id)
@@ -328,12 +328,12 @@ public class Instance extends IsolatedExecutor implements IInvokableInstance
     }
 
 
-    public static Pair<MessageIn<Object>, Integer> deserializeMessage(IMessage msg)
+    public static Pair<MessageIn<Object>, Integer> deserializeMessage(IMessage imessage)
     {
         // Based on org.apache.cassandra.net.IncomingTcpConnection.receiveMessage
-        try (DataInputBuffer input = new DataInputBuffer(msg.bytes()))
+        try (DataInputBuffer input = new DataInputBuffer(imessage.bytes()))
         {
-            int version = msg.version();
+            int version = imessage.version();
             if (version > MessagingService.current_version)
             {
                 throw new IllegalStateException(String.format("Received message version %d but current version is %d",
@@ -347,8 +347,8 @@ public class Instance extends IsolatedExecutor implements IInvokableInstance
                 id = Integer.parseInt(input.readUTF());
             else
                 id = input.readInt();
-            if (msg.id() != id)
-                throw new IllegalStateException(String.format("Message id mismatch: %d != %d", msg.id(), id));
+            if (imessage.id() != id)
+                throw new IllegalStateException(String.format("Message id mismatch: %d != %d", imessage.id(), id));
 
             // make sure to readInt, even if cross_node_to is not enabled
             int partial = input.readInt();
