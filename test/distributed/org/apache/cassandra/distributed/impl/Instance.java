@@ -242,29 +242,7 @@ public class Instance extends IsolatedExecutor implements IInvokableInstance
         try (DataOutputBuffer out = new DataOutputBuffer(1024))
         {
             int version = MessagingService.instance().getVersion(to.address);
-
-            // Tracing logic - similar to org.apache.cassandra.net.OutboundTcpConnection.writeConnected
-            byte[] sessionBytes = (byte[]) messageOut.parameters.get(Tracing.TRACE_HEADER);
-            if (sessionBytes != null)
-            {
-                UUID sessionId = UUIDGen.getUUID(ByteBuffer.wrap(sessionBytes));
-                TraceState state = Tracing.instance.get(sessionId);
-                String message = String.format("Sending %s message to %s", messageOut.verb, to.address);
-                // session may have already finished; see CASSANDRA-5668
-                if (state == null)
-                {
-                    byte[] traceTypeBytes = (byte[]) messageOut.parameters.get(Tracing.TRACE_TYPE);
-                    Tracing.TraceType traceType = traceTypeBytes == null ? Tracing.TraceType.QUERY : Tracing.TraceType.deserialize(traceTypeBytes[0]);
-                    Tracing.instance.trace(ByteBuffer.wrap(sessionBytes), message, traceType.getTTL());
-                }
-                else
-                {
-                    state.trace(message);
-                    if (messageOut.verb == MessagingService.Verb.REQUEST_RESPONSE)
-                        Tracing.instance.doneWithNonLocalSession(state);
-                }
-            }
-
+            
             out.writeInt(MessagingService.PROTOCOL_MAGIC);
             out.writeInt(id);
             long timestamp = System.currentTimeMillis();
