@@ -197,7 +197,7 @@ public class Instance extends IsolatedExecutor implements IInvokableInstance
             int fromNum = config().num();
             int toNum = cluster.get(to).config().num();
 
-            if (cluster.filters().permit(fromNum, toNum, message.verb(), () -> message))
+            if (cluster.filters().permit(fromNum, toNum, message))
                 deliverToInstance.accept(to, message);
         };
 
@@ -227,7 +227,7 @@ public class Instance extends IsolatedExecutor implements IInvokableInstance
                 IInstance to = cluster.get(InetAddressAndPort.getByAddressOverrideDefaults(toAddress, instance.config().broadcastAddressAndPort().port));
                 int fromNum = config().num();
                 int toNum = to.config().num();
-                return cluster.filters().permit(fromNum, toNum, message.verb.ordinal(), () -> serializeMessage(message, id, broadcastAddressAndPort(), to.broadcastAddressAndPort()));
+                return cluster.filters().permit(fromNum, toNum, serializeMessage(message, id, broadcastAddressAndPort(), to.broadcastAddressAndPort()));
             }
 
             public boolean allowIncomingMessage(MessageIn message, int id)
