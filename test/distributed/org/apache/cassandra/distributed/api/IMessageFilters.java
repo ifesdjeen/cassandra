@@ -18,8 +18,6 @@
 
 package org.apache.cassandra.distributed.api;
 
-import java.util.function.Supplier;
-
 public interface IMessageFilters
 {
     public interface Filter
@@ -54,5 +52,5 @@ public interface IMessageFilters
      * {@code true} value returned by the implementation implies that the message was
      * not matched by any filters and therefore should be delivered.
      */
-    boolean permit(int from, int to, int verb, Supplier<IMessage> msg);
+    boolean permit(int from, int to, IMessage msg);
 }
