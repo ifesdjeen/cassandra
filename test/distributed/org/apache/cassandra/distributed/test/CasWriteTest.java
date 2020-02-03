@@ -21,6 +21,7 @@ package org.apache.cassandra.distributed.test;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -53,6 +54,7 @@ import org.hamcrest.BaseMatcher;
 import org.hamcrest.Description;
 
 import static org.hamcrest.CoreMatchers.containsString;
+import static org.junit.Assert.fail;
 
 public class CasWriteTest extends DistributedTestBase
 {
@@ -148,21 +150,7 @@ public class CasWriteTest extends DistributedTestBase
         cluster.coordinator(1).execute(mkUniqueCasInsertQuery(1), ConsistencyLevel.QUORUM);
     }
 
-    @Test
-    public void casWriteResultUnknownTest() throws InterruptedException
-    {
-        testWithContention(100,
-                           Arrays.asList(1, 3),
-                           c -> {
-                               c.filters().reset();
-                               c.verbs(Verb.PAXOS_PREPARE_REQ).from(1).to(3).drop();
-                           },
-                           failure -> failure.get() != null &&
-                                      failure.get()
-                                             .getMessage()
-                                             .contains(CasWriteUnknownResultException.class.getCanonicalName()),
-                           "Expecting cause to be CasWriteUncertainException");
-    }
+
 
     @Test
     public void casWriteContentionTimeoutTest() throws InterruptedException
@@ -190,7 +178,7 @@ public class CasWriteTest extends DistributedTestBase
     {
         assert contendingNodes.size() == 2;
         AtomicInteger curPk = new AtomicInteger(1);
-        ExecutorService es = Executors.newFixedThreadPool(2);
+        ExecutorService es = Executors.newFixedThreadPool(3);
         AtomicReference<Throwable> failure = new AtomicReference<>();
         Supplier<Boolean> hasExpectedException = () -> expectedException.apply(failure);
         while (!hasExpectedException.get())
@@ -199,12 +187,14 @@ public class CasWriteTest extends DistributedTestBase
             setupForEachRound.accept(cluster);
 
             List<Future<?>> futures = new ArrayList<>();
+            CountDownLatch latch = new CountDownLatch(3);
             contendingNodes.forEach(nodeId -> {
                 String query = mkCasInsertQuery((a) -> curPk.get(), testUid, nodeId);
                 futures.add(es.submit(() -> {
                     try
                     {
-                        Thread.sleep(nodeId); // add a little delay for starting the contending threads
+                        latch.countDown();
+                        latch.await(1, TimeUnit.SECONDS); // help threads start at approximately same time
                         cluster.coordinator(nodeId).execute(query, ConsistencyLevel.QUORUM);
                     }
                     catch (Throwable t)
@@ -242,6 +232,33 @@ public class CasWriteTest extends DistributedTestBase
         // therefor asserts the FQCN name present in the message as a workaround
         thrown.expectMessage(containsString(CasWriteTimeoutException.class.getCanonicalName()));
         thrown.expectMessage(containsString("CAS operation timed out"));
+    }
+
+    @Test
+    public void testWriteUnknownResult()
+    {
+        while (true)
+        {
+            cluster.filters().reset();
+            int pk = pkGen.getAndIncrement();
+            cluster.filters().verbs(Verb.PAXOS_PROPOSE_REQ.id).from(1).to(3).messagesMatching((from, to, msg) -> {
+                // Inject a single CAS request in-between prepare and propose phases
+                cluster.coordinator(2).execute(mkCasInsertQuery((a) -> pk, 1, 2),
+                                               ConsistencyLevel.QUORUM);
+                return false;
+            }).drop();
+
+            try
+            {
+                cluster.coordinator(1).execute(mkCasInsertQuery((a) -> pk, 1, 1), ConsistencyLevel.QUORUM);
+            }
+            catch (Throwable t)
+            {
+                Assert.assertTrue("Expecting cause to be CasWriteUncertainException",
+                                  t.getMessage().contains(CasWriteUnknownResultException.class.getCanonicalName()));
+                return;
+            }
+        }
     }
 
     // every invokation returns a query with an unique pk
