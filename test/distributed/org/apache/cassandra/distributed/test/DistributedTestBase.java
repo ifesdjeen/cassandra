@@ -66,6 +66,7 @@ public class DistributedTestBase
     public static void setup()
     {
         System.setProperty("org.apache.cassandra.disable_mbean_registration", "true");
+        System.setProperty("cassandra.ring_delay_ms", Integer.toString(10 * 1000));
         nativeLibraryWorkaround();
         processReaperWorkaround();
         DatabaseDescriptor.clientInitialization();
