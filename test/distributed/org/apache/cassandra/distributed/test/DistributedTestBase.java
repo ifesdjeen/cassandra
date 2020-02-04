@@ -46,6 +46,8 @@ public class DistributedTestBase
 
     public static void nativeLibraryWorkaround()
     {
+        System.setProperty("cassandra.ring_delay_ms", Integer.toString(10 * 1000));
+
         // Disable the Netty tcnative library otherwise the io.netty.internal.tcnative.CertificateCallbackTask,
         // CertificateVerifierTask, SSLPrivateKeyMethodDecryptTask, SSLPrivateKeyMethodSignTask,
         // SSLPrivateKeyMethodTask, and SSLTask hold a gcroot against the InstanceClassLoader.
@@ -64,6 +66,7 @@ public class DistributedTestBase
     @BeforeClass
     public static void setup()
     {
+        System.setProperty("cassandra.ring_delay_ms", Integer.toString(10 * 1000));
         System.setProperty("org.apache.cassandra.disable_mbean_registration", "true");
         nativeLibraryWorkaround();
         processReaperWorkaround();
