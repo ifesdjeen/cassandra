@@ -19,7 +19,7 @@
 package org.apache.cassandra.distributed.impl;
 
 import org.apache.cassandra.distributed.api.IMessage;
-import org.apache.cassandra.locator.InetAddressAndPort;
+import org.apache.cassandra.distributed.shared.NetworkTopology;
 
 // a container for simplifying the method signature for per-instance message handling/delivery
 public class MessageImpl implements IMessage
@@ -28,9 +28,9 @@ public class MessageImpl implements IMessage
     public final byte[] bytes;
     public final long id;
     public final int version;
-    public final InetAddressAndPort from;
+    public final NetworkTopology.AddressAndPort from;
 
-    public MessageImpl(int verb, byte[] bytes, long id, int version, InetAddressAndPort from)
+    public MessageImpl(int verb, byte[] bytes, long id, int version, NetworkTopology.AddressAndPort from)
     {
         this.verb = verb;
         this.bytes = bytes;
@@ -59,7 +59,7 @@ public class MessageImpl implements IMessage
         return version;
     }
 
-    public InetAddressAndPort from()
+    public NetworkTopology.AddressAndPort from()
     {
         return from;
     }

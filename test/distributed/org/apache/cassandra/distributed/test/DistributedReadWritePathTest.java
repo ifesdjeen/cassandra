@@ -1,33 +1,14 @@
-/*
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 package org.apache.cassandra.distributed.test;
-
-import org.junit.Assert;
-import org.junit.Test;
 
 import org.apache.cassandra.distributed.api.ConsistencyLevel;
 import org.apache.cassandra.distributed.api.ICluster;
+import org.junit.Assert;
+import org.junit.Test;
 
 import static org.apache.cassandra.distributed.api.Feature.NETWORK;
 
 // TODO: this test should be removed after running in-jvm dtests is set up via the shared API repository
-public class SimpleReadWriteTest extends TestBaseImpl
+public class DistributedReadWritePathTest extends TestBaseImpl
 {
     @Test
     public void coordinatorReadTest() throws Throwable
@@ -41,11 +22,32 @@ public class SimpleReadWriteTest extends TestBaseImpl
             cluster.get(3).executeInternal("INSERT INTO " + KEYSPACE + ".tbl (pk, ck, v) VALUES (1, 3, 3)");
 
             assertRows(cluster.coordinator(1).execute("SELECT * FROM " + KEYSPACE + ".tbl WHERE pk = ?",
-                                                     ConsistencyLevel.ALL,
-                                                     1),
+                                                      ConsistencyLevel.ALL,
+                                                      1),
                        row(1, 1, 1),
                        row(1, 2, 2),
                        row(1, 3, 3));
+        }
+    }
+
+    @Test
+    public void largeMessageTest() throws Throwable
+    {
+        int largeMessageThreshold = 1024 * 64;
+        try (ICluster cluster = init(builder().withNodes(2).start()))
+        {
+            cluster.schemaChange("CREATE TABLE " + KEYSPACE + ".tbl (pk int, ck int, v text, PRIMARY KEY (pk, ck))");
+            StringBuilder builder = new StringBuilder();
+            for (int i = 0; i < largeMessageThreshold ; i++)
+                builder.append('a');
+            String s = builder.toString();
+            cluster.coordinator(1).execute("INSERT INTO " + KEYSPACE + ".tbl (pk, ck, v) VALUES (1, 1, ?)",
+                                           ConsistencyLevel.ALL,
+                                           s);
+            assertRows(cluster.coordinator(1).execute("SELECT * FROM " + KEYSPACE + ".tbl WHERE pk = ?",
+                                                      ConsistencyLevel.ALL,
+                                                      1),
+                       row(1, 1, s));
         }
     }
 
@@ -57,7 +59,7 @@ public class SimpleReadWriteTest extends TestBaseImpl
             cluster.schemaChange("CREATE TABLE " + KEYSPACE + ".tbl (pk int, ck int, v int, PRIMARY KEY (pk, ck)) WITH read_repair='none'");
 
             cluster.coordinator(1).execute("INSERT INTO " + KEYSPACE + ".tbl (pk, ck, v) VALUES (1, 1, 1)",
-                                          ConsistencyLevel.QUORUM);
+                                           ConsistencyLevel.QUORUM);
 
             for (int i = 0; i < 3; i++)
             {
@@ -66,7 +68,7 @@ public class SimpleReadWriteTest extends TestBaseImpl
             }
 
             assertRows(cluster.coordinator(1).execute("SELECT * FROM " + KEYSPACE + ".tbl WHERE pk = 1",
-                                                     ConsistencyLevel.QUORUM),
+                                                      ConsistencyLevel.QUORUM),
                        row(1, 1, 1));
         }
     }
@@ -84,7 +86,7 @@ public class SimpleReadWriteTest extends TestBaseImpl
             assertRows(cluster.get(3).executeInternal("SELECT * FROM " + KEYSPACE + ".tbl WHERE pk = 1"));
 
             assertRows(cluster.coordinator(1).execute("SELECT * FROM " + KEYSPACE + ".tbl WHERE pk = 1",
-                                                     ConsistencyLevel.ALL), // ensure node3 in preflist
+                                                      ConsistencyLevel.ALL), // ensure node3 in preflist
                        row(1, 1, 1));
 
             // Verify that data got repaired to the third node
@@ -111,7 +113,7 @@ public class SimpleReadWriteTest extends TestBaseImpl
             try
             {
                 cluster.coordinator(1).execute("INSERT INTO " + KEYSPACE + ".tbl (pk, ck, v1, v2) VALUES (2, 2, 2, 2)",
-                                              ConsistencyLevel.QUORUM);
+                                               ConsistencyLevel.QUORUM);
             }
             catch (RuntimeException e)
             {
@@ -141,7 +143,7 @@ public class SimpleReadWriteTest extends TestBaseImpl
             try
             {
                 assertRows(cluster.coordinator(1).execute("SELECT * FROM " + KEYSPACE + ".tbl WHERE pk = 1",
-                                                         ConsistencyLevel.ALL),
+                                                          ConsistencyLevel.ALL),
                            row(1, 1, 1, null));
             }
             catch (Exception e)
@@ -149,8 +151,8 @@ public class SimpleReadWriteTest extends TestBaseImpl
                 thrown = e;
             }
 
-            Assert.assertTrue(thrown.getMessage(), thrown.getMessage().contains("INCOMPATIBLE_SCHEMA from 127.0.0.2"));
-            Assert.assertTrue(thrown.getMessage(), thrown.getMessage().contains("INCOMPATIBLE_SCHEMA from 127.0.0.3"));
+            Assert.assertTrue(thrown.getMessage().contains("INCOMPATIBLE_SCHEMA from 127.0.0.2"));
+            Assert.assertTrue(thrown.getMessage().contains("INCOMPATIBLE_SCHEMA from 127.0.0.3"));
         }
     }
 
@@ -238,34 +240,33 @@ public class SimpleReadWriteTest extends TestBaseImpl
 
             int[] pageSizes = new int[] { 1, 2, 3, 5, 10, 20, 50};
             String[] statements = new String [] {"SELECT * FROM " + KEYSPACE  + ".tbl WHERE pk = 1 AND ck > 5",
-                                                 "SELECT * FROM " + KEYSPACE  + ".tbl WHERE pk = 1 AND ck >= 5",
-                                                 "SELECT * FROM " + KEYSPACE  + ".tbl WHERE pk = 1 AND ck > 5 AND ck <= 10",
-                                                 "SELECT * FROM " + KEYSPACE  + ".tbl WHERE pk = 1 AND ck > 5 LIMIT 3",
-                                                 "SELECT * FROM " + KEYSPACE  + ".tbl WHERE pk = 1 AND ck >= 5 LIMIT 2",
-                                                 "SELECT * FROM " + KEYSPACE  + ".tbl WHERE pk = 1 AND ck > 5 AND ck <= 10 LIMIT 2",
-                                                 "SELECT * FROM " + KEYSPACE  + ".tbl WHERE pk = 1 AND ck > 5 ORDER BY ck DESC",
-                                                 "SELECT * FROM " + KEYSPACE  + ".tbl WHERE pk = 1 AND ck >= 5 ORDER BY ck DESC",
-                                                 "SELECT * FROM " + KEYSPACE  + ".tbl WHERE pk = 1 AND ck > 5 AND ck <= 10 ORDER BY ck DESC",
-                                                 "SELECT * FROM " + KEYSPACE  + ".tbl WHERE pk = 1 AND ck > 5 ORDER BY ck DESC LIMIT 3",
-                                                 "SELECT * FROM " + KEYSPACE  + ".tbl WHERE pk = 1 AND ck >= 5 ORDER BY ck DESC LIMIT 2",
-                                                 "SELECT * FROM " + KEYSPACE  + ".tbl WHERE pk = 1 AND ck > 5 AND ck <= 10 ORDER BY ck DESC LIMIT 2",
-                                                 "SELECT DISTINCT pk FROM " + KEYSPACE  + ".tbl LIMIT 3",
-                                                 "SELECT DISTINCT pk FROM " + KEYSPACE  + ".tbl WHERE pk IN (3,5,8,10)",
-                                                 "SELECT DISTINCT pk FROM " + KEYSPACE  + ".tbl WHERE pk IN (3,5,8,10) LIMIT 2"
+                    "SELECT * FROM " + KEYSPACE  + ".tbl WHERE pk = 1 AND ck >= 5",
+                    "SELECT * FROM " + KEYSPACE  + ".tbl WHERE pk = 1 AND ck > 5 AND ck <= 10",
+                    "SELECT * FROM " + KEYSPACE  + ".tbl WHERE pk = 1 AND ck > 5 LIMIT 3",
+                    "SELECT * FROM " + KEYSPACE  + ".tbl WHERE pk = 1 AND ck >= 5 LIMIT 2",
+                    "SELECT * FROM " + KEYSPACE  + ".tbl WHERE pk = 1 AND ck > 5 AND ck <= 10 LIMIT 2",
+                    "SELECT * FROM " + KEYSPACE  + ".tbl WHERE pk = 1 AND ck > 5 ORDER BY ck DESC",
+                    "SELECT * FROM " + KEYSPACE  + ".tbl WHERE pk = 1 AND ck >= 5 ORDER BY ck DESC",
+                    "SELECT * FROM " + KEYSPACE  + ".tbl WHERE pk = 1 AND ck > 5 AND ck <= 10 ORDER BY ck DESC",
+                    "SELECT * FROM " + KEYSPACE  + ".tbl WHERE pk = 1 AND ck > 5 ORDER BY ck DESC LIMIT 3",
+                    "SELECT * FROM " + KEYSPACE  + ".tbl WHERE pk = 1 AND ck >= 5 ORDER BY ck DESC LIMIT 2",
+                    "SELECT * FROM " + KEYSPACE  + ".tbl WHERE pk = 1 AND ck > 5 AND ck <= 10 ORDER BY ck DESC LIMIT 2",
+                    "SELECT DISTINCT pk FROM " + KEYSPACE  + ".tbl LIMIT 3",
+                    "SELECT DISTINCT pk FROM " + KEYSPACE  + ".tbl WHERE pk IN (3,5,8,10)",
+                    "SELECT DISTINCT pk FROM " + KEYSPACE  + ".tbl WHERE pk IN (3,5,8,10) LIMIT 2"
             };
             for (String statement : statements)
             {
                 for (int pageSize : pageSizes)
                 {
                     assertRows(cluster.coordinator(1)
-                                      .executeWithPaging(statement,
-                                                         ConsistencyLevel.QUORUM,  pageSize),
+                                       .executeWithPaging(statement,
+                                                          ConsistencyLevel.QUORUM,  pageSize),
                                singleNode.coordinator(1)
-                                         .executeWithPaging(statement,
-                                                            ConsistencyLevel.QUORUM,  Integer.MAX_VALUE));
+                                       .executeWithPaging(statement,
+                                                          ConsistencyLevel.QUORUM,  Integer.MAX_VALUE));
                 }
             }
-
         }
     }
 }

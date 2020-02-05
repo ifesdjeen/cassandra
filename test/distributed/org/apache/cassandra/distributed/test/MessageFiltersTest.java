@@ -29,124 +29,26 @@ import com.google.common.collect.Sets;
 import org.junit.Assert;
 import org.junit.Test;
 
-import org.apache.cassandra.db.ConsistencyLevel;
-import org.apache.cassandra.distributed.Cluster;
+import org.apache.cassandra.distributed.api.ConsistencyLevel;
+import org.apache.cassandra.distributed.api.ICluster;
+import org.apache.cassandra.distributed.api.IInvokableInstance;
 import org.apache.cassandra.distributed.api.IIsolatedExecutor;
-import org.apache.cassandra.distributed.api.IMessage;
 import org.apache.cassandra.distributed.api.IMessageFilters;
 import org.apache.cassandra.distributed.impl.Instance;
-import org.apache.cassandra.distributed.impl.MessageFilters;
-import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.net.Message;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.net.NoPayload;
 import org.apache.cassandra.net.Verb;
 
-public class MessageFiltersTest extends DistributedTestBase
+public class MessageFiltersTest extends TestBaseImpl
 {
-    @Test
-    public void simpleInboundFiltersTest()
-    {
-        simpleFiltersTest(true);
-    }
-
-    @Test
-    public void simpleOutboundFiltersTest()
-    {
-        simpleFiltersTest(false);
-    }
-
-    private interface Permit
-    {
-        boolean test(int from, int to, IMessage msg);
-    }
-
-    private static void simpleFiltersTest(boolean inbound)
-    {
-        int VERB1 = Verb.READ_REQ.id;
-        int VERB2 = Verb.READ_RSP.id;
-        int VERB3 = Verb.READ_REPAIR_REQ.id;
-        int i1 = 1;
-        int i2 = 2;
-        int i3 = 3;
-        String MSG1 = "msg1";
-        String MSG2 = "msg2";
-
-        MessageFilters filters = new MessageFilters();
-        Permit permit = inbound ? (from, to, msg) -> filters.permitInbound(from, to, msg) : (from, to, msg) -> filters.permitOutbound(from, to, msg);
-
-        IMessageFilters.Filter filter = filters.allVerbs().inbound(inbound).from(1).drop();
-        Assert.assertFalse(permit.test(i1, i2, msg(VERB1, MSG1)));
-        Assert.assertFalse(permit.test(i1, i2, msg(VERB2, MSG1)));
-        Assert.assertFalse(permit.test(i1, i2, msg(VERB3, MSG1)));
-        Assert.assertTrue(permit.test(i2, i1, msg(VERB1, MSG1)));
-        filter.off();
-        Assert.assertTrue(permit.test(i1, i2, msg(VERB1, MSG1)));
-        filters.reset();
-
-        filters.verbs(VERB1).inbound(inbound).from(1).to(2).drop();
-        Assert.assertFalse(permit.test(i1, i2, msg(VERB1, MSG1)));
-        Assert.assertTrue(permit.test(i1, i2, msg(VERB2, MSG1)));
-        Assert.assertTrue(permit.test(i2, i1, msg(VERB1, MSG1)));
-        Assert.assertTrue(permit.test(i2, i3, msg(VERB2, MSG1)));
-
-        filters.reset();
-        AtomicInteger counter = new AtomicInteger();
-        filters.verbs(VERB1).inbound(inbound).from(1).to(2).messagesMatching((from, to, msg) -> {
-            counter.incrementAndGet();
-            return Arrays.equals(msg.bytes(), MSG1.getBytes());
-        }).drop();
-        Assert.assertFalse(permit.test(i1, i2, msg(VERB1, MSG1)));
-        Assert.assertEquals(counter.get(), 1);
-        Assert.assertTrue(permit.test(i1, i2, msg(VERB1, MSG2)));
-        Assert.assertEquals(counter.get(), 2);
-
-        // filter chain gets interrupted because a higher level filter returns no match
-        Assert.assertTrue(permit.test(i2, i1, msg(VERB1, MSG1)));
-        Assert.assertEquals(counter.get(), 2);
-        Assert.assertTrue(permit.test(i2, i1, msg(VERB2, MSG1)));
-        Assert.assertEquals(counter.get(), 2);
-        filters.reset();
-
-        filters.allVerbs().inbound(inbound).from(3, 2).to(2, 1).drop();
-        Assert.assertFalse(permit.test(i3, i1, msg(VERB1, MSG1)));
-        Assert.assertFalse(permit.test(i3, i2, msg(VERB1, MSG1)));
-        Assert.assertFalse(permit.test(i2, i1, msg(VERB1, MSG1)));
-        Assert.assertTrue(permit.test(i2, i3, msg(VERB1, MSG1)));
-        Assert.assertTrue(permit.test(i1, i2, msg(VERB1, MSG1)));
-        Assert.assertTrue(permit.test(i1, i3, msg(VERB1, MSG1)));
-        filters.reset();
-
-        counter.set(0);
-        filters.allVerbs().inbound(inbound).from(1).to(2).messagesMatching((from, to, msg) -> {
-            counter.incrementAndGet();
-            return false;
-        }).drop();
-        Assert.assertTrue(permit.test(i1, i2, msg(VERB1, MSG1)));
-        Assert.assertTrue(permit.test(i1, i3, msg(VERB1, MSG1)));
-        Assert.assertTrue(permit.test(i1, i2, msg(VERB1, MSG1)));
-        Assert.assertEquals(2, counter.get());
-    }
-
-    private static IMessage msg(int verb, String msg)
-    {
-        return new IMessage()
-        {
-            public int verb() { return verb; }
-            public byte[] bytes() { return msg.getBytes(); }
-            public int id() { return 0; }
-            public int version() { return 0;  }
-            public InetAddressAndPort from() { return null; }
-        };
-    }
-
     @Test
     public void testFilters() throws Throwable
     {
         String read = "SELECT * FROM " + KEYSPACE + ".tbl";
         String write = "INSERT INTO " + KEYSPACE + ".tbl (pk, ck, v) VALUES (1, 1, 1)";
 
-        try (Cluster cluster = Cluster.create(2))
+        try (ICluster cluster = builder().withNodes(2).start())
         {
             cluster.schemaChange("CREATE KEYSPACE " + KEYSPACE + " WITH replication = {'class': 'SimpleStrategy', 'replication_factor': " + cluster.size() + "};");
             cluster.schemaChange("CREATE TABLE " + KEYSPACE + ".tbl (pk int, ck int, v int, PRIMARY KEY (pk, ck))");
@@ -176,7 +78,7 @@ public class MessageFiltersTest extends DistributedTestBase
         String read = "SELECT * FROM " + KEYSPACE + ".tbl";
         String write = "INSERT INTO " + KEYSPACE + ".tbl (pk, ck, v) VALUES (1, 1, 1)";
 
-        try (Cluster cluster = Cluster.create(2))
+        try (ICluster<IInvokableInstance> cluster = builder().withNodes(2).start())
         {
             cluster.schemaChange("CREATE KEYSPACE " + KEYSPACE + " WITH replication = {'class': 'SimpleStrategy', 'replication_factor': " + cluster.size() + "};");
             cluster.schemaChange("CREATE TABLE " + KEYSPACE + ".tbl (pk int, ck int, v int, PRIMARY KEY (pk, ck))");

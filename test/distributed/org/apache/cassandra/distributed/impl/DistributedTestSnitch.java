@@ -21,8 +21,12 @@ package org.apache.cassandra.distributed.impl;
 import java.net.InetAddress;
 import java.util.Map;
 
+import com.google.common.collect.BiMap;
+import com.google.common.collect.HashBiMap;
+
 import org.apache.cassandra.config.Config;
 import org.apache.cassandra.db.SystemKeyspace;
+import org.apache.cassandra.distributed.shared.NetworkTopology;
 import org.apache.cassandra.gms.ApplicationState;
 import org.apache.cassandra.gms.EndpointState;
 import org.apache.cassandra.gms.Gossiper;
@@ -34,6 +38,29 @@ import org.apache.cassandra.utils.FBUtilities;
 public class DistributedTestSnitch extends AbstractNetworkTopologySnitch
 {
     private static NetworkTopology mapping = null;
+    private static final BiMap<InetAddressAndPort, NetworkTopology.AddressAndPort> cache = HashBiMap.create();
+
+    static InetAddressAndPort toCassandraInetAddressAndPort(NetworkTopology.AddressAndPort addressAndPort)
+    {
+        InetAddressAndPort m = cache.inverse().get(addressAndPort);
+        if (m == null)
+        {
+            m = InetAddressAndPort.getByAddressOverrideDefaults(addressAndPort.getAddress(), addressAndPort.getPort());
+            cache.put(m, addressAndPort);
+        }
+        return m;
+    }
+
+    static NetworkTopology.AddressAndPort fromCassandraInetAddressAndPort(InetAddressAndPort addressAndPort)
+    {
+        NetworkTopology.AddressAndPort m = cache.get(addressAndPort);
+        if (m == null)
+        {
+            m = NetworkTopology.addressAndPort(addressAndPort.address, addressAndPort.port);
+            cache.put(addressAndPort, m);
+        }
+        return m;
+    }
 
     private Map<InetAddressAndPort, Map<String, String>> savedEndpoints;
     private static final String DEFAULT_DC = "UNKNOWN_DC";
@@ -48,7 +75,7 @@ public class DistributedTestSnitch extends AbstractNetworkTopologySnitch
     public String getRack(InetAddressAndPort endpoint)
     {
         assert mapping != null : "network topology must be assigned before using snitch";
-        return maybeGetFromEndpointState(mapping.localRack(endpoint), endpoint, ApplicationState.RACK, DEFAULT_RACK);
+        return maybeGetFromEndpointState(mapping.localRack(fromCassandraInetAddressAndPort(endpoint)), endpoint, ApplicationState.RACK, DEFAULT_RACK);
     }
 
     public String getDatacenter(InetAddress endpoint)
@@ -60,7 +87,7 @@ public class DistributedTestSnitch extends AbstractNetworkTopologySnitch
     public String getDatacenter(InetAddressAndPort endpoint)
     {
         assert mapping != null : "network topology must be assigned before using snitch";
-        return maybeGetFromEndpointState(mapping.localDC(endpoint), endpoint, ApplicationState.DC, DEFAULT_DC);
+        return maybeGetFromEndpointState(mapping.localDC(fromCassandraInetAddressAndPort(endpoint)), endpoint, ApplicationState.DC, DEFAULT_DC);
     }
 
     // Here, the logic is slightly different from what we have in GossipingPropertyFileSnitch since we have a different

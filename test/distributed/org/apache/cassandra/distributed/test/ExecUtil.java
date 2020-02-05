@@ -16,21 +16,36 @@
  * limitations under the License.
  */
 
-package org.apache.cassandra.distributed.api;
+package org.apache.cassandra.distributed.test;
 
-import org.apache.cassandra.locator.InetAddressAndPort;
+import java.io.Serializable;
 
-import java.util.stream.Stream;
+import org.apache.cassandra.distributed.api.IIsolatedExecutor;
 
-public interface ICluster
+public class ExecUtil
 {
 
-    IInstance get(int i);
-    IInstance get(InetAddressAndPort endpoint);
-    int size();
-    Stream<? extends IInstance> stream();
-    Stream<? extends IInstance> stream(String dcName);
-    Stream<? extends IInstance> stream(String dcName, String rackName);
-    IMessageFilters filters();
+    public interface ThrowingSerializableRunnable<T extends Throwable> extends Serializable
+    {
+        public void run() throws T;
+    }
+
+    public static <T extends Throwable> IIsolatedExecutor.SerializableRunnable rethrow(ThrowingSerializableRunnable<T> run)
+    {
+        return () -> {
+            try
+            {
+                run.run();
+            }
+            catch (RuntimeException | Error t)
+            {
+                throw t;
+            }
+            catch (Throwable t)
+            {
+                throw new RuntimeException(t);
+            }
+        };
+    }
 
 }

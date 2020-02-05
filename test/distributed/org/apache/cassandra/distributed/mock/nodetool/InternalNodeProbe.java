@@ -23,6 +23,8 @@ import java.util.Iterator;
 import java.util.Map;
 import javax.management.ListenerNotFoundException;
 
+import javax.management.ListenerNotFoundException;
+
 import com.google.common.collect.Multimap;
 
 import org.apache.cassandra.batchlog.BatchlogManager;
@@ -66,6 +68,7 @@ public class InternalNodeProbe extends NodeProbe
         mbeanServerConn = null;
         jmxc = null;
 
+
         if (withNotifications)
         {
             ssProxy = StorageService.instance;
@@ -86,6 +89,7 @@ public class InternalNodeProbe extends NodeProbe
             }
             ssProxy = mock;
         }
+
         msProxy = MessagingService.instance();
         streamProxy = StreamManager.instance;
         compactionProxy = CompactionManager.instance;

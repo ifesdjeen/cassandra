@@ -1589,7 +1589,7 @@ public class Gossiper implements IFailureDetectionEventListener, GossiperMBean
         boolean isSeed = DatabaseDescriptor.getSeeds().contains(FBUtilities.getBroadcastAddressAndPort());
         // We double RING_DELAY if we're not a seed to increase chance of successful startup during a full cluster bounce,
         // giving the seeds a chance to startup before we fail the shadow round
-        int shadowRoundDelay =  isSeed ? StorageService.RING_DELAY : StorageService.RING_DELAY * 2;
+        int shadowRoundDelay =  Integer.MAX_VALUE;
         seedsInShadowRound.clear();
         endpointShadowStateMap.clear();
         // send a completely empty syn
@@ -1608,7 +1608,7 @@ public class Gossiper implements IFailureDetectionEventListener, GossiperMBean
             {
                 if (slept % 5000 == 0)
                 { // CASSANDRA-8072, retry at the beginning and every 5 seconds
-                    logger.trace("Sending shadow round GOSSIP DIGEST SYN to seeds {}", seeds);
+                    logger.info("Sending shadow round GOSSIP DIGEST SYN to seeds {}", seeds);
 
                     for (InetAddressAndPort seed : seeds)
                         MessagingService.instance().send(message, seed);
@@ -1618,7 +1618,10 @@ public class Gossiper implements IFailureDetectionEventListener, GossiperMBean
                     {
                         logger.trace("Sending shadow round GOSSIP DIGEST SYN to known peers {}", peers);
                         for (InetAddressAndPort peer : peers)
+                        {
+                            System.out.println("peer = " + peer);
                             MessagingService.instance().send(message, peer);
+                        }
                     }
                     includePeers = true;
                 }

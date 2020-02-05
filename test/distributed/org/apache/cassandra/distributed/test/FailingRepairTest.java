@@ -45,7 +45,7 @@ import org.junit.runners.Parameterized;
 import org.junit.runners.Parameterized.Parameters;
 
 import org.apache.cassandra.db.ColumnFamilyStore;
-import org.apache.cassandra.db.ConsistencyLevel;
+import org.apache.cassandra.distributed.api.ConsistencyLevel;
 import org.apache.cassandra.db.DataRange;
 import org.apache.cassandra.db.Keyspace;
 import org.apache.cassandra.db.PartitionPosition;
@@ -54,10 +54,10 @@ import org.apache.cassandra.db.rows.UnfilteredRowIterator;
 import org.apache.cassandra.dht.AbstractBounds;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
-import org.apache.cassandra.distributed.Cluster;
 import org.apache.cassandra.distributed.api.Feature;
+import org.apache.cassandra.distributed.api.ICluster;
 import org.apache.cassandra.distributed.api.IIsolatedExecutor.SerializableRunnable;
-import org.apache.cassandra.distributed.impl.IInvokableInstance;
+import org.apache.cassandra.distributed.api.IInvokableInstance;
 import org.apache.cassandra.distributed.impl.InstanceKiller;
 import org.apache.cassandra.io.sstable.CorruptSSTableException;
 import org.apache.cassandra.io.sstable.ISSTableScanner;
@@ -73,9 +73,11 @@ import org.apache.cassandra.service.ActiveRepairService.ParentRepairStatus;
 import org.apache.cassandra.service.StorageService;
 
 @RunWith(Parameterized.class)
-public class FailingRepairTest extends DistributedTestBase implements Serializable
+public class FailingRepairTest extends TestBaseImpl implements Serializable
 {
-    private static Cluster CLUSTER;
+    public static TestBaseImpl inst = new RepairTest();
+
+    private static ICluster<IInvokableInstance> cluster;
 
     private final Verb messageType;
     private final RepairParallelism parallelism;
@@ -136,25 +138,26 @@ public class FailingRepairTest extends DistributedTestBase implements Serializab
     {
         // streaming requires networking ATM
         // streaming also requires gossip or isn't setup properly
-        CLUSTER = init(Cluster.build(2)
-                    .withConfig(c -> c.with(Feature.NETWORK)
-                                      .with(Feature.GOSSIP)
-                                      .set("disk_failure_policy", "die"))
-                    .start());
+        cluster = init(inst.builder()
+                           .withNodes(2)
+                           .withConfig(c -> c.with(Feature.NETWORK)
+                                             .with(Feature.GOSSIP)
+                                             .set("disk_failure_policy", "die"))
+                           .start());
     }
 
     @AfterClass
-    public static void teardownCluster()
+    public static void teardownCluster() throws Exception
     {
-        if (CLUSTER != null)
-            CLUSTER.close();
+        if (cluster != null)
+            cluster.close();
     }
 
     @Before
     public void cleanupState()
     {
-        for (int i = 1; i <= CLUSTER.size(); i++)
-            CLUSTER.get(i).runOnInstance(() -> InstanceKiller.clear());
+        for (int i = 1; i <= cluster.size(); i++)
+            cluster.get(i).runOnInstance(InstanceKiller::clear);
     }
 
     @Test(timeout = 10 * 60 * 1000)
@@ -165,7 +168,7 @@ public class FailingRepairTest extends DistributedTestBase implements Serializab
         String tableName = getCfName(messageType, parallelism, withTracing);
         String fqtn = KEYSPACE + "." + tableName;
 
-        CLUSTER.schemaChange("CREATE TABLE " + fqtn + " (k INT, PRIMARY KEY (k))");
+        cluster.schemaChange("CREATE TABLE " + fqtn + " (k INT, PRIMARY KEY (k))");
 
         // create data which will NOT conflict
         int lhsOffset = 10;
@@ -174,33 +177,33 @@ public class FailingRepairTest extends DistributedTestBase implements Serializab
 
         // setup data which is consistent on both sides
         for (int i = 0; i < lhsOffset; i++)
-            CLUSTER.coordinator(replica)
+            cluster.coordinator(replica)
                    .execute("INSERT INTO " + fqtn + " (k) VALUES (?)", ConsistencyLevel.ALL, i);
 
         // create data on LHS which does NOT exist in RHS
         for (int i = lhsOffset; i < rhsOffset; i++)
-            CLUSTER.get(replica).executeInternal("INSERT INTO " + fqtn + " (k) VALUES (?)", i);
+            cluster.get(replica).executeInternal("INSERT INTO " + fqtn + " (k) VALUES (?)", i);
 
         // create data on RHS which does NOT exist in LHS
         for (int i = rhsOffset; i < limit; i++)
-            CLUSTER.get(coordinator).executeInternal("INSERT INTO " + fqtn + " (k) VALUES (?)", i);
+            cluster.get(coordinator).executeInternal("INSERT INTO " + fqtn + " (k) VALUES (?)", i);
 
         // at this point, the two nodes should be out of sync, so confirm missing data
         // node 1
         Object[][] node1Records = toRows(IntStream.range(0, rhsOffset));
-        Object[][] node1Actuals = toNaturalOrder(CLUSTER.get(replica).executeInternal("SELECT k FROM " + fqtn));
+        Object[][] node1Actuals = toNaturalOrder(cluster.get(replica).executeInternal("SELECT k FROM " + fqtn));
         Assert.assertArrayEquals(node1Records, node1Actuals);
 
         // node 2
         Object[][] node2Records = toRows(IntStream.concat(IntStream.range(0, lhsOffset), IntStream.range(rhsOffset, limit)));
-        Object[][] node2Actuals = toNaturalOrder(CLUSTER.get(coordinator).executeInternal("SELECT k FROM " + fqtn));
+        Object[][] node2Actuals = toNaturalOrder(cluster.get(coordinator).executeInternal("SELECT k FROM " + fqtn));
         Assert.assertArrayEquals(node2Records, node2Actuals);
 
         // Inject the failure
-        CLUSTER.get(replica).runOnInstance(() -> setup.run());
+        cluster.get(replica).runOnInstance(() -> setup.run());
 
         // run a repair which is expected to fail
-        List<String> repairStatus = CLUSTER.get(coordinator).callOnInstance(() -> {
+        List<String> repairStatus = cluster.get(coordinator).callOnInstance(() -> {
             // need all ranges on the host
             String ranges = StorageService.instance.getLocalAndPendingRanges(KEYSPACE).stream()
                                                    .map(r -> r.left + ":" + r.right)
@@ -231,12 +234,12 @@ public class FailingRepairTest extends DistributedTestBase implements Serializab
 
         // its possible that the coordinator gets the message that the replica failed before the replica completes
         // shutting down; this then means that isKilled could be updated after the fact
-        IInvokableInstance replicaInstance = CLUSTER.get(replica);
+        IInvokableInstance replicaInstance = cluster.get(replica);
         while (replicaInstance.killAttempts() <= 0)
             Uninterruptibles.sleepUninterruptibly(50, TimeUnit.MILLISECONDS);
 
         Assert.assertEquals("replica should be killed", 1, replicaInstance.killAttempts());
-        Assert.assertEquals("coordinator should not be killed", 0, CLUSTER.get(coordinator).killAttempts());
+        Assert.assertEquals("coordinator should not be killed", 0, cluster.get(coordinator).killAttempts());
     }
 
     private static Object[][] toNaturalOrder(Object[][] actuals)

@@ -29,9 +29,10 @@ import java.util.function.Function;
 import org.apache.cassandra.distributed.api.ICluster;
 import org.apache.cassandra.distributed.api.ICoordinator;
 import org.apache.cassandra.distributed.api.IInstanceConfig;
+import org.apache.cassandra.distributed.api.IInvokableInstance;
 import org.apache.cassandra.distributed.api.IListen;
 import org.apache.cassandra.distributed.api.IMessage;
-import org.apache.cassandra.locator.InetAddressAndPort;
+import org.apache.cassandra.distributed.shared.NetworkTopology;
 
 public abstract class DelegatingInvokableInstance implements IInvokableInstance
 {
@@ -44,9 +45,9 @@ public abstract class DelegatingInvokableInstance implements IInvokableInstance
     }
 
     @Override
-    public InetAddressAndPort broadcastAddressAndPort()
+    public NetworkTopology.AddressAndPort broadcastAddress()
     {
-        return delegate().broadcastAddressAndPort();
+        return delegate().broadcastAddress();
     }
 
     @Override
@@ -80,7 +81,7 @@ public abstract class DelegatingInvokableInstance implements IInvokableInstance
     }
 
     @Override
-    public void setMessagingVersion(InetAddressAndPort endpoint, int version)
+    public void setMessagingVersion(NetworkTopology.AddressAndPort endpoint, int version)
     {
         delegate().setMessagingVersion(endpoint, version);
     }
