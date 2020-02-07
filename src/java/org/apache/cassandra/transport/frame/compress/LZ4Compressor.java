@@ -21,6 +21,7 @@ package org.apache.cassandra.transport.frame.compress;
 import java.io.IOException;
 
 import net.jpountz.lz4.LZ4Factory;
+import net.jpountz.lz4.LZ4FastDecompressor;
 import net.jpountz.lz4.LZ4SafeDecompressor;
 
 public class LZ4Compressor implements Compressor
@@ -28,13 +29,15 @@ public class LZ4Compressor implements Compressor
     public static final LZ4Compressor INSTANCE = new LZ4Compressor();
 
     private final net.jpountz.lz4.LZ4Compressor compressor;
-    private final LZ4SafeDecompressor decompressor;
+    private final LZ4FastDecompressor decompressor;
+    private final boolean usesJNIDecompressor;
 
     private LZ4Compressor()
     {
         final LZ4Factory lz4Factory = LZ4Factory.fastestInstance();
         compressor = lz4Factory.fastCompressor();
-        decompressor = lz4Factory.safeDecompressor();
+        decompressor = lz4Factory.fastDecompressor();
+        usesJNIDecompressor = decompressor.getClass().getName().contains("LZ4JNIFastDecompressor");
     }
 
     public int maxCompressedLength(int length)
@@ -58,9 +61,9 @@ public class LZ4Compressor implements Compressor
     {
         try
         {
-            byte[] decompressed = new byte[expectedDecompressedLength];
-            decompressor.decompress(src, offset, length, decompressed, 0, expectedDecompressedLength);
-            return decompressed;
+            if (usesJNIDecompressor)
+                expectedDecompressedLength = 0;
+            return decompressor.decompress(src, offset, expectedDecompressedLength);
         }
         catch (Throwable t)
         {
