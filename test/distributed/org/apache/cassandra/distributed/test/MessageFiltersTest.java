@@ -29,12 +29,16 @@ import com.google.common.collect.Sets;
 import org.junit.Assert;
 import org.junit.Test;
 
+import org.apache.cassandra.distributed.Cluster;
 import org.apache.cassandra.distributed.api.ConsistencyLevel;
 import org.apache.cassandra.distributed.api.ICluster;
 import org.apache.cassandra.distributed.api.IInvokableInstance;
 import org.apache.cassandra.distributed.api.IIsolatedExecutor;
 import org.apache.cassandra.distributed.api.IMessageFilters;
+import org.apache.cassandra.distributed.impl.DistributedTestSnitch;
 import org.apache.cassandra.distributed.impl.Instance;
+import org.apache.cassandra.distributed.shared.NetworkTopology;
+import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.net.Message;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.net.NoPayload;
@@ -124,9 +128,9 @@ public class MessageFiltersTest extends TestBaseImpl
     @Test
     public void outboundBeforeInbound() throws Throwable
     {
-        try (Cluster cluster = Cluster.create(2))
+        try (ICluster<IInvokableInstance> cluster = Cluster.create(2))
         {
-            InetAddressAndPort other = cluster.get(2).broadcastAddressAndPort();
+            NetworkTopology.AddressAndPort other = cluster.get(2).broadcastAddress();
             CountDownLatch waitForIt = new CountDownLatch(1);
             Set<Integer> outboundMessagesSeen = new HashSet<>();
             Set<Integer> inboundMessagesSeen = new HashSet<>();
@@ -146,7 +150,8 @@ public class MessageFiltersTest extends TestBaseImpl
                 return false;
             }).drop(); // drop is confusing since I am not dropping, im just listening...
             cluster.get(1).runOnInstance(() -> {
-                MessagingService.instance().send(Message.out(Verb.ECHO_REQ, NoPayload.noPayload), other);
+                MessagingService.instance().send(Message.out(Verb.ECHO_REQ, NoPayload.noPayload),
+                                                 InetAddressAndPort.getByAddressOverrideDefaults(other.getAddress(), other.getPort()));
             });
 
             waitForIt.await();
