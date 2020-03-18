@@ -40,6 +40,7 @@ import static java.util.concurrent.TimeUnit.MINUTES;
 import static org.apache.cassandra.distributed.test.ExecUtil.rethrow;
 import static org.apache.cassandra.distributed.api.Feature.GOSSIP;
 import static org.apache.cassandra.distributed.api.Feature.NETWORK;
+import static org.apache.cassandra.distributed.shared.AssertUtils.*;
 
 public class RepairTest extends TestBaseImpl
 {

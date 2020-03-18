@@ -53,6 +53,7 @@ import org.apache.cassandra.utils.FBUtilities;
 import org.hamcrest.BaseMatcher;
 import org.hamcrest.Description;
 
+import static org.apache.cassandra.distributed.shared.AssertUtils.*;
 import static org.hamcrest.CoreMatchers.containsString;
 
 // TODO: this test should be removed after running in-jvm dtests is set up via the shared API repository
@@ -94,14 +95,17 @@ public class CasWriteTest extends TestBaseImpl
     {
         cluster.coordinator(1).execute("INSERT INTO " + KEYSPACE + ".tbl (pk, ck, v) VALUES (1, 1, 1) IF NOT EXISTS",
                                        ConsistencyLevel.QUORUM);
-        assertRows(cluster.coordinator(1).execute("SELECT * FROM " + KEYSPACE + ".tbl WHERE pk = 1",
-                                                  ConsistencyLevel.QUORUM),
+        assertRows(cluster.coordinator(1)
+                          .execute("SELECT * FROM " + KEYSPACE + ".tbl WHERE pk = 1",
+                                   ConsistencyLevel.QUORUM),
                    row(1, 1, 1));
 
-        cluster.coordinator(1).execute("UPDATE " + KEYSPACE + ".tbl SET v = 2 WHERE pk = 1 AND ck = 1 IF v = 1",
-                                       ConsistencyLevel.QUORUM);
-        assertRows(cluster.coordinator(1).execute("SELECT * FROM " + KEYSPACE + ".tbl WHERE pk = 1",
-                                                  ConsistencyLevel.QUORUM),
+        cluster.coordinator(1)
+               .execute("UPDATE " + KEYSPACE + ".tbl SET v = 2 WHERE pk = 1 AND ck = 1 IF v = 1",
+                        ConsistencyLevel.QUORUM);
+        assertRows(cluster.coordinator(1)
+                          .execute("SELECT * FROM " + KEYSPACE + ".tbl WHERE pk = 1",
+                                   ConsistencyLevel.QUORUM),
                    row(1, 1, 2));
     }
 

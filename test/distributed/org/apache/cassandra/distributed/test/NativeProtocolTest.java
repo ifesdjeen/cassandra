@@ -32,6 +32,7 @@ import org.apache.cassandra.distributed.api.ICluster;
 import static org.apache.cassandra.distributed.api.Feature.GOSSIP;
 import static org.apache.cassandra.distributed.api.Feature.NATIVE_PROTOCOL;
 import static org.apache.cassandra.distributed.api.Feature.NETWORK;
+import static org.apache.cassandra.distributed.shared.AssertUtils.*;
 
 // TODO: this test should be removed after running in-jvm dtests is set up via the shared API repository
 public class NativeProtocolTest extends TestBaseImpl

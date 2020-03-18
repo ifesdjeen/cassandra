@@ -36,6 +36,8 @@ import org.apache.cassandra.service.StorageService;
 import static org.apache.cassandra.net.Verb.READ_REPAIR_REQ;
 import static org.apache.cassandra.net.Verb.READ_REQ;
 
+import static org.apache.cassandra.distributed.shared.AssertUtils.*;
+
 public class ReadRepairTest extends TestBaseImpl
 {
 
@@ -86,7 +88,7 @@ public class ReadRepairTest extends TestBaseImpl
     @Test
     public void movingTokenReadRepairTest() throws Throwable
     {
-        try (Cluster cluster = (Cluster) init(Cluster.create(4), 3))
+        try (Cluster cluster = init(Cluster.create(4), 3))
         {
             List<Token> tokens = cluster.tokens();
 
