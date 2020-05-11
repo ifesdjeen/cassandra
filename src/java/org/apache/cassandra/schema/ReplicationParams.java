@@ -87,6 +87,25 @@ public final class ReplicationParams
         String className = options.remove(CLASS);
 
         Class<? extends AbstractReplicationStrategy> klass = AbstractReplicationStrategy.getClass(className);
+
+        // add default replication factor if missing
+        if (klass == SimpleStrategy.class || klass == NetworkTopologyStrategy.class)
+        {
+            // Best effort to retain the original RF if RF is not mentioned with the alter statement.
+            // Getting RF from defaults (during alter) makes sense when altering from SS to NTS, since SS defaults has
+            // "replication_factor" and it is only one value. However, when altering from NTS to SS, defaults could have
+            // multiple different RFs for different data centers - so we will instead default to DefaultRF configuration
+            // if RF is not mentioned with the alter statement
+            String rf = defaults.containsKey("replication_factor") ? defaults.get("replication_factor")
+                                                                   : Integer.toString(DatabaseDescriptor.getDefaultKeyspaceRF());
+
+            // in case of NTS, add replication_factor only if there is no explicit mention of DCs. Otherwise, non-mentioned DCs will be added with default RF
+            if (klass == SimpleStrategy.class || options.isEmpty())
+            {
+                options.putIfAbsent("replication_factor", rf);
+            }
+        }
+
         AbstractReplicationStrategy.prepareReplicationStrategyOptions(klass, options, defaults);
 
         return new ReplicationParams(klass, options);

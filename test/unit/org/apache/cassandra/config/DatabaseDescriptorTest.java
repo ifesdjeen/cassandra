@@ -31,6 +31,7 @@ import org.junit.Assert;
 import org.junit.Assume;
 import org.junit.BeforeClass;
 import org.junit.Test;
+import org.junit.rules.ExpectedException;
 import org.junit.runner.RunWith;
 
 import org.apache.cassandra.OrderedJUnit4ClassRunner;
@@ -454,5 +455,24 @@ public class DatabaseDescriptorTest
 
         assertEquals(100, // total size is more than preferred so keep the configured limit
                      DatabaseDescriptor.calculateDefaultSpaceInMB("type", "/path", "setting_name", preferredInMB, spaceInBytes, numerator, denominator));
+    }
+
+    @Test (expected = ConfigurationException.class)
+    public void testInvalidSub1DefaultRFs() throws ConfigurationException
+    {
+        DatabaseDescriptor.setDefaultKeyspaceRF(0);
+    }
+
+    @Test (expected = ConfigurationException.class)
+    public void testInvalidSub0MinimumRFs() throws ConfigurationException
+    {
+        DatabaseDescriptor.setMinimumKeyspaceRF(-1);
+    }
+
+    @Test (expected = ConfigurationException.class)
+    public void testDefaultRfLessThanMinRF()
+    {
+        DatabaseDescriptor.setMinimumKeyspaceRF(2);
+        DatabaseDescriptor.setDefaultKeyspaceRF(1);
     }
 }
