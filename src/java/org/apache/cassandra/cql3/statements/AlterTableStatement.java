@@ -28,6 +28,8 @@ import org.apache.cassandra.cql3.*;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.Keyspace;
 import org.apache.cassandra.db.marshal.AbstractType;
+import org.apache.cassandra.db.marshal.BytesType;
+import org.apache.cassandra.db.marshal.EmptyType;
 import org.apache.cassandra.db.view.View;
 import org.apache.cassandra.exceptions.*;
 import org.apache.cassandra.schema.IndexMetadata;
@@ -97,7 +99,21 @@ public class AlterTableStatement extends SchemaAlteringStatement
         switch (oType)
         {
             case ALTER:
-                throw new InvalidRequestException("Altering of types is not allowed");
+                // We do not support altering of types and only allow this to for people who have already one
+                // through the upgrade of 2.x CQL-created SSTables with Thrift writes, affected by CASSANDRA-15778.
+                if (meta.isDense()
+                    && validator != null
+                    && validator.getType() instanceof BytesType
+                    && meta.compactValueColumn().equals(def)
+                    && meta.compactValueColumn().type instanceof EmptyType)
+                {
+                    cfm = meta.copyWithNewCompactValueType(validator.getType());
+                    break;
+                }
+                else
+                {
+                    throw new InvalidRequestException("Altering of types is not allowed");
+                }
             case ADD:
                 if (meta.isDense())
                     throw new InvalidRequestException("Cannot add new column to a COMPACT STORAGE table");

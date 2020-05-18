@@ -525,4 +525,18 @@ public class AlterTest extends CQLTester
         assertInvalidMessage("Cannot rename unknown column column1 in keyspace",
                              "ALTER TABLE %s RENAME column1 TO column2");
     }
+
+    @Test
+    public void testAlterTableAlterType() throws Throwable
+    {
+        createTable("CREATE TABLE %s (a int, b int, PRIMARY KEY (a,b)) WITH COMPACT STORAGE");
+        assertInvalidMessage("Altering of types is not allowed",
+                             "ALTER TABLE %s ALTER value TYPE 'org.apache.cassandra.db.marshal.IntegerType'");
+        execute("ALTER TABLE %s ALTER value TYPE 'org.apache.cassandra.db.marshal.BytesType'");
+
+        createTable("CREATE TABLE %s (a int, b int, c int, PRIMARY KEY (a,b)) WITH COMPACT STORAGE");
+        assertInvalidMessage("Altering of types is not allowed",
+                             "ALTER TABLE %s ALTER c TYPE 'org.apache.cassandra.db.marshal.BytesType'");
+    }
+
 }
