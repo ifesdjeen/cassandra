@@ -416,7 +416,8 @@ public abstract class AbstractType<T> implements Comparator<ByteBuffer>, Assignm
     {
         assert value.hasRemaining();
         int valueLengthIfFixed = valueLengthIfFixed();
-        assert valueLengthIfFixed < 0 || value.remaining() == valueLengthIfFixed;
+        assert valueLengthIfFixed < 0 || value.remaining() == valueLengthIfFixed : String.format("Expected exactly %d bytes, but was %d",
+                                                                                                 valueLengthIfFixed, value.remaining());
 
         if (valueLengthIfFixed >= 0)
             out.write(value);
@@ -428,7 +429,8 @@ public abstract class AbstractType<T> implements Comparator<ByteBuffer>, Assignm
     {
         assert value.hasRemaining();
         int valueLengthIfFixed = valueLengthIfFixed();
-        assert valueLengthIfFixed < 0 || value.remaining() == valueLengthIfFixed;
+        assert valueLengthIfFixed < 0 || value.remaining() == valueLengthIfFixed : String.format("Expected exactly %d bytes, but was %d",
+                                                                                                 valueLengthIfFixed, value.remaining());
 
         return valueLengthIfFixed >= 0
              ? value.remaining()
