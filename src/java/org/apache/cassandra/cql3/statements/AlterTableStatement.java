@@ -99,26 +99,33 @@ public class AlterTableStatement extends SchemaAlteringStatement
         switch (oType)
         {
             case ALTER:
-                // We do not support altering of types and only allow this to for people who have already one
-                // through the upgrade of 2.x CQL-created SSTables with Thrift writes, affected by CASSANDRA-15778.
-                if (meta.isDense()
-                    && meta.compactValueColumn().equals(def)
-                    && meta.compactValueColumn().type instanceof EmptyType
-                    && validator != null)
+                cfm = null;
+                for (AlterTableStatementColumn colData : colNameList)
                 {
-                    if (validator.getType() instanceof BytesType)
-                    {
-                        cfm = meta.copyWithNewCompactValueType(validator.getType());
-                        break;
-                    }
+                    columnName = colData.getColumnName().getIdentifier(meta);
+                    def = meta.getColumnDefinition(columnName);
+                    dataType = colData.getColumnType();
+                    validator = dataType.prepare(keyspace());
 
-                    throw new InvalidRequestException(String.format("Compact value type can only be changed to BytesType, but %s was given.",
-                                                                    validator.getType()));
+                    // We do not support altering of types and only allow this to for people who have already one
+                    // through the upgrade of 2.x CQL-created SSTables with Thrift writes, affected by CASSANDRA-15778.
+                    if (meta.isDense()
+                        && meta.compactValueColumn().equals(def)
+                        && meta.compactValueColumn().type instanceof EmptyType
+                        && validator != null)
+                    {
+                        if (validator.getType() instanceof BytesType)
+                            cfm = meta.copyWithNewCompactValueType(validator.getType());
+                        else
+                            throw new InvalidRequestException(String.format("Compact value type can only be changed to BytesType, but %s was given.",
+                                                                            validator.getType()));
+                    }
                 }
-                else
-                {
+
+                if (cfm == null)
                     throw new InvalidRequestException("Altering of types is not allowed");
-                }
+                else
+                    break;
             case ADD:
                 if (meta.isDense())
                     throw new InvalidRequestException("Cannot add new column to a COMPACT STORAGE table");
