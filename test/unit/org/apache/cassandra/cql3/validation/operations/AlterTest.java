@@ -24,6 +24,7 @@ import org.apache.cassandra.config.SchemaConstants;
 import org.apache.cassandra.cql3.CQLTester;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.Keyspace;
+import org.apache.cassandra.db.marshal.IntegerType;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.exceptions.InvalidRequestException;
 import org.apache.cassandra.exceptions.SyntaxException;
@@ -530,13 +531,20 @@ public class AlterTest extends CQLTester
     public void testAlterTableAlterType() throws Throwable
     {
         createTable("CREATE TABLE %s (a int, b int, PRIMARY KEY (a,b)) WITH COMPACT STORAGE");
-        assertInvalidMessage("Altering of types is not allowed",
+        assertInvalidMessage(String.format("Compact value type can only be changed to BytesType, but %s was given.",
+                                           IntegerType.instance),
                              "ALTER TABLE %s ALTER value TYPE 'org.apache.cassandra.db.marshal.IntegerType'");
+
         execute("ALTER TABLE %s ALTER value TYPE 'org.apache.cassandra.db.marshal.BytesType'");
 
         createTable("CREATE TABLE %s (a int, b int, c int, PRIMARY KEY (a,b)) WITH COMPACT STORAGE");
         assertInvalidMessage("Altering of types is not allowed",
                              "ALTER TABLE %s ALTER c TYPE 'org.apache.cassandra.db.marshal.BytesType'");
+
+        createTable("CREATE TABLE %s (a int, value int, PRIMARY KEY (a,value)) WITH COMPACT STORAGE");
+        assertInvalidMessage("Altering of types is not allowed",
+                             "ALTER TABLE %s ALTER value TYPE 'org.apache.cassandra.db.marshal.IntegerType'");
+        execute("ALTER TABLE %s ALTER value1 TYPE 'org.apache.cassandra.db.marshal.BytesType'");
     }
 
 }
