@@ -114,13 +114,18 @@ public class AlterTableStatement extends SchemaAlteringStatement
                 // We do not support altering of types and only allow this to for people who have already one
                 // through the upgrade of 2.x CQL-created SSTables with Thrift writes, affected by CASSANDRA-15778.
                 if (meta.isDense()
-                    && validator != null
-                    && validator.getType() instanceof BytesType
                     && meta.compactValueColumn().equals(def)
-                    && meta.compactValueColumn().type instanceof EmptyType)
+                    && meta.compactValueColumn().type instanceof EmptyType
+                    && validator != null)
                 {
-                    cfm = meta.copyWithNewCompactValueType(validator.getType());
-                    break;
+                    if (validator.getType() instanceof BytesType)
+                    {
+                        cfm = meta.copyWithNewCompactValueType(validator.getType());
+                        break;
+                    }
+
+                    throw new InvalidRequestException(String.format("Compact value type can only be changed to BytesType, but %s was given.",
+                                                                    validator.getType()));
                 }
                 else
                 {
