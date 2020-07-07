@@ -707,6 +707,17 @@ public class Gossiper implements IFailureDetectionEventListener, GossiperMBean
         assassinateEndpoint(address);
     }
 
+
+    @VisibleForTesting
+    public void unsafeAnulEndpoint(InetAddressAndPort endpoint)
+    {
+        removeEndpoint(endpoint);
+        justRemovedEndpoints.remove(endpoint);
+        endpointStateMap.remove(endpoint);
+        expireTimeEndpointMap.remove(endpoint);
+        unreachableEndpoints.remove(endpoint);
+    }
+
     /**
      * Do not call this method unless you know what you are doing.
      * It will try extremely hard to obliterate any endpoint from the ring,
@@ -1328,7 +1339,8 @@ public class Gossiper implements IFailureDetectionEventListener, GossiperMBean
         return pieces[0];
     }
 
-    void applyStateLocally(Map<InetAddressAndPort, EndpointState> epStateMap)
+    @VisibleForTesting
+    public void applyStateLocally(Map<InetAddressAndPort, EndpointState> epStateMap)
     {
         checkProperThreadForStateMutation();
         for (Entry<InetAddressAndPort, EndpointState> entry : epStateMap.entrySet())
@@ -1801,9 +1813,9 @@ public class Gossiper implements IFailureDetectionEventListener, GossiperMBean
     private void addLocalApplicationStateInternal(ApplicationState state, VersionedValue value)
     {
         assert taskLock.isHeldByCurrentThread();
-        EndpointState epState = endpointStateMap.get(FBUtilities.getBroadcastAddressAndPort());
         InetAddressAndPort epAddr = FBUtilities.getBroadcastAddressAndPort();
-        assert epState != null;
+        EndpointState epState = endpointStateMap.get(epAddr);
+        assert epState != null : "Can't find endpoint state for " + epAddr;
         // Fire "before change" notifications:
         doBeforeChangeNotifications(epAddr, epState, state, value);
         // Notifications may have taken some time, so preventively raise the version

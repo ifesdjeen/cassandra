@@ -258,7 +258,9 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         return joined;
     }
 
-    /** This method updates the local token on disk  */
+    /**
+     * This method updates the local token on disk
+     */
     public void setTokens(Collection<Token> tokens)
     {
         assert tokens != null && !tokens.isEmpty() : "Node needs at least one token.";
@@ -1107,7 +1109,8 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                 .forEach(cfs -> cfs.indexManager.executePreJoinTasksBlocking(bootstrap));
     }
 
-    private void finishJoiningRing(boolean didBootstrap, Collection<Token> tokens)
+    @VisibleForTesting
+    public void finishJoiningRing(boolean didBootstrap, Collection<Token> tokens)
     {
         // start participating in the ring.
         setMode(Mode.JOINING, "Finish joining ring", true);
@@ -1140,7 +1143,8 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         return authSetupComplete;
     }
 
-    private void setUpDistributedSystemKeyspaces()
+    @VisibleForTesting
+    public void setUpDistributedSystemKeyspaces()
     {
         Collection<Mutation> changes = new ArrayList<>(3);
 
@@ -1576,10 +1580,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         // Force disk boundary invalidation now that local tokens are set
         invalidateDiskBoundaries();
 
-        setMode(Mode.JOINING, "Starting to bootstrap...", true);
-        BootStrapper bootstrapper = new BootStrapper(FBUtilities.getBroadcastAddressAndPort(), tokens, tokenMetadata);
-        bootstrapper.addProgressListener(progressSupport);
-        ListenableFuture<StreamState> bootstrapStream = bootstrapper.bootstrap(streamStateStore, useStrictConsistency && !replacing); // handles token update
+        Future<StreamState> bootstrapStream = startBootstrap(tokens);
         try
         {
             bootstrapStream.get();
@@ -1592,6 +1593,14 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
             logger.error("Error while waiting on bootstrap to complete. Bootstrap will have to be restarted.", e);
             return false;
         }
+    }
+
+    public Future<StreamState> startBootstrap(Collection<Token> tokens)
+    {
+        setMode(Mode.JOINING, "Starting to bootstrap...", true);
+        BootStrapper bootstrapper = new BootStrapper(FBUtilities.getBroadcastAddressAndPort(), tokens, tokenMetadata);
+        bootstrapper.addProgressListener(progressSupport);
+        return bootstrapper.bootstrap(streamStateStore, useStrictConsistency && !replacing); // handles token update
     }
 
     private void invalidateDiskBoundaries()

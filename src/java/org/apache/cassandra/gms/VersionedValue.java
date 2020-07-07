@@ -100,6 +100,11 @@ public class VersionedValue implements Comparable<VersionedValue>
         this(value, VersionGenerator.getNextVersion());
     }
 
+    public static VersionedValue unsafeMakeVersionedValue(String value, int version)
+    {
+        return new VersionedValue(value, version);
+    }
+
     public int compareTo(VersionedValue value)
     {
         return this.version - value.version;
