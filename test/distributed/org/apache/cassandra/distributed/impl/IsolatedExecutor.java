@@ -139,6 +139,10 @@ public class IsolatedExecutor implements IIsolatedExecutor
 
     private static <E extends Serializable> E transferOneObject(E object, ClassLoader classLoader, Method deserializeOnInstance)
     {
+        // already the right object
+        if (object.getClass().getClassLoader() == classLoader)
+            return object;
+
         byte[] bytes = serializeOneObject(object);
         try
         {

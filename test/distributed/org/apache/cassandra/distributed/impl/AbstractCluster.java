@@ -60,6 +60,7 @@ import org.apache.cassandra.distributed.api.TokenSupplier;
 import org.apache.cassandra.distributed.shared.InstanceClassLoader;
 import org.apache.cassandra.distributed.shared.MessageFilters;
 import org.apache.cassandra.distributed.shared.NetworkTopology;
+import org.apache.cassandra.distributed.shared.VersionedApplicationState;
 import org.apache.cassandra.distributed.shared.Versions;
 import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.net.Verb;
@@ -141,7 +142,6 @@ public abstract class AbstractCluster<I extends IInstance> implements ICluster<I
         }
     }
 
-
     protected class Wrapper extends DelegatingInvokableInstance implements IUpgradeableInstance
     {
         private final int generation;
@@ -194,6 +194,16 @@ public abstract class AbstractCluster<I extends IInstance> implements ICluster<I
         public synchronized void startup()
         {
             startup(AbstractCluster.this);
+        }
+
+        public void initializeRing(ICluster cluster)
+        {
+            delegate.initializeRing(cluster);
+        }
+
+        public void changeGossipState(IInstance instance, List<VersionedApplicationState> newState)
+        {
+            delegate.changeGossipState(instance, newState);
         }
 
         public synchronized void startup(ICluster cluster)
@@ -416,6 +426,7 @@ public abstract class AbstractCluster<I extends IInstance> implements ICluster<I
         forEach(i -> i.sync(runnable));
     }
 
+    // TODO: promote to interface?
     public void forEach(Consumer<? super I> consumer)
     {
         forEach(instances, consumer);
@@ -568,7 +579,7 @@ public abstract class AbstractCluster<I extends IInstance> implements ICluster<I
     {
         public SchemaChangeMonitor()
         {
-            super(70, TimeUnit.SECONDS);
+            super(10, TimeUnit.SECONDS);
         }
 
         protected IListen.Cancel startPolling(IInstance instance)
@@ -633,6 +644,8 @@ public abstract class AbstractCluster<I extends IInstance> implements ICluster<I
 
             forEach(startSequentially, I::startup);
             parallelForEach(startParallel, I::startup, 0, null);
+            forEach(instances, (instance) -> instance.initializeRing(AbstractCluster.this));
+
             monitor.waitForCompletion();
         }
     }

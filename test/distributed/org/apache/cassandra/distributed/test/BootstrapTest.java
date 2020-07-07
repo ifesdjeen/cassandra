@@ -29,6 +29,8 @@ import org.apache.cassandra.distributed.Cluster;
 import org.apache.cassandra.distributed.api.ConsistencyLevel;
 import org.apache.cassandra.distributed.api.ICluster;
 import org.apache.cassandra.distributed.api.IInstanceConfig;
+import org.apache.cassandra.distributed.api.IMessage;
+import org.apache.cassandra.distributed.api.IMessageFilters;
 import org.apache.cassandra.distributed.api.TokenSupplier;
 import org.apache.cassandra.distributed.shared.NetworkTopology;
 
@@ -38,7 +40,6 @@ import static org.apache.cassandra.distributed.api.Feature.NETWORK;
 // TODO: this test should be removed after running in-jvm dtests is set up via the shared API repository
 public class BootstrapTest extends TestBaseImpl
 {
-
     @Test
     public void bootstrapTest() throws Throwable
     {
@@ -81,12 +82,32 @@ public class BootstrapTest extends TestBaseImpl
             Assert.assertTrue(e.getValue() >= naturally.get(e.getKey()));
     }
 
+    @Test
+    public void bootstrapTest2() throws Throwable
+    {
+        int nodes = 3;
+        Cluster.Builder builder = builder().withNodes(nodes)
+                                           .withTokenSupplier(TokenSupplier.evenlyDistributedTokens(nodes))
+                                           .withNodeIdTopology(NetworkTopology.singleDcNetworkTopology(nodes, "dc0", "rack0"))
+//                                           .withConfig(config -> config.with(NETWORK, GOSSIP))
+        ;
+
+        try (Cluster cluster = builder.withNodes(nodes).createWithoutStarting())
+        {
+            cluster.startup();
+            populate(cluster);
+            System.out.println("count(cluster) = " + count(cluster));
+        }
+    }
+
     public void populate(ICluster cluster)
     {
-        cluster.schemaChange("CREATE KEYSPACE " + KEYSPACE + " WITH replication = {'class': 'SimpleStrategy', 'replication_factor': " + 3 + "};");
+        System.out.println("POPULATING");
+        cluster.schemaChange("CREATE KEYSPACE " + KEYSPACE + " WITH replication = {'class': 'SimpleStrategy', 'replication_factor': " + cluster.size() + "};");
+        System.out.println("CREAETED KS");
         cluster.schemaChange("CREATE TABLE " + KEYSPACE + ".tbl (pk int, ck int, v int, PRIMARY KEY (pk, ck))");
-
-        for (int i = 0; i < 1000; i++)
+        System.out.println("CREAETED TABLE");
+        for (int i = 0; i < 100; i++)
             cluster.coordinator(1).execute("INSERT INTO " + KEYSPACE + ".tbl (pk, ck, v) VALUES (?, ?, ?)",
                                            ConsistencyLevel.QUORUM,
                                            i, i, i);

@@ -22,6 +22,8 @@ import java.io.File;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -32,6 +34,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeoutException;
+import java.util.function.BiFunction;
 import java.util.function.Function;
 
 import javax.management.ListenerNotFoundException;
@@ -63,6 +66,7 @@ import org.apache.cassandra.dht.IPartitioner;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.distributed.api.ICluster;
 import org.apache.cassandra.distributed.api.ICoordinator;
+import org.apache.cassandra.distributed.api.IInstance;
 import org.apache.cassandra.distributed.api.IInstanceConfig;
 import org.apache.cassandra.distributed.api.IInvokableInstance;
 import org.apache.cassandra.distributed.api.IListen;
@@ -71,7 +75,9 @@ import org.apache.cassandra.distributed.api.NodeToolResult;
 import org.apache.cassandra.distributed.api.SimpleQueryResult;
 import org.apache.cassandra.distributed.mock.nodetool.InternalNodeProbe;
 import org.apache.cassandra.distributed.mock.nodetool.InternalNodeProbeFactory;
+import org.apache.cassandra.distributed.shared.VersionedApplicationState;
 import org.apache.cassandra.gms.ApplicationState;
+import org.apache.cassandra.gms.EndpointState;
 import org.apache.cassandra.gms.Gossiper;
 import org.apache.cassandra.gms.VersionedValue;
 import org.apache.cassandra.hints.HintsService;
@@ -82,6 +88,7 @@ import org.apache.cassandra.io.util.DataInputBuffer;
 import org.apache.cassandra.io.util.DataOutputBuffer;
 import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.locator.InetAddressAndPort;
+import org.apache.cassandra.locator.TokenMetadata;
 import org.apache.cassandra.net.Message;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.schema.Schema;
@@ -407,12 +414,8 @@ public class Instance extends IsolatedExecutor implements IInvokableInstance
                     StorageService.instance.removeShutdownHook();
                     Gossiper.waitToSettle();
                 }
-                else
-                {
-                    initializeRing(cluster);
-                }
 
-                StorageService.instance.ensureTraceKeyspace();
+//                StorageService.instance.ensureTraceKeyspace();
 
                 SystemKeyspace.finishStartup();
 
@@ -420,7 +423,6 @@ public class Instance extends IsolatedExecutor implements IInvokableInstance
                 {
                     // Start up virtual table support
                     CassandraDaemon.getInstanceForTesting().setupVirtualKeyspaces();
-
                     CassandraDaemon.getInstanceForTesting().initializeNativeTransport();
                     CassandraDaemon.getInstanceForTesting().startNativeTransport();
                     StorageService.instance.setRpcReady(true);
@@ -441,6 +443,16 @@ public class Instance extends IsolatedExecutor implements IInvokableInstance
         }).run();
     }
 
+    public static org.apache.cassandra.gms.VersionedValue toVersionedValue(VersionedApplicationState vv)
+    {
+        return org.apache.cassandra.gms.VersionedValue.unsafeMakeVersionedValue(vv.value, vv.version);
+    }
+
+    public static org.apache.cassandra.gms.ApplicationState toApplicationState(VersionedApplicationState vv)
+    {
+        return org.apache.cassandra.gms.ApplicationState.values()[vv.applicationState];
+    }
+
     private void mkdirs()
     {
         new File(config.getString("saved_caches_directory")).mkdirs();
@@ -457,63 +469,101 @@ public class Instance extends IsolatedExecutor implements IInvokableInstance
         return config;
     }
 
-    private void initializeRing(ICluster cluster)
+    public void initializeRing(ICluster cluster)
     {
-        // This should be done outside instance in order to avoid serializing config
-        String partitionerName = config.getString("partitioner");
-        List<String> initialTokens = new ArrayList<>();
-        List<InetSocketAddress> hosts = new ArrayList<>();
-        List<UUID> hostIds = new ArrayList<>();
-        for (int i = 1 ; i <= cluster.size() ; ++i)
-        {
-            IInstanceConfig config = cluster.get(i).config();
-            initialTokens.add(config.getString("initial_token"));
-            hosts.add(config.broadcastAddress());
-            hostIds.add(config.hostId());
-        }
+        List<VersionedApplicationState> newState = Arrays.asList(tokens(this),
+                                                                 statusNormal(this),
+                                                                 statusWithPortNormal(this));
 
-        try
-        {
-            IPartitioner partitioner = FBUtilities.newPartitioner(partitionerName);
+        System.out.println(broadcastAddress());
+        for (int i = 1; i <= cluster.size(); i++)
+            cluster.get(i).changeGossipState(this, newState);
+    }
+
+    public static VersionedApplicationState tokens(Instance instance)
+    {
+        return versionedToken(instance, ApplicationState.TOKENS, (partitioner, tokens) -> new org.apache.cassandra.gms.VersionedValue.VersionedValueFactory(partitioner).tokens(tokens));
+    }
+
+    public static VersionedApplicationState statusNormal(Instance instance)
+    {
+        return versionedToken(instance, ApplicationState.STATUS, (partitioner, tokens) -> new org.apache.cassandra.gms.VersionedValue.VersionedValueFactory(partitioner).normal(tokens));
+    }
+
+    public static VersionedApplicationState statusWithPortNormal(Instance instance)
+    {
+        return versionedToken(instance, ApplicationState.STATUS_WITH_PORT, (partitioner, tokens) -> new org.apache.cassandra.gms.VersionedValue.VersionedValueFactory(partitioner).normal(tokens));
+    }
+
+    public static VersionedApplicationState statusBootstrapping(Instance instance)
+    {
+        return versionedToken(instance, ApplicationState.STATUS, (partitioner, tokens) -> new org.apache.cassandra.gms.VersionedValue.VersionedValueFactory(partitioner).bootstrapping(tokens));
+    }
+
+    public static VersionedApplicationState statusWithPortBootstrapping(Instance instance)
+    {
+        return versionedToken(instance, ApplicationState.STATUS_WITH_PORT, (partitioner, tokens) -> new org.apache.cassandra.gms.VersionedValue.VersionedValueFactory(partitioner).bootstrapping(tokens));
+    }
+
+    public static VersionedApplicationState versionedToken(Instance instance, ApplicationState applicationState, BiFunction<IPartitioner, Collection<Token>, org.apache.cassandra.gms.VersionedValue> supplier)
+    {
+        return instance.appliesOnInstance((String partitionerString, String tokenString) -> {
+            IPartitioner partitioner = FBUtilities.newPartitioner(partitionerString);
+            Token token = partitioner.getTokenFactory().fromString(tokenString);
+
+            org.apache.cassandra.gms.VersionedValue versionedValue = supplier.apply(partitioner, Collections.singleton(token));
+            return new VersionedApplicationState(applicationState.ordinal(), versionedValue.value, versionedValue.version);
+        }).apply(instance.config().getString("partitioner"), instance.config().getString("initial_token"));
+    }
+
+    public void removeFromRing(IInstance peer)
+    {
+        InetAddressAndPort endpoint = toCassandraInetAddressAndPort(peer.broadcastAddress());
+
+        TokenMetadata tokenMetadata = StorageService.instance.getTokenMetadata();
+        tokenMetadata.removeEndpoint(endpoint);
+        Collection<Token> tokens = tokenMetadata.getTokens(endpoint);
+        if (!tokens.isEmpty())
+            tokenMetadata.removeBootstrapTokens(tokens);
+
+        Gossiper.runInGossipStageBlocking(() -> Gossiper.instance.unsafeAnulEndpoint(endpoint));
+
+        SystemKeyspace.removeEndpoint(endpoint);
+        PendingRangeCalculatorService.instance.update();
+        PendingRangeCalculatorService.instance.blockUntilFinished();
+    }
+
+    public void changeGossipState(IInstance peer, List<VersionedApplicationState> newState)
+    {
+        InetAddressAndPort endpoint = toCassandraInetAddressAndPort(peer.broadcastAddress());
+        UUID hostId = peer.config().hostId();
+        int messagingVersion = peer.isShutdown() ? MessagingService.current_version : peer.getMessagingVersion();
+
+        runOnInstance(() -> {
             StorageService storageService = StorageService.instance;
-            List<Token> tokens = new ArrayList<>();
-            for (String token : initialTokens)
-                tokens.add(partitioner.getTokenFactory().fromString(token));
 
-            for (int i = 0; i < tokens.size(); i++)
-            {
-                InetSocketAddress ep = hosts.get(i);
-                InetAddressAndPort addressAndPort = toCassandraInetAddressAndPort(ep);
-                UUID hostId = hostIds.get(i);
-                Token token = tokens.get(i);
-                Gossiper.runInGossipStageBlocking(() -> {
-                    Gossiper.instance.initializeNodeUnsafe(addressAndPort, hostId, 1);
-                    Gossiper.instance.injectApplicationState(addressAndPort,
-                                                             ApplicationState.TOKENS,
-                                                             new VersionedValue.VersionedValueFactory(partitioner).tokens(Collections.singleton(token)));
-                    storageService.onChange(addressAndPort,
-                                            ApplicationState.STATUS_WITH_PORT,
-                                            new VersionedValue.VersionedValueFactory(partitioner).normal(Collections.singleton(token)));
-                    storageService.onChange(addressAndPort,
-                                            ApplicationState.STATUS,
-                                            new VersionedValue.VersionedValueFactory(partitioner).normal(Collections.singleton(token)));
-                    Gossiper.instance.realMarkAlive(addressAndPort, Gossiper.instance.getEndpointStateForEndpoint(addressAndPort));
-                });
+            Gossiper.runInGossipStageBlocking(() -> {
+                EndpointState state = Gossiper.instance.getEndpointStateForEndpoint(endpoint);
+                if (state == null)
+                {
+                    Gossiper.instance.initializeNodeUnsafe(endpoint, hostId, 1);
+                    state = Gossiper.instance.getEndpointStateForEndpoint(endpoint);
+                    Gossiper.instance.realMarkAlive(endpoint, state);
+                }
 
-                int messagingVersion = cluster.get(ep).isShutdown()
-                                       ? MessagingService.current_version
-                                       : Math.min(MessagingService.current_version, cluster.get(ep).getMessagingVersion());
-                MessagingService.instance().versions.set(addressAndPort, messagingVersion);
-            }
+                for (VersionedApplicationState value : newState)
+                {
+                    ApplicationState as = toApplicationState(value);
+                    VersionedValue vv = toVersionedValue(value);
+                    state.addApplicationState(as, vv);
+                    storageService.onChange(endpoint, as, vv);
+                }
+            });
 
-            // check that all nodes are in token metadata
-            for (int i = 0; i < tokens.size(); ++i)
-                assert storageService.getTokenMetadata().isMember(toCassandraInetAddressAndPort(hosts.get(i)));
-        }
-        catch (Throwable e) // UnknownHostException
-        {
-            throw new RuntimeException(e);
-        }
+            MessagingService.instance().versions.set(endpoint, messagingVersion);
+
+            assert storageService.getTokenMetadata().isMember(endpoint);
+        });
     }
 
     public Future<Void> shutdown()

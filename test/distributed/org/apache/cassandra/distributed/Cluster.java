@@ -24,7 +24,6 @@ import java.util.function.Consumer;
 import org.apache.cassandra.distributed.api.IInstanceConfig;
 import org.apache.cassandra.distributed.impl.AbstractCluster;
 import org.apache.cassandra.distributed.api.IInvokableInstance;
-import org.apache.cassandra.distributed.shared.AbstractBuilder;
 import org.apache.cassandra.distributed.shared.Versions;
 
 /**
@@ -33,7 +32,6 @@ import org.apache.cassandra.distributed.shared.Versions;
  */
 public class Cluster extends AbstractCluster<IInvokableInstance>
 {
-
     private Cluster(Builder builder)
     {
         super(builder);

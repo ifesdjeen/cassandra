@@ -270,6 +270,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         setMode(Mode.NORMAL, false);
     }
 
+    // THIS RUNS ON THE LOCAL NODE
     public void setGossipTokens(Collection<Token> tokens)
     {
         List<Pair<ApplicationState, VersionedValue>> states = new ArrayList<Pair<ApplicationState, VersionedValue>>();
@@ -1536,6 +1537,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         isBootstrapMode = true;
         SystemKeyspace.updateTokens(tokens); // DON'T use setToken, that makes us part of the ring locally which is incorrect until we are done bootstrapping
 
+        // This happens during bootstrap
         if (!replacing || !isReplacingSameAddress())
         {
             // if not an existing token then bootstrap

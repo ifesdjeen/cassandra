@@ -27,6 +27,7 @@ import static java.nio.charset.StandardCharsets.ISO_8859_1;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Iterables;
 
+import com.fasterxml.jackson.core.Versioned;
 import org.apache.cassandra.db.TypeSizes;
 import org.apache.cassandra.dht.IPartitioner;
 import org.apache.cassandra.dht.Token;
@@ -98,6 +99,11 @@ public class VersionedValue implements Comparable<VersionedValue>
     private VersionedValue(String value)
     {
         this(value, VersionGenerator.getNextVersion());
+    }
+
+    public static VersionedValue unsafeMakeVersionedValue(String value, int version)
+    {
+        return new VersionedValue(value, version);
     }
 
     public int compareTo(VersionedValue value)
