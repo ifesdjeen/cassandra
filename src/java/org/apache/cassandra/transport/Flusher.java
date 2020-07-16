@@ -28,6 +28,7 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
+import java.util.function.Function;
 
 import com.google.common.annotations.VisibleForTesting;
 import org.slf4j.Logger;
@@ -35,6 +36,7 @@ import org.slf4j.LoggerFactory;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.Channel;
+import io.netty.channel.ChannelFuture;
 import io.netty.channel.EventLoop;
 import org.apache.cassandra.net.FrameEncoder;
 import org.apache.cassandra.net.FrameEncoderCrc;
@@ -80,6 +82,7 @@ abstract class Flusher implements Runnable
         static class Framed extends FlushItem<Frame>
         {
             final FrameEncoder.PayloadAllocator allocator;
+
             Framed(Channel channel,
                    Frame responseFrame,
                    Frame sourceFrame,
@@ -113,7 +116,7 @@ abstract class Flusher implements Runnable
     protected final EventLoop eventLoop;
     private final ConcurrentLinkedQueue<FlushItem<?>> queued = new ConcurrentLinkedQueue<>();
     protected final AtomicBoolean scheduled = new AtomicBoolean(false);
-    protected final List<FlushItem<?>> flushed = new ArrayList<>();
+    protected final List<FlushItem<?>> processed = new ArrayList<>();
     private final HashSet<Channel> channels = new HashSet<>();
     private final Map<Channel, FrameSet> payloads = new HashMap<>();
 
@@ -156,7 +159,8 @@ abstract class Flusher implements Runnable
         Frame outbound = flush.response;
         if (frameSize(outbound.header) >= FrameEncoder.Payload.MAX_SIZE)
         {
-            flushLargeMessage(flush.channel, outbound, flush.allocator);
+            flushLargeMessage((msg) -> flush.channel.writeAndFlush(msg, flush.channel.voidPromise()),
+                              outbound, flush.allocator);
         }
         else
         {
@@ -165,52 +169,70 @@ abstract class Flusher implements Runnable
         }
     }
 
-    private void flushLargeMessage(Channel channel, Frame outbound, FrameEncoder.PayloadAllocator allocator)
+    public static void flushLargeMessage(Function<Object, ChannelFuture> writeAndFlush, Frame outbound, FrameEncoder.PayloadAllocator allocator)
     {
-        FrameEncoder.Payload payload;
-        ByteBuffer buf;
-        ByteBuf body = outbound.body;
+        FrameEncoder.Payload outgoing;
+        ByteBuffer outgoingBuf;
+        ByteBuf outboundBuf = outbound.body;
         boolean firstFrame = true;
         // Highly unlikely that the frame body of a large message would be empty, but the check is cheap
-        while (body.readableBytes() > 0 || firstFrame)
+        while (outboundBuf.readableBytes() > 0 || firstFrame)
         {
-            int payloadSize = Math.min(body.readableBytes(), MAX_FRAMED_PAYLOAD_SIZE);
-            payload = allocator.allocate(false, payloadSize);
+            int payloadSize = Math.min(outboundBuf.readableBytes(), MAX_FRAMED_PAYLOAD_SIZE);
+            outgoing = allocator.allocate(false, payloadSize);
             if (logger.isTraceEnabled())
             {
                 logger.trace("Allocated initial buffer of {} for 1 large item",
-                             FBUtilities.prettyPrintMemory(payload.buffer.capacity()));
+                             FBUtilities.prettyPrintMemory(outgoing.buffer.capacity()));
             }
 
-            buf = payload.buffer;
+            outgoingBuf = outgoing.buffer;
             // BufferPool may give us a buffer larger than we asked for.
             // FrameEncoder may object if buffer.remaining is >= MAX_SIZE.
             if (payloadSize >= MAX_FRAMED_PAYLOAD_SIZE)
-                buf.limit(MAX_FRAMED_PAYLOAD_SIZE);
+                outgoingBuf.limit(MAX_FRAMED_PAYLOAD_SIZE);
 
             if (firstFrame)
             {
-                outbound.encodeHeaderInto(buf);
+                outbound.encodeHeaderInto(outgoingBuf);
                 firstFrame = false;
             }
 
-            int remaining = Math.min(buf.remaining(), body.readableBytes());
-            if (remaining > 0)
-                buf.put(body.slice(body.readerIndex(), remaining).nioBuffer());
+            int consumed = Math.min(outgoingBuf.remaining(), outboundBuf.readableBytes());
 
-            body.readerIndex(body.readerIndex() + remaining);
-            writeAndFlush(channel, payload);
+            if (consumed > 0)
+                outgoingBuf.put(outboundBuf.slice(outboundBuf.readerIndex(), consumed).nioBuffer());
+
+            outboundBuf.readerIndex(outboundBuf.readerIndex() + consumed);
+
+            outgoing.finish();
+            writeAndFlush.apply(outgoing);
+            // we finish, but not "release" here since we're passing the buffer ownership to FrameEncoder#encode
         }
+
+        outbound.release();
+        // flushWrittenChannels will clean up source frames by calling FlushItem#release
     }
 
-    protected void processItem(FlushItem<?> flush)
+    protected boolean processItems()
     {
-        if (flush.kind == FlushItem.Kind.FRAMED)
-            processFramedResponse((FlushItem.Framed)flush);
-        else
-            processUnframedResponse((FlushItem.Unframed)flush);
+        FlushItem<?> flush;
 
-        flushed.add(flush);
+        boolean doneWork = false;
+        while (null != (flush = poll()))
+        {
+            processed.add(flush);
+
+            if (flush.kind == FlushItem.Kind.FRAMED)
+                processFramedResponse((FlushItem.Framed) flush);
+            else
+                processUnframedResponse((FlushItem.Unframed) flush);
+
+            doneWork = true;
+        }
+
+        return doneWork;
+
     }
 
     protected void flushWrittenChannels()
@@ -223,36 +245,37 @@ abstract class Flusher implements Runnable
         for (FrameSet frameset : payloads.values())
             frameset.finish();
 
-        for (FlushItem<?> item : flushed)
+        for (FlushItem<?> item : processed)
+        {
             item.release();
+        }
 
         payloads.clear();
         channels.clear();
-        flushed.clear();
+        processed.clear();
     }
 
-    private static void writeAndFlush(Channel channel, FrameEncoder.Payload payload)
+    public static class FrameSet extends ArrayList<Frame>
     {
-        payload.finish();
-        channel.writeAndFlush(payload, channel.voidPromise());
-        payload.release();
-    }
-
-    private static class FrameSet extends ArrayList<Frame>
-    {
-        private final Channel channel;
+        private final Function<Object, ChannelFuture> writeAndFlush;
         private final FrameEncoder.PayloadAllocator allocator;
         private int sizeInBytes = 0;
-
+        private boolean finishCalled = false;
         FrameSet(Channel channel, FrameEncoder.PayloadAllocator allocator, int initialCapacity)
         {
+            this(channel::writeAndFlush, allocator, initialCapacity);
+        }
+
+        FrameSet(Function<Object, ChannelFuture> writeAndFlush, FrameEncoder.PayloadAllocator allocator, int initialCapacity)
+        {
             super(initialCapacity);
-            this.channel = channel;
+            this.writeAndFlush = writeAndFlush;
             this.allocator = allocator;
         }
 
         public boolean add(Frame frame)
         {
+            assert !finishCalled;
             sizeInBytes += frameSize(frame.header);
             return super.add(frame);
         }
@@ -275,8 +298,9 @@ abstract class Flusher implements Runnable
             return payload;
         }
 
-        private void finish()
+        public void finish()
         {
+            finishCalled = true;
             int writtenBytes = 0;
             int framesToWrite = this.size();
             FrameEncoder.Payload sending = allocate(sizeInBytes, framesToWrite);
@@ -284,15 +308,20 @@ abstract class Flusher implements Runnable
             {
                 if (sending.remaining() < frameSize(f.header))
                 {
-                    writeAndFlush(channel, sending);
+                    sending.finish();
+                    writeAndFlush.apply(sending);
                     sending = allocate(sizeInBytes - writtenBytes, framesToWrite);
                 }
                 f.encodeInto(sending.buffer);
                 f.release();
+
                 writtenBytes += frameSize(f.header);
                 framesToWrite--;
             }
-            writeAndFlush(channel, sending);
+
+            sending.finish();
+            writeAndFlush.apply(sending);
+            // sending is borrowed and subsequently freed by FrameEncoder#encode
         }
     }
 
@@ -308,18 +337,11 @@ abstract class Flusher implements Runnable
 
         public void run()
         {
-
-            boolean doneWork = false;
-            FlushItem<?> flush;
-            while (null != (flush = poll()))
-            {
-                processItem(flush);
-                doneWork = true;
-            }
+            boolean doneWork = processItems();
 
             runsSinceFlush++;
 
-            if (!doneWork || runsSinceFlush > 2 || flushed.size() > 50)
+            if (!doneWork || runsSinceFlush > 2 || processed.size() > 50)
             {
                 flushWrittenChannels();
                 runsSinceFlush = 0;
@@ -354,17 +376,17 @@ abstract class Flusher implements Runnable
         public void run()
         {
             boolean doneWork = false;
-            FlushItem<?> flush;
             scheduled.set(false);
 
-            while (null != (flush = poll()))
+            try
             {
-                processItem(flush);
-                doneWork = true;
+                doneWork = processItems();
             }
-
-            if (doneWork)
-                flushWrittenChannels();
+            finally
+            {
+                if (doneWork)
+                    flushWrittenChannels();
+            }
         }
     }
 }

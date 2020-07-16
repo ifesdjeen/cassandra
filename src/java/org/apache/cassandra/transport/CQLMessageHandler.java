@@ -126,33 +126,29 @@ public class CQLMessageHandler<M extends Message> extends AbstractMessageHandler
                              globalReserve.using(),
                              frame.header);
 
-                RuntimeException wrapped =
-                    ErrorMessage.wrap(
-                        new OverloadedException("Server is in overloaded state. Cannot accept more requests at this point"),
-                                                frame.header.streamId);
-                errorHandler.accept(wrapped);
+                handleError(new OverloadedException("Server is in overloaded state. " +
+                                                    "Cannot accept more requests at this point"),
+                            frame.header);
+
                 // Don't stop processing incoming frames, rely on the client to apply
                 // backpressure when it receives OverloadedException
                 return true;
             }
         }
-        else
+        else if (!acquireCapacityAndQueueOnFailure(frame.header, endpointReserve, globalReserve))
         {
-            if (!acquireCapacityAndQueueOnFailure(frame.header, endpointReserve, globalReserve))
-            {
-                // force overallocation so we can process this one message, then return false
-                // so that we stop processing further frames from the decoder
-                forceOverAllocation(endpointReserve, globalReserve, frameSize);
-                ClientMetrics.instance.pauseConnection();
-                channelPayloadBytesInFlight += frameSize;
+            // force overallocation so we can process this one message, then return false
+            // so that we stop processing further frames from the decoder
+            forceOverAllocation(endpointReserve, globalReserve, frameSize);
+            ClientMetrics.instance.pauseConnection();
+            channelPayloadBytesInFlight += frameSize;
 
-                // we're over allocated here, but process the message
-                // anyway because we didn't throw any exception
-                receivedCount++;
-                receivedBytes += frameSize;
-                processFrame(frameSize, frame);
-                return false;
-            }
+            // we're over allocated here, but process the message
+            // anyway because we didn't throw any exception
+            receivedCount++;
+            receivedBytes += frameSize;
+            processFrame(frameSize, frame);
+            return false;
         }
 
         channelPayloadBytesInFlight += frameSize;
@@ -196,10 +192,32 @@ public class CQLMessageHandler<M extends Message> extends AbstractMessageHandler
         return null;
     }
 
-    private void processCqlFrame(Frame frame)
+    protected void processCqlFrame(Frame frame)
     {
-        M message = messageDecoder.decode(channel, frame);
-        dispatcher.accept(channel, message, this::toFlushItem);
+        try
+        {
+            M message = messageDecoder.decode(channel, frame);
+            dispatcher.accept(channel, message, this::toFlushItem);
+        }
+        catch (Exception e)
+        {
+            handleErrorAndRelease(e, frame.header);
+        }
+    }
+
+    // For expected errors this ensures we pass a WrappedException,
+    // which contains a streamId, to the error handler. This makes
+    // sure that whereever possible, the streamId is propagated back
+    // to the client.
+    private void handleErrorAndRelease(Throwable t, Frame.Header header)
+    {
+        release(header);
+        handleError(t, header);
+    }
+
+    private void handleError(Throwable t, Frame.Header header)
+    {
+        errorHandler.accept(ErrorMessage.wrap(t, header.streamId));
     }
 
     // Acts as a Dispatcher.FlushItemConverter
@@ -213,14 +231,19 @@ public class CQLMessageHandler<M extends Message> extends AbstractMessageHandler
                           response.encode(request.getSourceFrame().header.version),
                           request.getSourceFrame(),
                           payloadAllocator,
-                          this::releaseAfterFlush);
+                          this::release);
     }
 
-    private void releaseAfterFlush(Flusher.FlushItem<Frame> flushItem)
+    private void release(Flusher.FlushItem<Frame> flushItem)
     {
-        releaseCapacity(Ints.checkedCast(flushItem.sourceFrame.header.bodySizeInBytes));
-        channelPayloadBytesInFlight -= flushItem.sourceFrame.header.bodySizeInBytes;
+        release(flushItem.sourceFrame.header);
         flushItem.sourceFrame.release();
+    }
+
+    private void release(Frame.Header header)
+    {
+        releaseCapacity(Ints.checkedCast(header.bodySizeInBytes));
+        channelPayloadBytesInFlight -= header.bodySizeInBytes;
     }
 
     /*
@@ -262,14 +285,11 @@ public class CQLMessageHandler<M extends Message> extends AbstractMessageHandler
                 // backpressure when it receives OverloadedException
                 return true;
             }
-            else
+            else if (!acquireCapacityAndQueueOnFailure(header, endpointReserve, globalReserve))
             {
-                if (!acquireCapacityAndQueueOnFailure(header, endpointReserve, globalReserve))
-                {
-                    receivedCount++;
-                    receivedBytes += frame.frameSize;
-                    return false;
-                }
+                receivedCount++;
+                receivedBytes += frame.frameSize;
+                return false;
             }
 
             largeMessage = new LargeMessage(header);
@@ -318,15 +338,15 @@ public class CQLMessageHandler<M extends Message> extends AbstractMessageHandler
         {
             noSpamLogger.error("{} invalid, unrecoverable CRC mismatch detected in frame header", id());
             logger.error("{} invalid, unrecoverable CRC mismatch detected in frame header", id());
-            throw new Crc.InvalidCrc(frame.readCRC, frame.computedCRC);
         }
         else
         {
             receivedBytes += frame.frameSize;
+
             noSpamLogger.error("{} invalid, unrecoverable CRC mismatch detected in frame body", id());
-            logger.error("{} invalid, unrecoverable CRC mismatch detected in frame header", id());
-            throw new Crc.InvalidCrc(frame.readCRC, frame.computedCRC);
+            logger.error("{} invalid, unrecoverable CRC mismatch detected in frame body " + frame, id());
         }
+        throw new Crc.InvalidCrc(frame.readCRC, frame.computedCRC);
     }
 
     protected void fatalExceptionCaught(Throwable cause)
@@ -336,7 +356,7 @@ public class CQLMessageHandler<M extends Message> extends AbstractMessageHandler
         channel.close();
     }
 
-    static int frameSize(Frame.Header header)
+    public static int frameSize(Frame.Header header)
     {
         return Frame.Header.LENGTH + Ints.checkedCast(header.bodySizeInBytes);
     }
@@ -384,11 +404,9 @@ public class CQLMessageHandler<M extends Message> extends AbstractMessageHandler
         {
             if (overloaded)
             {
-                RuntimeException wrapped =
-                    ErrorMessage.wrap(
-                        new OverloadedException("Server is in overloaded state. Cannot accept more requests at this point"),
-                                                header.streamId);
-                errorHandler.accept(wrapped);
+                handleErrorAndRelease(new OverloadedException("Server is in overloaded state. " +
+                                                              "Cannot accept more requests at this point"),
+                                      header);
             }
             else if (!isCorrupt)
             {
@@ -398,7 +416,7 @@ public class CQLMessageHandler<M extends Message> extends AbstractMessageHandler
                 }
                 catch (Exception e)
                 {
-                    errorHandler.accept(e);
+                    handleErrorAndRelease(e, header);
                 }
             }
         }
