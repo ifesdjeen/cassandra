@@ -30,6 +30,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Consumer;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -400,8 +401,13 @@ public abstract class CQLTester
         });
     }
 
-    // lazy initialization for all tests that require Java Driver
     protected static void requireNetwork() throws ConfigurationException
+    {
+        requireNetwork(server -> {});
+    }
+
+    // lazy initialization for all tests that require Java Driver
+    protected static void requireNetwork(Consumer<Server.Builder> decorator) throws ConfigurationException
     {
         if (server != null)
             return;
@@ -412,7 +418,9 @@ public abstract class CQLTester
         StorageService.instance.initServer();
         SchemaLoader.startGossiper();
 
-        server = new Server.Builder().withHost(nativeAddr).withPort(nativePort).build();
+        Server.Builder serverBuilder = new Server.Builder().withHost(nativeAddr).withPort(nativePort);
+        decorator.accept(serverBuilder);
+        server = serverBuilder.build();
         ClientMetrics.instance.init(Collections.singleton(server));
         server.start();
 

@@ -231,6 +231,8 @@ public class CQLConnectionTest
 
         protected CQLMessageHandler.MessageConsumer<Message.Request> messageConsumer()
         {
+            if (consumer == null)
+                return super.messageConsumer();
             return consumer;
         }
     }
