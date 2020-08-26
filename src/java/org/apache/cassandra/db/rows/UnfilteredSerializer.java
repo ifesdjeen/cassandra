@@ -197,7 +197,7 @@ public class UnfilteredSerializer
             // in cases where it tries to fetch all columns, it will set the `all columns` flag, but only
             // expect a subset of columns (from this node's perspective). See CASSANDRA-15899
             if (column == null)
-                return;
+                continue;
 
             if (data.column.isSimple())
                 Cell.serializer.serialize((Cell) data, column, out, pkLiveness, header);
