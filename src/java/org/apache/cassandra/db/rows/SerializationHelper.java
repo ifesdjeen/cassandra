@@ -125,16 +125,4 @@ public class SerializationHelper
              ? CounterContext.instance().clearAllLocal(value)
              : value;
     }
-
-    public boolean hasAllColumns(Row row, boolean isStatic)
-    {
-        SearchIterator<ColumnMetadata, ColumnData> rowIter = row.searchIterator();
-        Iterable<ColumnMetadata> columns = isStatic ? header.columns().statics : header.columns().regulars;
-        for (ColumnMetadata column : columns)
-        {
-            if (rowIter.next(column) == null)
-                return false;
-        }
-        return true;
-    }
 }
