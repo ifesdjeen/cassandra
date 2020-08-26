@@ -41,7 +41,7 @@ public class SchemaTest extends TestBaseImpl
     {
         try (Cluster cluster = init(Cluster.create(2, CONFIG_CONSUMER)))
         {
-            cluster.schemaChange("CREATE TABLE "+KEYSPACE+".tbl (id int primary key, v1 int, v2 int, v3 int) WITH read_repair='NONE'");
+            cluster.schemaChange("CREATE TABLE "+KEYSPACE+".tbl (id int primary key, v1 int, v2 int, v3 int)");
             Object [][] someExpected = new Object[5][];
             Object [][] allExpected1 = new Object[5][];
             Object [][] allExpected2 = new Object[5][];
@@ -67,7 +67,7 @@ public class SchemaTest extends TestBaseImpl
     {
         try (Cluster cluster = init(Cluster.create(2, CONFIG_CONSUMER)))
         {
-            cluster.schemaChange("CREATE TABLE "+KEYSPACE+".tbl (id int primary key, v1 int, v2 int) WITH read_repair='NONE'");
+            cluster.schemaChange("CREATE TABLE "+KEYSPACE+".tbl (id int primary key, v1 int, v2 int)");
             Object [][] someExpected = new Object[5][];
             Object [][] allExpected1 = new Object[5][];
             Object [][] allExpected2 = new Object[5][];
@@ -93,7 +93,7 @@ public class SchemaTest extends TestBaseImpl
     {
         try (Cluster cluster = init(Cluster.create(2, CONFIG_CONSUMER)))
         {
-            cluster.schemaChange("CREATE TABLE "+KEYSPACE+".tbl (id int primary key, v1 int, v2 int) WITH read_repair='NONE'");
+            cluster.schemaChange("CREATE TABLE "+KEYSPACE+".tbl (id int primary key, v1 int, v2 int)");
             Object [][] someExpected = new Object[5][];
             Object [][] allExpected1 = new Object[5][];
             Object [][] allExpected2 = new Object[5][];
