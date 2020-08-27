@@ -119,7 +119,6 @@ public class SimpleReadWriteTest extends SharedClusterTestBase
         }
 
         Assert.assertTrue(thrown.getMessage().contains("Exception occurred on node"));
-        Assert.assertTrue(thrown.getCause().getCause().getCause().getMessage().contains("Unknown column v2"));
     }
 
     /**
