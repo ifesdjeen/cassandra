@@ -119,7 +119,7 @@ public class SimpleReadWriteTest extends SharedClusterTestBase
         }
 
         Assert.assertTrue(thrown.getMessage().contains("Exception occurred on node"));
-        Assert.assertTrue(thrown.getCause().getCause().getCause().getMessage().contains("Unknown column v2 during deserialization"));
+        Assert.assertTrue(thrown.getCause().getCause().getCause().getMessage().contains("Unknown column v2"));
     }
 
     /**
@@ -135,7 +135,7 @@ public class SimpleReadWriteTest extends SharedClusterTestBase
         cluster.get(3).executeInternal("INSERT INTO " + KEYSPACE + ".tbl (pk, ck, v1, v2) VALUES (1, 1, 1, 1)");
 
         for (int i=0; i<cluster.size(); i++)
-            cluster.get(i).flush(KEYSPACE);;
+            cluster.get(i+1).flush(KEYSPACE);;
 
         // Introduce schema disagreement
         cluster.schemaChange("ALTER TABLE " + KEYSPACE + ".tbl DROP v2", 1);
@@ -146,7 +146,7 @@ public class SimpleReadWriteTest extends SharedClusterTestBase
                                            ConsistencyLevel.ALL);
         // and flushing should also be fine
         for (int i=0; i<cluster.size(); i++)
-            cluster.get(i).flush(KEYSPACE);;
+            cluster.get(i+1).flush(KEYSPACE);;
         // the results of reads will vary depending on whether the coordinator has seen the schema change
         // note: read repairs will propagate the v2 value to node1, but this is safe and handled correctly
         assertRows(cluster.coordinator(2).execute("SELECT * FROM " + KEYSPACE + ".tbl", ConsistencyLevel.ALL),
