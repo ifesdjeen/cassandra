@@ -169,16 +169,20 @@ public class SimpleReadWriteTest extends SharedClusterTestBase
         // Introduce schema disagreement
         cluster.schemaChange("ALTER TABLE " + KEYSPACE + ".tbl ADD v2 int", 1);
 
-        // this write shouldn't cause any problems because it doesn't write to the new column
-        cluster.coordinator(1).execute("INSERT INTO " + KEYSPACE + ".tbl (pk, ck, v1) VALUES (2, 2, 2)",
-                                       ConsistencyLevel.ALL);
+        for (int i = 1; i <= 3; i++)
+        {
+            // this write shouldn't cause any problems because it doesn't write to the new column
+            cluster.coordinator(i).execute("INSERT INTO " + KEYSPACE + ".tbl (pk, ck, v1) VALUES (2, 2, 2)",
+                                           ConsistencyLevel.ALL);
+        }
+
     }
 
     /**
      * If a node receives a read for a column it's not aware of, it shouldn't complain, since it won't have any data for that column
      */
     @Test
-    public void readWithSchemaDisagreement() throws Throwable
+    public void readWithSchemaDisagreementAddedColumn() throws Throwable
     {
         cluster.schemaChange("CREATE TABLE " + KEYSPACE + ".tbl (pk int, ck int, v1 int, PRIMARY KEY (pk, ck))");
 
@@ -189,9 +193,40 @@ public class SimpleReadWriteTest extends SharedClusterTestBase
         // Introduce schema disagreement
         cluster.schemaChange("ALTER TABLE " + KEYSPACE + ".tbl ADD v2 int", 1);
 
-        Object[][] expected = new Object[][]{new Object[]{1, 1, 1, null}};
-        assertRows(cluster.coordinator(1).execute("SELECT * FROM " + KEYSPACE + ".tbl WHERE pk = 1", ConsistencyLevel.ALL), expected);
+        for (int i = 1; i <= 3; i++)
+        {
+            if (i == 1)
+                assertRows(cluster.coordinator(i).execute("SELECT * FROM " + KEYSPACE + ".tbl WHERE pk = 1", ConsistencyLevel.ALL),
+                           new Object[][]{new Object[]{1, 1, 1, null}});
+            else
+                assertRows(cluster.coordinator(i).execute("SELECT * FROM " + KEYSPACE + ".tbl WHERE pk = 1", ConsistencyLevel.ALL),
+                           new Object[][]{new Object[]{1, 1, 1}});
+        }
     }
+
+    @Test
+    public void readWithSchemaDisagreementDroppedColumn() throws Throwable
+    {
+        cluster.schemaChange("CREATE TABLE " + KEYSPACE + ".tbl (pk int, ck int, v1 int, v2 int, PRIMARY KEY (pk, ck))");
+
+        cluster.get(1).executeInternal("INSERT INTO " + KEYSPACE + ".tbl (pk, ck, v1, v2) VALUES (1, 1, 1, 1)");
+        cluster.get(2).executeInternal("INSERT INTO " + KEYSPACE + ".tbl (pk, ck, v1, v2) VALUES (1, 1, 1, 1)");
+        cluster.get(3).executeInternal("INSERT INTO " + KEYSPACE + ".tbl (pk, ck, v1, v2) VALUES (1, 1, 1, 1)");
+
+        // Introduce schema disagreement
+        cluster.schemaChange("ALTER TABLE " + KEYSPACE + ".tbl DROP v2", 1);
+
+        for (int i = 1; i <= 3; i++)
+        {
+            if (i == 1)
+                assertRows(cluster.coordinator(i).execute("SELECT * FROM " + KEYSPACE + ".tbl WHERE pk = 1", ConsistencyLevel.ALL),
+                           new Object[][]{new Object[]{1, 1, 1}});
+            else
+                assertRows(cluster.coordinator(i).execute("SELECT * FROM " + KEYSPACE + ".tbl WHERE pk = 1", ConsistencyLevel.ALL),
+                           new Object[][]{new Object[]{1, 1, 1, 1}});
+        }
+    }
+
 
     @Test
     public void simplePagedReadsTest() throws Throwable
