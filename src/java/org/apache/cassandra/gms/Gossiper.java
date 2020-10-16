@@ -23,6 +23,7 @@ import java.util.Map.Entry;
 import java.util.concurrent.*;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.BooleanSupplier;
+import java.util.function.Predicate;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
@@ -30,7 +31,6 @@ import javax.annotation.Nullable;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Throwables;
-import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.ImmutableSet;
@@ -757,7 +757,6 @@ public class Gossiper implements IFailureDetectionEventListener, GossiperMBean
                 tokens = Collections.singletonList(StorageService.instance.getTokenMetadata().partitioner.getRandomToken());
             }
 
-            // do not pass go, do not collect 200 dollars, just gtfo
             long expireTime = computeExpireTime();
             epState.addApplicationState(ApplicationState.STATUS_WITH_PORT, StorageService.instance.valueFactory.left(tokens, expireTime));
             epState.addApplicationState(ApplicationState.STATUS, StorageService.instance.valueFactory.left(tokens, computeExpireTime()));
@@ -777,23 +776,42 @@ public class Gossiper implements IFailureDetectionEventListener, GossiperMBean
         return endpointStateMap.get(endpoint).getHeartBeatState().getGeneration();
     }
 
+    private boolean sendGossip(Message<GossipDigestSyn> message, Set<InetAddressAndPort> epSet)
+    {
+        return sendGossip(message, epSet, null);
+    }
+
     /**
      * Returns true if the chosen target was also a seed. False otherwise
      *
      * @param message
      * @param epSet   a set of endpoint from which a random endpoint is chosen.
+     * @param filter  whether or not we should attempt to gossip to this node in the first place
      * @return true if the chosen endpoint is also a seed.
      */
-    private boolean sendGossip(Message<GossipDigestSyn> message, Set<InetAddressAndPort> epSet)
+    private boolean sendGossip(Message<GossipDigestSyn> message, Set<InetAddressAndPort> epSet, Predicate<InetAddressAndPort> filter)
     {
-        List<InetAddressAndPort> liveEndpoints = ImmutableList.copyOf(epSet);
+        List<InetAddressAndPort> endpoints;
+        if (filter == null)
+        {
+            endpoints = new ArrayList<>(epSet);
+        }
+        else
+        {
+            endpoints = new ArrayList<>();
+            for (InetAddressAndPort addressAndPort : epSet)
+            {
+                if (filter.test(addressAndPort))
+                    endpoints.add(addressAndPort);
+            }
+        }
 
-        int size = liveEndpoints.size();
+        int size = endpoints.size();
         if (size < 1)
             return false;
         /* Generate a random number from 0 -> size */
         int index = (size == 1) ? 0 : random.nextInt(size);
-        InetAddressAndPort to = liveEndpoints.get(index);
+        InetAddressAndPort to = endpoints.get(index);
         if (logger.isTraceEnabled())
             logger.trace("Sending a GossipDigestSyn to {} ...", to);
         if (firstSynSendAt == 0)
@@ -825,7 +843,7 @@ public class Gossiper implements IFailureDetectionEventListener, GossiperMBean
             double prob = unreachableEndpointCount / (liveEndpointCount + 1);
             double randDbl = random.nextDouble();
             if (randDbl < prob)
-                sendGossip(message, unreachableEndpoints.keySet());
+                sendGossip(message, unreachableEndpoints.keySet(), ep -> !isDeadState(getEndpointStateMap().get(ep)));
         }
     }
 
@@ -858,6 +876,7 @@ public class Gossiper implements IFailureDetectionEventListener, GossiperMBean
     public boolean isGossipOnlyMember(InetAddressAndPort endpoint)
     {
         EndpointState epState = endpointStateMap.get(endpoint);
+
         if (epState == null)
         {
             return false;
