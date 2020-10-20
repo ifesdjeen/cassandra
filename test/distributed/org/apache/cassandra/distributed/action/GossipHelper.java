@@ -300,7 +300,7 @@ public class GossipHelper
         return versionedToken(instance, ApplicationState.NET_VERSION, (partitioner, tokens) -> new VersionedValue.VersionedValueFactory(partitioner).networkVersion());
     }
 
-    public static VersionedApplicationState unsafeReleaseVersion(IInvokableInstance instance, String partitionerStr, String releaseVersionStr)
+    private static VersionedApplicationState unsafeReleaseVersion(IInvokableInstance instance, String partitionerStr, String releaseVersionStr)
     {
         return unsafeVersionedValue(instance, ApplicationState.RELEASE_VERSION, (partitioner) -> new VersionedValue.VersionedValueFactory(partitioner).releaseVersion(releaseVersionStr), partitionerStr);
     }
@@ -365,7 +365,7 @@ public class GossipHelper
         return ApplicationState.values()[vv.applicationState];
     }
 
-    public static VersionedApplicationState unsafeVersionedValue(IInvokableInstance instance,
+    private static VersionedApplicationState unsafeVersionedValue(IInvokableInstance instance,
                                                                  ApplicationState applicationState,
                                                                  IIsolatedExecutor.SerializableBiFunction<IPartitioner, Collection<Token>, VersionedValue> supplier,
                                                                  String partitionerStr, String initialTokenStr)
@@ -379,7 +379,7 @@ public class GossipHelper
         }).apply(partitionerStr, initialTokenStr);
     }
 
-    public static VersionedApplicationState unsafeVersionedValue(IInvokableInstance instance,
+    private static VersionedApplicationState unsafeVersionedValue(IInvokableInstance instance,
                                                                  ApplicationState applicationState,
                                                                  IIsolatedExecutor.SerializableFunction<IPartitioner, VersionedValue> supplier,
                                                                  String partitionerStr)
