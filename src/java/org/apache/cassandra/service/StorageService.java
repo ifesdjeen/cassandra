@@ -148,7 +148,9 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
             return Integer.parseInt(newdelay);
         }
         else
+        {
             return 30 * 1000;
+        }
     }
 
     /* This abstraction maintains the token/endpoint metadata information */

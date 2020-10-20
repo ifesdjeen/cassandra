@@ -62,6 +62,7 @@ public class BootstrapTest extends TestBaseImpl
             withJoinRing(false, () -> newInstance.startup(cluster));
 
             cluster.forEach(statusToBootstrap(newInstance));
+
             cluster.run(asList(pullSchemaFrom(cluster.get(1)),
                                bootstrap()),
                         newInstance.config().num());
@@ -99,13 +100,18 @@ public class BootstrapTest extends TestBaseImpl
 
     public static void populate(ICluster cluster, int from, int to)
     {
-        cluster.schemaChange("CREATE KEYSPACE IF NOT EXISTS " + KEYSPACE + " WITH replication = {'class': 'SimpleStrategy', 'replication_factor': " + 3 + "};");
+        populate(cluster, from, to, 1, 3, ConsistencyLevel.QUORUM);
+    }
+
+    public static void populate(ICluster cluster, int from, int to, int coord, int rf, ConsistencyLevel cl)
+    {
+        cluster.schemaChange("CREATE KEYSPACE IF NOT EXISTS " + KEYSPACE + " WITH replication = {'class': 'SimpleStrategy', 'replication_factor': " + rf + "};");
         cluster.schemaChange("CREATE TABLE IF NOT EXISTS " + KEYSPACE + ".tbl (pk int, ck int, v int, PRIMARY KEY (pk, ck))");
         for (int i = from; i < to; i++)
         {
-            cluster.coordinator(1).execute("INSERT INTO " + KEYSPACE + ".tbl (pk, ck, v) VALUES (?, ?, ?)",
-                                           ConsistencyLevel.QUORUM,
-                                           i, i, i);
+            cluster.coordinator(coord).execute("INSERT INTO " + KEYSPACE + ".tbl (pk, ck, v) VALUES (?, ?, ?)",
+                                               cl,
+                                               i, i, i);
         }
     }
 
