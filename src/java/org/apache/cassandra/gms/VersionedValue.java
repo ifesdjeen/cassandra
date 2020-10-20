@@ -277,6 +277,12 @@ public class VersionedValue implements Comparable<VersionedValue>
             return new VersionedValue(version);
         }
 
+        @VisibleForTesting
+        public VersionedValue networkVersion(int version)
+        {
+            return new VersionedValue(String.valueOf(version));
+        }
+
         public VersionedValue networkVersion()
         {
             return new VersionedValue(String.valueOf(MessagingService.current_version));

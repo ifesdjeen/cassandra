@@ -30,16 +30,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
-import java.util.stream.Stream;
+import java.util.function.Supplier;
 
-import net.openhft.chronicle.core.util.SerializableBiFunction;
 import org.apache.cassandra.db.SystemKeyspace;
 import org.apache.cassandra.dht.IPartitioner;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.distributed.api.IInstance;
 import org.apache.cassandra.distributed.api.IInvokableInstance;
 import org.apache.cassandra.distributed.api.IIsolatedExecutor;
-import org.apache.cassandra.distributed.impl.Instance;
 import org.apache.cassandra.distributed.shared.VersionedApplicationState;
 import org.apache.cassandra.gms.ApplicationState;
 import org.apache.cassandra.gms.EndpointState;
@@ -48,7 +46,6 @@ import org.apache.cassandra.gms.VersionedValue;
 import org.apache.cassandra.io.util.DataInputBuffer;
 import org.apache.cassandra.io.util.DataOutputBuffer;
 import org.apache.cassandra.locator.InetAddressAndPort;
-import org.apache.cassandra.locator.TokenMetadata;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.schema.MigrationManager;
 import org.apache.cassandra.service.PendingRangeCalculatorService;
@@ -80,6 +77,7 @@ public class GossipHelper
                               Arrays.asList(tokens(peer),
                                             statusNormal(peer),
                                             releaseVersion(peer),
+                                            netVersion(peer),
                                             statusWithPortNormal(peer)));
         };
     }
@@ -89,31 +87,33 @@ public class GossipHelper
      * target instance, which means Gossip versioning gets out of sync. Use a safe couterpart at all times when performing _any_
      * ring movement operations _or_ if Gossip is used.
      */
-    public static InstanceAction unsafeStatusToNormal(IInstance peer)
+    public static void unsafeStatusToNormal(IInvokableInstance target, IInstance peer)
     {
-        return (target) ->
-        {
-            changeGossipState(target,
-                              peer,
-                              Arrays.asList(unsafeVersionedToken(target,
-                                                                 ApplicationState.TOKENS,
-                                                                 (partitioner, tokens) -> new VersionedValue.VersionedValueFactory(partitioner).tokens(tokens),
-                                                                 peer.config().getString("partitioner"),
-                                                                 peer.config().getString("initial_token")),
-                                            unsafeVersionedToken(target,
-                                                                 ApplicationState.STATUS,
-                                                                 (partitioner, tokens) -> new VersionedValue.VersionedValueFactory(partitioner).normal(tokens),
-                                                                 peer.config().getString("partitioner"),
-                                                                 peer.config().getString("initial_token")),
-                                            unsafeVersionedToken(target,
-                                                                 ApplicationState.STATUS_WITH_PORT,
-                                                                 (partitioner, tokens) -> new VersionedValue.VersionedValueFactory(partitioner).normal(tokens),
-                                                                 peer.config().getString("partitioner"),
-                                                                 peer.config().getString("initial_token")),
-                                            unsafeReleaseVersion(target,
-                                                                 peer.config().getString("partitioner"),
-                                                                 peer.getReleaseVersionString())));
-        };
+        int messagingVersion = peer.getMessagingVersion();
+        changeGossipState(target,
+                          peer,
+                          Arrays.asList(unsafeVersionedValue(target,
+                                                             ApplicationState.TOKENS,
+                                                             (partitioner, tokens) -> new VersionedValue.VersionedValueFactory(partitioner).tokens(tokens),
+                                                             peer.config().getString("partitioner"),
+                                                             peer.config().getString("initial_token")),
+                                        unsafeVersionedValue(target,
+                                                             ApplicationState.STATUS,
+                                                             (partitioner, tokens) -> new VersionedValue.VersionedValueFactory(partitioner).normal(tokens),
+                                                             peer.config().getString("partitioner"),
+                                                             peer.config().getString("initial_token")),
+                                        unsafeVersionedValue(target,
+                                                             ApplicationState.STATUS_WITH_PORT,
+                                                             (partitioner, tokens) -> new VersionedValue.VersionedValueFactory(partitioner).normal(tokens),
+                                                             peer.config().getString("partitioner"),
+                                                             peer.config().getString("initial_token")),
+                                        unsafeVersionedValue(target,
+                                                             ApplicationState.NET_VERSION,
+                                                             (partitioner) -> new VersionedValue.VersionedValueFactory(partitioner).networkVersion(messagingVersion ),
+                                                             peer.config().getString("partitioner")),
+                                        unsafeReleaseVersion(target,
+                                                             peer.config().getString("partitioner"),
+                                                             peer.getReleaseVersionString())));
     }
 
     public static InstanceAction statusToLeaving(IInvokableInstance newNode)
@@ -149,9 +149,7 @@ public class GossipHelper
 
     private static InstanceAction disableBinary()
     {
-        return (instance) -> {
-            instance.runOnInstance(StorageService.instance::stopNativeTransport);
-        };
+        return (instance) -> instance.nodetoolResult("disablebinary").asserts().success();
     }
 
     private static class DisseminateGossipState implements InstanceAction
@@ -187,7 +185,7 @@ public class GossipHelper
         }
     }
 
-    public static byte[] toBytes(EndpointState epState)
+    private static byte[] toBytes(EndpointState epState)
     {
         try (DataOutputBuffer out = new DataOutputBuffer(1024))
         {
@@ -200,7 +198,7 @@ public class GossipHelper
         }
     }
 
-    public static EndpointState fromBytes(byte[] bytes)
+    private static EndpointState fromBytes(byte[] bytes)
     {
         try (DataInputBuffer in = new DataInputBuffer(bytes))
         {
@@ -258,7 +256,7 @@ public class GossipHelper
                 try
                 {
                     SystemKeyspace.setBootstrapState(SystemKeyspace.BootstrapState.IN_PROGRESS);
-                    StorageService.instance.waitForSchema((int) waitForSchema.toMillis());
+                    StorageService.instance.waitForSchema(Math.toIntExact(waitForSchema.toMillis()));
                     PendingRangeCalculatorService.instance.blockUntilFinished();
                     StorageService.instance.startBootstrap(tokens).get(waitForBootstrap.toMillis(), TimeUnit.MILLISECONDS);
                     StorageService.instance.setUpDistributedSystemKeyspaces();
@@ -297,13 +295,22 @@ public class GossipHelper
         return versionedToken(instance, ApplicationState.TOKENS, (partitioner, tokens) -> new VersionedValue.VersionedValueFactory(partitioner).tokens(tokens));
     }
 
+    public static VersionedApplicationState netVersion(IInvokableInstance instance)
+    {
+        return versionedToken(instance, ApplicationState.NET_VERSION, (partitioner, tokens) -> new VersionedValue.VersionedValueFactory(partitioner).networkVersion());
+    }
+
+    public static VersionedApplicationState unsafeAppState(IInvokableInstance instance, ApplicationState applicationState, Supplier<VersionedValue> supplier)
+    {
+        return instance.callOnInstance(() -> {
+            VersionedValue versionedValue = supplier.get();
+            return new VersionedApplicationState(applicationState.ordinal(), versionedValue.value, versionedValue.version);
+        });
+    }
+
     public static VersionedApplicationState unsafeReleaseVersion(IInvokableInstance instance, String partitionerStr, String releaseVersionStr)
     {
-        return instance.appliesOnInstance((String partitionerString, String releaseVersion) -> {
-            IPartitioner partitioner = FBUtilities.newPartitioner(partitionerString);
-            VersionedValue versionedValue = new VersionedValue.VersionedValueFactory(partitioner).releaseVersion(releaseVersion);
-            return new VersionedApplicationState(ApplicationState.RELEASE_VERSION.ordinal(), versionedValue.value, versionedValue.version);
-        }).apply(partitionerStr, releaseVersionStr);
+        return unsafeVersionedValue(instance, ApplicationState.RELEASE_VERSION, (partitioner) -> new VersionedValue.VersionedValueFactory(partitioner).releaseVersion(releaseVersionStr), partitionerStr);
     }
 
     public static VersionedApplicationState releaseVersion(IInvokableInstance instance)
@@ -336,6 +343,22 @@ public class GossipHelper
         return versionedToken(instance, ApplicationState.STATUS, (partitioner, tokens) -> new VersionedValue.VersionedValueFactory(partitioner).leaving(tokens));
     }
 
+    public static VersionedApplicationState statusLeft(IInvokableInstance instance)
+    {
+        return versionedToken(instance, ApplicationState.STATUS, (partitioner, tokens) -> {
+            return new VersionedValue.VersionedValueFactory(partitioner).left(tokens, System.currentTimeMillis() + Gossiper.aVeryLongTime);
+
+        });
+    }
+
+    public static VersionedApplicationState statusWithPortLeft(IInvokableInstance instance)
+    {
+        return versionedToken(instance, ApplicationState.STATUS_WITH_PORT, (partitioner, tokens) -> {
+            return new VersionedValue.VersionedValueFactory(partitioner).left(tokens, System.currentTimeMillis() + Gossiper.aVeryLongTime);
+
+        });
+    }
+
     public static VersionedApplicationState statusWithPortLeaving(IInvokableInstance instance)
     {
         return versionedToken(instance, ApplicationState.STATUS_WITH_PORT, (partitioner, tokens) -> new VersionedValue.VersionedValueFactory(partitioner).leaving(tokens));
@@ -351,9 +374,9 @@ public class GossipHelper
         return ApplicationState.values()[vv.applicationState];
     }
 
-    public static VersionedApplicationState unsafeVersionedToken(IInvokableInstance instance,
+    public static VersionedApplicationState unsafeVersionedValue(IInvokableInstance instance,
                                                                  ApplicationState applicationState,
-                                                                 SerializableBiFunction<IPartitioner, Collection<Token>, VersionedValue> supplier,
+                                                                 IIsolatedExecutor.SerializableBiFunction<IPartitioner, Collection<Token>, VersionedValue> supplier,
                                                                  String partitionerStr, String initialTokenStr)
     {
         return instance.appliesOnInstance((String partitionerString, String tokenString) -> {
@@ -365,33 +388,44 @@ public class GossipHelper
         }).apply(partitionerStr, initialTokenStr);
     }
 
-    public static VersionedApplicationState versionedToken(IInvokableInstance instance, ApplicationState applicationState, SerializableBiFunction<IPartitioner, Collection<Token>, VersionedValue> supplier)
+    public static VersionedApplicationState unsafeVersionedValue(IInvokableInstance instance,
+                                                                 ApplicationState applicationState,
+                                                                 IIsolatedExecutor.SerializableFunction<IPartitioner, VersionedValue> supplier,
+                                                                 String partitionerStr)
     {
-        return unsafeVersionedToken(instance, applicationState, supplier, instance.config().getString("partitioner"), instance.config().getString("initial_token"));
+        return instance.appliesOnInstance((String partitionerString) -> {
+            IPartitioner partitioner = FBUtilities.newPartitioner(partitionerString);
+            VersionedValue versionedValue = supplier.apply(partitioner);
+            return new VersionedApplicationState(applicationState.ordinal(), versionedValue.value, versionedValue.version);
+        }).apply(partitionerStr);
     }
 
-    public void removeFromRing(IInstance peer)
+    public static VersionedApplicationState versionedToken(IInvokableInstance instance, ApplicationState applicationState, IIsolatedExecutor.SerializableBiFunction<IPartitioner, Collection<Token>, VersionedValue> supplier)
     {
-        InetAddressAndPort endpoint = toCassandraInetAddressAndPort(peer.broadcastAddress());
-
-        TokenMetadata tokenMetadata = StorageService.instance.getTokenMetadata();
-        tokenMetadata.removeEndpoint(endpoint);
-        Collection<Token> tokens = tokenMetadata.getTokens(endpoint);
-        if (!tokens.isEmpty())
-            tokenMetadata.removeBootstrapTokens(tokens);
-
-        Gossiper.runInGossipStageBlocking(() -> Gossiper.instance.unsafeAnulEndpoint(endpoint));
-
-        SystemKeyspace.removeEndpoint(endpoint);
-        PendingRangeCalculatorService.instance.update();
-        PendingRangeCalculatorService.instance.blockUntilFinished();
+        return unsafeVersionedValue(instance, applicationState, supplier, instance.config().getString("partitioner"), instance.config().getString("initial_token"));
     }
 
-    public static void changeGossipState(Stream<IInvokableInstance> targets, Instance peer, List<VersionedApplicationState> newState)
+    public static InstanceAction removeFromRing(IInvokableInstance peer)
     {
-        targets.forEach((instance) -> {
-            changeGossipState(instance, peer, newState);
-        });
+        return (target) -> {
+            InetAddressAndPort endpoint = toCassandraInetAddressAndPort(peer.broadcastAddress());
+            VersionedApplicationState newState = statusLeft(peer);
+
+            target.runOnInstance(() -> {
+                // state to 'left'
+                EndpointState currentState = Gossiper.instance.getEndpointStateForEndpoint(endpoint);
+                ApplicationState as = toApplicationState(newState);
+                VersionedValue vv = toVersionedValue(newState);
+                currentState.addApplicationState(as, vv);
+                StorageService.instance.onChange(endpoint, as, vv);
+
+                // remove from gossip
+                Gossiper.runInGossipStageBlocking(() -> Gossiper.instance.unsafeAnulEndpoint(endpoint));
+                SystemKeyspace.removeEndpoint(endpoint);
+                PendingRangeCalculatorService.instance.update();
+                PendingRangeCalculatorService.instance.blockUntilFinished();
+            });
+        };
     }
 
     /**
@@ -399,9 +433,7 @@ public class GossipHelper
      */
     public static void changeGossipState(IInvokableInstance target, IInstance peer, List<VersionedApplicationState> newState)
     {
-        int version = peer.isShutdown() ? MessagingService.current_version : peer.getMessagingVersion();
-
-        target.appliesOnInstance((InetSocketAddress addr, UUID hostId, Integer messagingVersion) -> {
+        target.appliesOnInstance((InetSocketAddress addr, UUID hostId) -> {
             InetAddressAndPort endpoint = toCassandraInetAddressAndPort(addr);
             StorageService storageService = StorageService.instance;
 
@@ -424,8 +456,7 @@ public class GossipHelper
                 }
             });
 
-            MessagingService.instance().versions.set(endpoint, messagingVersion);
             return null;
-        }).apply(peer.broadcastAddress(), peer.config().hostId(), version);
+        }).apply(peer.broadcastAddress(), peer.config().hostId());
     }
 }

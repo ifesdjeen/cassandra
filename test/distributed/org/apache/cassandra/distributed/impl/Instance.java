@@ -64,6 +64,7 @@ import org.apache.cassandra.db.SystemKeyspace;
 import org.apache.cassandra.db.SystemKeyspaceMigrator40;
 import org.apache.cassandra.db.commitlog.CommitLog;
 import org.apache.cassandra.db.compaction.CompactionManager;
+import org.apache.cassandra.distributed.Cluster;
 import org.apache.cassandra.distributed.action.GossipHelper;
 import org.apache.cassandra.distributed.api.ICluster;
 import org.apache.cassandra.distributed.api.ICoordinator;
@@ -77,9 +78,7 @@ import org.apache.cassandra.distributed.api.NodeToolResult;
 import org.apache.cassandra.distributed.api.SimpleQueryResult;
 import org.apache.cassandra.distributed.mock.nodetool.InternalNodeProbe;
 import org.apache.cassandra.distributed.mock.nodetool.InternalNodeProbeFactory;
-import org.apache.cassandra.distributed.shared.InstanceClassLoader;
 import org.apache.cassandra.exceptions.StartupException;
-import org.apache.cassandra.gms.ApplicationState;
 import org.apache.cassandra.gms.Gossiper;
 import org.apache.cassandra.hints.HintsService;
 import org.apache.cassandra.index.SecondaryIndexManager;
@@ -485,10 +484,10 @@ public class Instance extends IsolatedExecutor implements IInvokableInstance
                 else
                 {
                     cluster.stream().forEach(peer -> {
-                        if (peer instanceof IInvokableInstance)
+                        if (cluster instanceof Cluster)
                             GossipHelper.statusToNormal((IInvokableInstance) peer).accept(this);
                         else
-                            GossipHelper.unsafeStatusToNormal((IInstance) peer).accept(this);
+                            GossipHelper.unsafeStatusToNormal(this, (IInstance) peer);
                     });
 
                 }
