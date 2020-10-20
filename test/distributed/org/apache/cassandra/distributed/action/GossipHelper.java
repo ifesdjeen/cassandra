@@ -275,18 +275,7 @@ public class GossipHelper
 
     public static InstanceAction decomission()
     {
-        return (target) -> {
-            target.runOnInstance(() -> {
-                try
-                {
-                    StorageService.instance.decommission(false);
-                }
-                catch (InterruptedException e)
-                {
-                    throw new RuntimeException();
-                }
-            });
-        };
+        return (target) -> target.nodetoolResult("decomission").asserts().success();
     }
 
 
