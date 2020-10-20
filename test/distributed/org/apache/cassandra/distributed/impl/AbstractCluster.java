@@ -461,13 +461,17 @@ public abstract class AbstractCluster<I extends IInstance> implements ICluster<I
         });
     }
 
-    public void run(Consumer<? super I> action,  int... instanceIds)
+    public void run(Consumer<? super I> action, int instanceId, int... moreInstanceIds)
     {
-        run(Collections.singletonList(action), instanceIds);
+        run(Collections.singletonList(action), instanceId, moreInstanceIds);
     }
 
-    public void run(List<Consumer<? super I>> actions,  int... instanceIds)
+    public void run(List<Consumer<? super I>> actions, int instanceId, int... moreInstanceIds)
     {
+        int[] instanceIds = new int[moreInstanceIds.length + 1];
+        instanceIds[0] = instanceId;
+        System.arraycopy(moreInstanceIds, 0, instanceIds, 1, moreInstanceIds.length);
+
         for (int idx : instanceIds)
         {
             for (Consumer<? super I> action : actions)
