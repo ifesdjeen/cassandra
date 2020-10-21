@@ -135,6 +135,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
 {
     private static final Logger logger = LoggerFactory.getLogger(StorageService.class);
 
+    public static final int INDEFINITE = -1;
     public static final int RING_DELAY = getRingDelay(); // delay after which we assume ring has stablized
 
     private final JMXProgressSupport progressSupport = new JMXProgressSupport(this);
@@ -854,10 +855,10 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         }
     }
 
-    public void waitForSchema(int delay)
+    public void waitForSchema(long delay)
     {
         // first sleep the delay to make sure we see all our peers
-        for (int i = 0; i < delay; i += 1000)
+        for (long i = 0; i < delay; i += 1000)
         {
             // if we see schema, we can proceed to the next check directly
             if (!Schema.instance.isEmpty())
@@ -877,10 +878,17 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         }
     }
 
-    private void joinTokenRing(int delay) throws ConfigurationException
+    private void joinTokenRing(long schemaTimeoutMillis) throws ConfigurationException
     {
-        joined = true;
+        joinTokenRing(!isSurveyMode, shouldBootstrap(), schemaTimeoutMillis, INDEFINITE);
+    }
 
+    @VisibleForTesting
+    public void joinTokenRing(boolean finishJoiningRing,
+                              boolean shouldBootstrap,
+                              long schemaTimeoutMillis,
+                              long bootstrapTimeoutMillis) throws ConfigurationException
+    {
         // We bootstrap if we haven't successfully bootstrapped before, as long as we are not a seed.
         // If we are a seed, or if the user manually sets auto_bootstrap to false,
         // we'll skip streaming data from other nodes and jump directly into the ring.
@@ -905,101 +913,18 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         }
 
         boolean dataAvailable = true; // make this to false when bootstrap streaming failed
-        boolean bootstrap = shouldBootstrap();
-        if (bootstrap)
+
+        if (shouldBootstrap)
         {
-            if (SystemKeyspace.bootstrapInProgress())
-                logger.warn("Detected previous bootstrap failure; retrying");
-            else
-                SystemKeyspace.setBootstrapState(SystemKeyspace.BootstrapState.IN_PROGRESS);
-            setMode(Mode.JOINING, "waiting for ring information", true);
-            waitForSchema(delay);
-            setMode(Mode.JOINING, "schema complete, ready to bootstrap", true);
-            setMode(Mode.JOINING, "waiting for pending range calculation", true);
-            PendingRangeCalculatorService.instance.blockUntilFinished();
-            setMode(Mode.JOINING, "calculation complete, ready to bootstrap", true);
-
-            logger.debug("... got ring + schema info");
-
-            if (useStrictConsistency && !allowSimultaneousMoves() &&
-                    (
-                        tokenMetadata.getBootstrapTokens().valueSet().size() > 0 ||
-                        tokenMetadata.getSizeOfLeavingEndpoints() > 0 ||
-                        tokenMetadata.getSizeOfMovingEndpoints() > 0
-                    ))
-            {
-                String bootstrapTokens = StringUtils.join(tokenMetadata.getBootstrapTokens().valueSet(), ',');
-                String leavingTokens = StringUtils.join(tokenMetadata.getLeavingEndpoints(), ',');
-                String movingTokens = StringUtils.join(tokenMetadata.getMovingEndpoints().stream().map(e -> e.right).toArray(), ',');
-                throw new UnsupportedOperationException(String.format("Other bootstrapping/leaving/moving nodes detected, cannot bootstrap while cassandra.consistent.rangemovement is true. Nodes detected, bootstrapping: %s; leaving: %s; moving: %s;", bootstrapTokens, leavingTokens, movingTokens));
-            }
-
-            // get bootstrap tokens
-            if (!replacing)
-            {
-                if (tokenMetadata.isMember(FBUtilities.getBroadcastAddressAndPort()))
-                {
-                    String s = "This node is already a member of the token ring; bootstrap aborted. (If replacing a dead node, remove the old one from the ring first.)";
-                    throw new UnsupportedOperationException(s);
-                }
-                setMode(Mode.JOINING, "getting bootstrap token", true);
-                bootstrapTokens = BootStrapper.getBootstrapTokens(tokenMetadata, FBUtilities.getBroadcastAddressAndPort(), delay);
-            }
-            else
-            {
-                if (!isReplacingSameAddress())
-                {
-                    try
-                    {
-                        // Sleep additionally to make sure that the server actually is not alive
-                        // and giving it more time to gossip if alive.
-                        Thread.sleep(LoadBroadcaster.BROADCAST_INTERVAL);
-                    }
-                    catch (InterruptedException e)
-                    {
-                        throw new AssertionError(e);
-                    }
-
-                    // check for operator errors...
-                    for (Token token : bootstrapTokens)
-                    {
-                        InetAddressAndPort existing = tokenMetadata.getEndpoint(token);
-                        if (existing != null)
-                        {
-                            long nanoDelay = delay * 1000000L;
-                            if (Gossiper.instance.getEndpointStateForEndpoint(existing).getUpdateTimestamp() > (System.nanoTime() - nanoDelay))
-                                throw new UnsupportedOperationException("Cannot replace a live node... ");
-                            current.add(existing);
-                        }
-                        else
-                        {
-                            throw new UnsupportedOperationException("Cannot replace token " + token + " which does not exist!");
-                        }
-                    }
-                }
-                else
-                {
-                    try
-                    {
-                        Thread.sleep(RING_DELAY);
-                    }
-                    catch (InterruptedException e)
-                    {
-                        throw new AssertionError(e);
-                    }
-
-                }
-                setMode(Mode.JOINING, "Replacing a node with token(s): " + bootstrapTokens, true);
-            }
-
-            dataAvailable = bootstrap(bootstrapTokens);
+            current.addAll(prepareForBootstrap(schemaTimeoutMillis));
+            dataAvailable = bootstrap(bootstrapTokens, bootstrapTimeoutMillis);
         }
         else
         {
             bootstrapTokens = SystemKeyspace.getSavedTokens();
             if (bootstrapTokens.isEmpty())
             {
-                bootstrapTokens = BootStrapper.getBootstrapTokens(tokenMetadata, FBUtilities.getBroadcastAddressAndPort(), delay);
+                bootstrapTokens = BootStrapper.getBootstrapTokens(tokenMetadata, FBUtilities.getBroadcastAddressAndPort(), schemaTimeoutMillis);
             }
             else
             {
@@ -1012,11 +937,12 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
 
         setUpDistributedSystemKeyspaces();
 
-        if (!isSurveyMode)
+        if (finishJoiningRing)
         {
+            joined = true;
             if (dataAvailable)
             {
-                finishJoiningRing(bootstrap, bootstrapTokens);
+                finishJoiningRing(shouldBootstrap, bootstrapTokens);
                 // remove the existing info about the replaced node.
                 if (!current.isEmpty())
                 {
@@ -1535,6 +1461,95 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
             logger.debug(logMsg);
     }
 
+    private Collection<InetAddressAndPort> prepareForBootstrap(long schemaDelay)
+    {
+        Set<InetAddressAndPort> collisions = new HashSet<>();
+        if (SystemKeyspace.bootstrapInProgress())
+            logger.warn("Detected previous bootstrap failure; retrying");
+        else
+            SystemKeyspace.setBootstrapState(SystemKeyspace.BootstrapState.IN_PROGRESS);
+        setMode(Mode.JOINING, "waiting for ring information", true);
+        waitForSchema(schemaDelay);
+        setMode(Mode.JOINING, "schema complete, ready to bootstrap", true);
+        setMode(Mode.JOINING, "waiting for pending range calculation", true);
+        PendingRangeCalculatorService.instance.blockUntilFinished();
+        setMode(Mode.JOINING, "calculation complete, ready to bootstrap", true);
+
+        logger.debug("... got ring + schema info");
+
+        if (useStrictConsistency && !allowSimultaneousMoves() &&
+            (
+            tokenMetadata.getBootstrapTokens().valueSet().size() > 0 ||
+            tokenMetadata.getSizeOfLeavingEndpoints() > 0 ||
+            tokenMetadata.getSizeOfMovingEndpoints() > 0
+            ))
+        {
+            String bootstrapTokens = StringUtils.join(tokenMetadata.getBootstrapTokens().valueSet(), ',');
+            String leavingTokens = StringUtils.join(tokenMetadata.getLeavingEndpoints(), ',');
+            String movingTokens = StringUtils.join(tokenMetadata.getMovingEndpoints().stream().map(e -> e.right).toArray(), ',');
+            throw new UnsupportedOperationException(String.format("Other bootstrapping/leaving/moving nodes detected, cannot bootstrap while cassandra.consistent.rangemovement is true. Nodes detected, bootstrapping: %s; leaving: %s; moving: %s;", bootstrapTokens, leavingTokens, movingTokens));
+        }
+
+        // get bootstrap tokens
+        if (!replacing)
+        {
+            if (tokenMetadata.isMember(FBUtilities.getBroadcastAddressAndPort()))
+            {
+                String s = "This node is already a member of the token ring; bootstrap aborted. (If replacing a dead node, remove the old one from the ring first.)";
+                throw new UnsupportedOperationException(s);
+            }
+            setMode(Mode.JOINING, "getting bootstrap token", true);
+            bootstrapTokens = BootStrapper.getBootstrapTokens(tokenMetadata, FBUtilities.getBroadcastAddressAndPort(), schemaDelay);
+        }
+        else
+        {
+            if (!isReplacingSameAddress())
+            {
+                try
+                {
+                    // Sleep additionally to make sure that the server actually is not alive
+                    // and giving it more time to gossip if alive.
+                    Thread.sleep(LoadBroadcaster.BROADCAST_INTERVAL);
+                }
+                catch (InterruptedException e)
+                {
+                    throw new AssertionError(e);
+                }
+
+                // check for operator errors...
+                for (Token token : bootstrapTokens)
+                {
+                    InetAddressAndPort existing = tokenMetadata.getEndpoint(token);
+                    if (existing != null)
+                    {
+                        long nanoDelay = schemaDelay * 1000000L;
+                        if (Gossiper.instance.getEndpointStateForEndpoint(existing).getUpdateTimestamp() > (System.nanoTime() - nanoDelay))
+                            throw new UnsupportedOperationException("Cannot replace a live node... ");
+                        collisions.add(existing);
+                    }
+                    else
+                    {
+                        throw new UnsupportedOperationException("Cannot replace token " + token + " which does not exist!");
+                    }
+                }
+            }
+            else
+            {
+                try
+                {
+                    Thread.sleep(RING_DELAY);
+                }
+                catch (InterruptedException e)
+                {
+                    throw new AssertionError(e);
+                }
+
+            }
+            setMode(Mode.JOINING, "Replacing a node with token(s): " + bootstrapTokens, true);
+        }
+        return collisions;
+    }
+
     /**
      * Bootstrap node by fetching data from other nodes.
      * If node is bootstrapping as a new node, then this also announces bootstrapping to the cluster.
@@ -1544,7 +1559,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
      * @param tokens bootstrapping tokens
      * @return true if bootstrap succeeds.
      */
-    private boolean bootstrap(final Collection<Token> tokens)
+    private boolean bootstrap(final Collection<Token> tokens, long bootstrapTimeoutMillis)
     {
         isBootstrapMode = true;
         SystemKeyspace.updateTokens(tokens); // DON'T use setToken, that makes us part of the ring locally which is incorrect until we are done bootstrapping
@@ -1585,7 +1600,10 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         Future<StreamState> bootstrapStream = startBootstrap(tokens);
         try
         {
-            bootstrapStream.get();
+            if (bootstrapTimeoutMillis > 0)
+                bootstrapStream.get(bootstrapTimeoutMillis, MILLISECONDS);
+            else
+                bootstrapStream.get();
             bootstrapFinished();
             logger.info("Bootstrap completed for tokens {}", tokens);
             return true;

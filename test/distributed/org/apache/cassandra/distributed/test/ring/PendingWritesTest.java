@@ -38,11 +38,13 @@ import org.apache.cassandra.distributed.shared.NetworkTopology;
 import org.apache.cassandra.distributed.test.TestBaseImpl;
 import org.apache.cassandra.locator.EndpointsForRange;
 import org.apache.cassandra.locator.InetAddressAndPort;
+import org.apache.cassandra.service.PendingRangeCalculatorService;
 import org.apache.cassandra.service.StorageService;
 
 import static org.apache.cassandra.distributed.action.GossipHelper.bootstrap;
 import static org.apache.cassandra.distributed.action.GossipHelper.disseminateGossipState;
 import static org.apache.cassandra.distributed.action.GossipHelper.statusToBootstrap;
+import static org.apache.cassandra.distributed.action.GossipHelper.withProperty;
 import static org.apache.cassandra.distributed.api.Feature.GOSSIP;
 import static org.apache.cassandra.distributed.api.Feature.NETWORK;
 
@@ -63,7 +65,8 @@ public class PendingWritesTest extends TestBaseImpl
             BootstrapTest.populate(cluster, 0, 100);
             IInstanceConfig config = cluster.newInstanceConfig();
             IInvokableInstance newInstance = cluster.bootstrap(config);
-            BootstrapTest.withJoinRing(false, () -> newInstance.startup(cluster));
+            withProperty("cassandra.join_ring", false,
+                         () -> newInstance.startup(cluster));
 
             cluster.forEach(statusToBootstrap(newInstance));
             cluster.run(bootstrap(false, Duration.ofSeconds(60), Duration.ofSeconds(60)), newInstance.config().num());
@@ -85,6 +88,13 @@ public class PendingWritesTest extends TestBaseImpl
 
             cluster.run(disseminateGossipState(newInstance),1, 2);
 
+            cluster.run((instance) -> {
+                instance.runOnInstance(() -> {
+                    PendingRangeCalculatorService.instance.update();
+                    PendingRangeCalculatorService.instance.blockUntilFinished();
+                });
+            }, 1, 2);
+
             cluster.get(1).acceptsOnInstance((InetSocketAddress ip) -> {
                 Set<InetAddressAndPort> set = new HashSet<>();
                 for (Map.Entry<Range<Token>, EndpointsForRange.Builder> e : StorageService.instance.getTokenMetadata().getPendingRanges(KEYSPACE))
@@ -93,7 +103,7 @@ public class PendingWritesTest extends TestBaseImpl
             }).accept(cluster.get(3).broadcastAddress());
 
             for (Map.Entry<Integer, Long> e : BootstrapTest.count(cluster).entrySet())
-                Assert.assertEquals(e.getValue().longValue(), 150L);
+                Assert.assertEquals("Node " + e.getKey() + " has incorrect row state", e.getValue().longValue(), 150L);
         }
     }
 }

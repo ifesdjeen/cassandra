@@ -38,6 +38,7 @@ import static java.util.Arrays.asList;
 import static org.apache.cassandra.distributed.action.GossipHelper.bootstrap;
 import static org.apache.cassandra.distributed.action.GossipHelper.pullSchemaFrom;
 import static org.apache.cassandra.distributed.action.GossipHelper.statusToBootstrap;
+import static org.apache.cassandra.distributed.action.GossipHelper.withProperty;
 import static org.apache.cassandra.distributed.api.Feature.GOSSIP;
 import static org.apache.cassandra.distributed.api.Feature.NETWORK;
 
@@ -59,7 +60,8 @@ public class BootstrapTest extends TestBaseImpl
 
             IInstanceConfig config = cluster.newInstanceConfig();
             IInvokableInstance newInstance = cluster.bootstrap(config);
-            withJoinRing(false, () -> newInstance.startup(cluster));
+            withProperty("cassandra.join_ring", false,
+                         () -> newInstance.startup(cluster));
 
             cluster.forEach(statusToBootstrap(newInstance));
 
@@ -68,7 +70,9 @@ public class BootstrapTest extends TestBaseImpl
                         newInstance.config().num());
 
             for (Map.Entry<Integer, Long> e : count(cluster).entrySet())
-                Assert.assertEquals("Node " + e.getKey() + " has incorrect row state", e.getValue().longValue(), 100L);
+                Assert.assertEquals("Node " + e.getKey() + " has incorrect row state",
+                                    100L,
+                                    e.getValue().longValue());
         }
     }
 
@@ -89,7 +93,8 @@ public class BootstrapTest extends TestBaseImpl
             IInstanceConfig config = cluster.newInstanceConfig();
             config.set("auto_bootstrap", true);
             IInvokableInstance newInstance = cluster.bootstrap(config);
-            withJoinRing(false, () -> newInstance.startup(cluster));
+            withProperty("cassandra.join_ring", false,
+                         () -> newInstance.startup(cluster));
 
             newInstance.nodetoolResult("join").asserts().success();
 
@@ -121,21 +126,5 @@ public class BootstrapTest extends TestBaseImpl
                         .boxed()
                         .collect(Collectors.toMap(nodeId -> nodeId,
                                                   nodeId -> (Long) cluster.get(nodeId).executeInternal("SELECT count(*) FROM " + KEYSPACE + ".tbl")[0][0]));
-    }
-
-
-    public static void withJoinRing(boolean value, Runnable r)
-    {
-        String prop = "cassandra.join_ring";
-        String before = System.getProperty(prop);
-        try
-        {
-            System.setProperty(prop, Boolean.toString(value));
-            r.run();
-        }
-        finally
-        {
-            System.setProperty(prop, before == null ? "true" : before);
-        }
     }
 }

@@ -250,32 +250,18 @@ public class GossipHelper
 
         public void accept(IInvokableInstance instance)
         {
-            instance.appliesOnInstance((String partitionerString, String tokenString) -> {
-                IPartitioner partitioner = FBUtilities.newPartitioner(partitionerString);
-                List<Token> tokens = Collections.singletonList(partitioner.getTokenFactory().fromString(tokenString));
-                try
-                {
-                    SystemKeyspace.setBootstrapState(SystemKeyspace.BootstrapState.IN_PROGRESS);
-                    StorageService.instance.waitForSchema(Math.toIntExact(waitForSchema.toMillis()));
-                    PendingRangeCalculatorService.instance.blockUntilFinished();
-                    StorageService.instance.startBootstrap(tokens).get(waitForBootstrap.toMillis(), TimeUnit.MILLISECONDS);
-                    StorageService.instance.setUpDistributedSystemKeyspaces();
-                    if (joinRing)
-                        StorageService.instance.finishJoiningRing(true, tokens);
-                }
-                catch (Throwable t)
-                {
-                    throw new RuntimeException(t);
-                }
-
-                return null;
-            }).apply(instance.config().getString("partitioner"), instance.config().getString("initial_token"));
+            instance.runOnInstance(() -> {
+                StorageService.instance.joinTokenRing(joinRing,
+                                                      true,
+                                                      Math.toIntExact(waitForSchema.toMillis()),
+                                                      Math.toIntExact(waitForBootstrap.toMillis()));
+            });
         }
     }
 
     public static InstanceAction decomission()
     {
-        return (target) -> target.nodetoolResult("decomission").asserts().success();
+        return (target) -> target.nodetoolResult("decommission").asserts().success();
     }
 
 
@@ -439,5 +425,19 @@ public class GossipHelper
                 }
             });
         });
+    }
+
+    public static void withProperty(String prop, boolean value, Runnable r)
+    {
+        String before = System.getProperty(prop);
+        try
+        {
+            System.setProperty(prop, Boolean.toString(value));
+            r.run();
+        }
+        finally
+        {
+            System.setProperty(prop, before == null ? "true" : before);
+        }
     }
 }
