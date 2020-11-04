@@ -221,9 +221,7 @@ public class Server implements CassandraDaemon.Server
 
         private InetSocketAddress getSocket()
         {
-            if (this.socket != null)
-                return this.socket;
-            else
+            if (this.socket == null)
             {
                 if (this.port == -1)
                     throw new IllegalStateException("Missing port number");
@@ -231,8 +229,9 @@ public class Server implements CassandraDaemon.Server
                     this.socket = new InetSocketAddress(this.hostAddr, this.port);
                 else
                     throw new IllegalStateException("Missing host");
-                return this.socket;
             }
+
+            return this.socket;
         }
     }
 

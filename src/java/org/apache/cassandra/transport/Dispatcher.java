@@ -94,11 +94,14 @@ public class Dispatcher
     {
         final Message.Response response;
         final ServerConnection connection;
+        FlushItem<?> flushItem;
         try
         {
             assert request.connection() instanceof ServerConnection;
             connection = (ServerConnection) request.connection();
             response = processRequest(connection, request);
+            Message.logger.trace("Responding: {}, v={}", response, connection.getVersion());
+            flushItem = forFlusher.toFlushItem(channel, request, response);
         }
         catch (Throwable t)
         {
@@ -106,16 +109,14 @@ public class Dispatcher
             ExceptionHandlers.UnexpectedChannelExceptionHandler handler = new ExceptionHandlers.UnexpectedChannelExceptionHandler(channel, true);
             ErrorMessage error = ErrorMessage.fromException(t, handler);
             error.setStreamId(request.getStreamId());
-            flush(forFlusher.toFlushItem(channel, request, error));
-            return;
+            flushItem = forFlusher.toFlushItem(channel, request, error);
         }
         finally
         {
             ClientWarn.instance.resetWarnings();
         }
 
-        Message.logger.trace("Responding: {}, v={}", response, connection.getVersion());
-        flush(forFlusher.toFlushItem(channel, request, response));
+        flush(flushItem);
     }
 
     private void flush(FlushItem<?> item)

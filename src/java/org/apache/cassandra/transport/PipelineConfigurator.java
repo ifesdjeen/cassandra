@@ -38,6 +38,7 @@ import io.netty.channel.ChannelInitializer;
 import io.netty.channel.ChannelOption;
 import io.netty.channel.ChannelPipeline;
 import io.netty.channel.EventLoopGroup;
+import io.netty.channel.WriteBufferWaterMark;
 import io.netty.channel.epoll.EpollServerSocketChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.handler.codec.ByteToMessageDecoder;
@@ -114,15 +115,14 @@ public class PipelineConfigurator
                                            final InetSocketAddress socket,
                                            final Connection.Factory connectionFactory)
     {
-
         ServerBootstrap bootstrap = new ServerBootstrap()
                                     .channel(epoll ? EpollServerSocketChannel.class : NioServerSocketChannel.class)
                                     .childOption(ChannelOption.TCP_NODELAY, true)
                                     .childOption(ChannelOption.SO_LINGER, 0)
                                     .childOption(ChannelOption.SO_KEEPALIVE, keepAlive)
                                     .childOption(ChannelOption.ALLOCATOR, CBUtil.allocator)
-                                    .childOption(ChannelOption.WRITE_BUFFER_HIGH_WATER_MARK, 32 * 1024)
-                                    .childOption(ChannelOption.WRITE_BUFFER_LOW_WATER_MARK, 8 * 1024);
+                                    .childOption(ChannelOption.WRITE_BUFFER_WATER_MARK, new WriteBufferWaterMark(8 * 1024, 32 * 1024));
+
         if (workerGroup != null)
             bootstrap = bootstrap.group(workerGroup);
 

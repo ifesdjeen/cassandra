@@ -56,7 +56,6 @@ public class SimpleClientBurnTest
 
     private static final Logger logger = LoggerFactory.getLogger(CQLConnectionTest.class);
 
-    private Random random;
     private InetAddress address;
     private int port;
 
@@ -67,9 +66,7 @@ public class SimpleClientBurnTest
         DatabaseDescriptor.setAuthenticator(new AllowAllAuthenticator());
         DatabaseDescriptor.setAuthorizer(new AllowAllAuthorizer());
         DatabaseDescriptor.setNetworkAuthorizer(new AllowAllNetworkAuthorizer());
-        long seed = new SecureRandom().nextLong();
-        logger.info("seed: {}", seed);
-        random = new Random(seed);
+
         address = InetAddress.getLoopbackAddress();
         try
         {
