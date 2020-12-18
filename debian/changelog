@@ -1,10 +1,9 @@
-
 cassandra (3.11.10) unstable; urgency=medium
 
   [ Mick Semb Wever ]
   * New release
 
- -- Alex <ifesdjeen@apache.org>  Fri, 18 Dec 2020 12:29:50 +0100
+ -- Alex <ifesdjeen@apache.org>  Fri, 18 Dec 2020 12:30:17 +0100
 
 cassandra (3.11.9) unstable; urgency=medium
 
