@@ -40,30 +40,88 @@ import static org.apache.cassandra.distributed.shared.AssertUtils.row;
 public class GroupByTest extends TestBaseImpl
 {
     @Test
+    public void groupByWithDeletesAndSrpOnPartitions() throws Throwable
+    {
+        try (Cluster cluster = init(builder().withNodes(2).withConfig((cfg) -> cfg.set("enable_user_defined_functions", "true")).start()))
+        {
+            cluster.schemaChange(withKeyspace("CREATE TABLE %s.tbl (pk int, ck text, PRIMARY KEY (pk, ck))"));
+            initFunctions(cluster);
+            cluster.get(1).executeInternal(withKeyspace("INSERT INTO %s.tbl (pk, ck) VALUES (1, '1') USING TIMESTAMP 0"));
+            cluster.get(1).executeInternal(withKeyspace("INSERT INTO %s.tbl (pk, ck) VALUES (2, '2') USING TIMESTAMP 0"));
+            cluster.get(1).executeInternal(withKeyspace("DELETE FROM %s.tbl WHERE pk=0 AND ck='0'"));
+
+            cluster.get(2).executeInternal(withKeyspace("INSERT INTO %s.tbl (pk, ck) VALUES (0, '0') USING TIMESTAMP 0"));
+            cluster.get(2).executeInternal(withKeyspace("DELETE FROM %s.tbl WHERE pk=1 AND ck='1'"));
+            cluster.get(2).executeInternal(withKeyspace("DELETE FROM %s.tbl WHERE pk=2 AND ck='2'"));
+
+            for (int limit : new int[]{ 0, 1, 10 })
+            {
+                String limitClause = limit == 0 ? "" : "LIMIT " + limit;
+                String query = withKeyspace("SELECT concat(ck) FROM %s.tbl GROUP BY pk " + limitClause);
+                for (int i = 1; i <= 4; i++)
+                {
+                    Iterator<Object[]> rows = cluster.coordinator(2).executeWithPaging(query, ConsistencyLevel.ALL, i);
+                    assertRows(Iterators.toArray(rows, Object[].class));
+                }
+            }
+        }
+    }
+
+    @Test
+    public void groupByWithDeletesAndSrpOnRows() throws Throwable
+    {
+        try (Cluster cluster = init(builder().withNodes(2).withConfig((cfg) -> cfg.set("enable_user_defined_functions", "true")).start()))
+        {
+            cluster.schemaChange(withKeyspace("CREATE TABLE %s.tbl (pk int, ck text, PRIMARY KEY (pk, ck))"));
+            initFunctions(cluster);
+            cluster.get(1).executeInternal(withKeyspace("INSERT INTO %s.tbl (pk, ck) VALUES (0, '1') USING TIMESTAMP 0"));
+            cluster.get(1).executeInternal(withKeyspace("INSERT INTO %s.tbl (pk, ck) VALUES (0, '2') USING TIMESTAMP 0"));
+            cluster.get(1).executeInternal(withKeyspace("DELETE FROM %s.tbl WHERE pk=0 AND ck='0'"));
+
+            cluster.get(2).executeInternal(withKeyspace("INSERT INTO %s.tbl (pk, ck) VALUES (0, '0') USING TIMESTAMP 0"));
+            cluster.get(2).executeInternal(withKeyspace("DELETE FROM %s.tbl WHERE pk=0 AND ck='1'"));
+            cluster.get(2).executeInternal(withKeyspace("DELETE FROM %s.tbl WHERE pk=0 AND ck='2'"));
+
+            for (int limit : new int[]{ 0, 1, 10 })
+            {
+                String limitClause = limit == 0 ? "" : "LIMIT " + limit;
+                String query = withKeyspace("SELECT concat(ck) FROM %s.tbl GROUP BY pk " + limitClause
+                                            );
+                for (int i = 1; i <= 4; i++)
+                {
+                    Iterator<Object[]> rows = cluster.coordinator(2).executeWithPaging(query, ConsistencyLevel.ALL, i);
+                    assertRows(Iterators.toArray(rows, Object[].class));
+                }
+            }
+        }
+    }
+
+    @Test
     public void testGroupByWithAggregatesAndPaging() throws Throwable
     {
-        try (Cluster cluster = init(builder().withNodes(1).withConfig((cfg) -> cfg.set("enable_user_defined_functions", "true")).start()))
+        try (Cluster cluster = init(builder().withNodes(2).withConfig((cfg) -> cfg.set("enable_user_defined_functions", "true")).start()))
         {
             cluster.schemaChange("CREATE TABLE " + KEYSPACE + ".tbl (pk int, ck int, v1 text, v2 text, v3 text, primary key (pk, ck))");
-            cluster.get(1).executeInternal("CREATE FUNCTION " + KEYSPACE + ".concat_strings_fn(a text, b text) " +
-                                           "RETURNS NULL ON NULL INPUT " +
-                                           "RETURNS text " +
-                                           "LANGUAGE java " +
-                                           "AS 'return a + \" \" + b;'");
+            initFunctions(cluster);
 
-            cluster.get(1).executeInternal("CREATE AGGREGATE " + KEYSPACE +".concat(text)" +
-                                           " SFUNC concat_strings_fn" +
-                                           " STYPE text" +
-                                           " INITCOND '_'");
+            cluster.coordinator(1).execute("insert into " + KEYSPACE + ".tbl (pk, ck, v1, v2, v3) values (1,1,'1','1','1')", ConsistencyLevel.ALL);
+            cluster.coordinator(1).execute("insert into " + KEYSPACE + ".tbl (pk, ck, v1, v2, v3) values (1,2,'2','2','2')", ConsistencyLevel.ALL);
+            cluster.coordinator(1).execute("insert into " + KEYSPACE + ".tbl (pk, ck, v1, v2, v3) values (1,3,'3','3','3')", ConsistencyLevel.ALL);
 
-            cluster.coordinator(1).execute("insert into " + KEYSPACE + ".tbl (pk, ck, v1, v2, v3) values (1,1,'1','1','1')", ConsistencyLevel.QUORUM);
-            cluster.coordinator(1).execute("insert into " + KEYSPACE + ".tbl (pk, ck, v1, v2, v3) values (1,2,'2','2','2')", ConsistencyLevel.QUORUM);
-            cluster.coordinator(1).execute("insert into " + KEYSPACE + ".tbl (pk, ck, v1, v2, v3) values (1,3,'3','3','3')", ConsistencyLevel.QUORUM);
-            Iterator<Object[]> iter = cluster.coordinator(1).executeWithPaging("select concat(v1), concat(v2), concat(v3) from " + KEYSPACE + ".tbl where pk = 1 group by pk",
-                                                                               ConsistencyLevel.QUORUM, 1);
+            for (int i = 1; i <= 4; i++)
+            {
+                assertRows(cluster.coordinator(1).executeWithPaging("select concat(v1), concat(v2), concat(v3) from " + KEYSPACE + ".tbl where pk = 1 group by pk",
+                                                                    ConsistencyLevel.ALL, i),
+                           row("_ 1 2 3", "_ 1 2 3", "_ 1 2 3"));
 
-            assertRows(iter,
-                       row("_ 1 2 3", "_ 1 2 3", "_ 1 2 3"));
+                assertRows(cluster.coordinator(1).executeWithPaging("select concat(v1), concat(v2), concat(v3) from " + KEYSPACE + ".tbl where pk = 1 group by pk limit 1",
+                                                                    ConsistencyLevel.ALL, i),
+                           row("_ 1 2 3", "_ 1 2 3", "_ 1 2 3"));
+
+                assertRows(cluster.coordinator(1).executeWithPaging("select * from " + KEYSPACE + ".tbl where pk = 1 group by pk",
+                                                                    ConsistencyLevel.ALL, i),
+                           row(1, 1, "1", "1", "1"));
+            }
         }
     }
 
@@ -92,5 +150,19 @@ public class GroupByTest extends TestBaseImpl
                 Assert.assertFalse(rs.hasNext());
             }
         }
+    }
+
+    private static void initFunctions(Cluster cluster)
+    {
+        cluster.schemaChange("CREATE FUNCTION " + KEYSPACE + ".concat_strings_fn(a text, b text) " +
+                             "RETURNS NULL ON NULL INPUT " +
+                             "RETURNS text " +
+                             "LANGUAGE java " +
+                             "AS 'return a + \" \" + b;'");
+
+        cluster.schemaChange("CREATE AGGREGATE " + KEYSPACE + ".concat(text)" +
+                             " SFUNC concat_strings_fn" +
+                             " STYPE text" +
+                             " INITCOND '_'");
     }
 }

@@ -138,11 +138,9 @@ public class Coordinator implements ICoordinator
             ClientState clientState = makeFakeClientState();
             ConsistencyLevel consistencyLevel = ConsistencyLevel.valueOf(consistencyLevelOrigin.name());
             CQLStatement prepared = QueryProcessor.getStatement(query, clientState);
-            List<ByteBuffer> boundBBValues = new ArrayList<>();
+            final List<ByteBuffer> boundBBValues = new ArrayList<>();
             for (Object boundValue : boundValues)
-            {
                 boundBBValues.add(ByteBufferUtil.objectToBytes(boundValue));
-            }
 
             prepared.validate(clientState);
             assert prepared instanceof SelectStatement : "Only SELECT statements can be executed with paging";
