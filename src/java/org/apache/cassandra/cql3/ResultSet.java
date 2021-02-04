@@ -286,6 +286,11 @@ public class ResultSet
             names.add(name);
         }
 
+        public PagingState getPagingState()
+        {
+            return pagingState;
+        }
+
         public void setHasMorePages(PagingState pagingState)
         {
             this.pagingState = pagingState;
