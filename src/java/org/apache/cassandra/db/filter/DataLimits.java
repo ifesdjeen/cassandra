@@ -320,6 +320,16 @@ public abstract class DataLimits
         public abstract boolean isDone();
         public abstract boolean isDoneForPartition();
 
+        public boolean needsMoreContents()
+        {
+            return isDone();
+        }
+
+        public boolean needsMoreContentsForPartition()
+        {
+            return isDoneForPartition();
+        }
+
         protected boolean isLive(Row row)
         {
             return assumeLiveData || row.hasLiveData(nowInSec, enforceStrictLiveness);
@@ -861,7 +871,7 @@ public abstract class DataLimits
              */
             protected int groupInCurrentPartition;
 
-            protected boolean hasGroupStarted;
+            protected boolean hasUnfinishedGroup;
 
             protected boolean hasLiveStaticRow;
 
@@ -879,7 +889,7 @@ public abstract class DataLimits
                 // If the end of the partition was reached at the same time than the row limit, the last group might
                 // not have been counted yet. Due to that we need to guess, based on the state, if the previous group
                 // is still open.
-                hasGroupStarted = state.hasClustering();
+                hasUnfinishedGroup = state.hasClustering();
             }
 
             @Override
@@ -895,17 +905,17 @@ public abstract class DataLimits
                     // once more.
                     hasLiveStaticRow = false;
                     hasReturnedRowsFromCurrentPartition = true;
-                    hasGroupStarted = true;
+                    hasUnfinishedGroup = true;
                 }
                 else
                 {
                     // We need to increment our count of groups if we have reached a new one and unless we had no new
-                    // content added since we closed our last group (that is, if hasGroupStarted). Note that we may get
-                    // here with hasGroupStarted == false in the following cases:
+                    // content added since we closed our last group (that is, if hasUnfinishedGroup). Note that we may get
+                    // here with hasUnfinishedGroup == false in the following cases:
                     // * the partition limit was reached for the previous partition
                     // * the previous partition was containing only one static row
                     // * the rows of the last group of the previous partition were all marked as deleted
-                    if (hasGroupStarted && groupMaker.isNewGroup(partitionKey, Clustering.STATIC_CLUSTERING))
+                    if (hasUnfinishedGroup && groupMaker.isNewGroup(partitionKey, Clustering.STATIC_CLUSTERING))
                     {
                         incrementGroupCount();
                         // If we detect, before starting the new partition, that we are done, we need to increase
@@ -913,7 +923,7 @@ public abstract class DataLimits
                         // there.
                         if (isDone())
                             incrementGroupInCurrentPartitionCount();
-                        hasGroupStarted = false;
+                        hasUnfinishedGroup = false;
                     }
                     hasReturnedRowsFromCurrentPartition = false;
                     hasLiveStaticRow = !staticRow.isEmpty() && isLive(staticRow);
@@ -950,25 +960,25 @@ public abstract class DataLimits
                 // non deleted row that we have reached the limit.
                 if (groupMaker.isNewGroup(currentPartitionKey, row.clustering()))
                 {
-                    if (hasGroupStarted)
+                    if (hasUnfinishedGroup)
                     {
                         incrementGroupCount();
                         incrementGroupInCurrentPartitionCount();
                     }
-                    hasGroupStarted = false;
+                    hasUnfinishedGroup = false;
                 }
 
                 // That row may have made us increment the group count, which may mean we're done for this partition, in
                 // which case we shouldn't count this row (it won't be returned).
                 if (enforceLimits && isDoneForPartition())
                 {
-                    hasGroupStarted = false;
+                    hasUnfinishedGroup = false;
                     return null;
                 }
 
                 if (isLive(row))
                 {
-                    hasGroupStarted = true;
+                    hasUnfinishedGroup = true;
                     incrementRowCount();
                     hasReturnedRowsFromCurrentPartition = true;
                 }
@@ -1034,6 +1044,18 @@ public abstract class DataLimits
             }
 
             @Override
+            public boolean needsMoreContents()
+            {
+                return isDone() || hasUnfinishedGroup;
+            }
+
+            @Override
+            public boolean needsMoreContentsForPartition()
+            {
+                return isDoneForPartition() || hasUnfinishedGroup;
+            }
+
+            @Override
             public void onPartitionClose()
             {
                 // Normally, we don't count static rows as from a CQL point of view, it will be merge with other
@@ -1044,7 +1066,7 @@ public abstract class DataLimits
                     incrementRowCount();
                     incrementGroupCount();
                     incrementGroupInCurrentPartitionCount();
-                    hasGroupStarted = false;
+                    hasUnfinishedGroup = false;
                 }
                 super.onPartitionClose();
             }
@@ -1058,7 +1080,7 @@ public abstract class DataLimits
                 // 2) the end of the data is reached
                 // We know that the end of the data is reached if the group limit has not been reached
                 // and the number of rows counted is smaller than the internal page size.
-                if (hasGroupStarted && groupCounted < groupLimit && rowsCounted < rowLimit)
+                if (hasUnfinishedGroup && groupCounted < groupLimit && rowsCounted < rowLimit)
                 {
                     incrementGroupCount();
                     incrementGroupInCurrentPartitionCount();
@@ -1146,7 +1168,7 @@ public abstract class DataLimits
                     groupInCurrentPartition = groupPerPartitionLimit - lastReturnedKeyRemaining;
                     hasReturnedRowsFromCurrentPartition = true;
                     hasLiveStaticRow = false;
-                    hasGroupStarted = state.hasClustering();
+                    hasUnfinishedGroup = state.hasClustering();
                 }
                 else
                 {
