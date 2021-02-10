@@ -72,24 +72,24 @@ public class GroupByTest extends TestBaseImpl
     {
         try (Cluster cluster = init(builder().withNodes(2).withConfig((cfg) -> cfg.set("enable_user_defined_functions", "true")).start()))
         {
-            cluster.schemaChange("CREATE TABLE " + KEYSPACE + ".tbl (pk int, ck int, v1 text, v2 text, v3 text, primary key (pk, ck))");
+            cluster.schemaChange(withKeyspace("CREATE TABLE %s.tbl (pk int, ck int, v1 text, v2 text, v3 text, primary key (pk, ck))"));
             initFunctions(cluster);
 
-            cluster.coordinator(1).execute("insert into " + KEYSPACE + ".tbl (pk, ck, v1, v2, v3) values (1,1,'1','1','1')", ConsistencyLevel.ALL);
-            cluster.coordinator(1).execute("insert into " + KEYSPACE + ".tbl (pk, ck, v1, v2, v3) values (1,2,'2','2','2')", ConsistencyLevel.ALL);
-            cluster.coordinator(1).execute("insert into " + KEYSPACE + ".tbl (pk, ck, v1, v2, v3) values (1,3,'3','3','3')", ConsistencyLevel.ALL);
+            cluster.coordinator(1).execute(withKeyspace("insert into %s.tbl (pk, ck, v1, v2, v3) values (1,1,'1','1','1')"), ConsistencyLevel.ALL);
+            cluster.coordinator(1).execute(withKeyspace("insert into %s.tbl (pk, ck, v1, v2, v3) values (1,2,'2','2','2')"), ConsistencyLevel.ALL);
+            cluster.coordinator(1).execute(withKeyspace("insert into %s.tbl (pk, ck, v1, v2, v3) values (1,3,'3','3','3')"), ConsistencyLevel.ALL);
 
             for (int i = 1; i <= 4; i++)
             {
-                assertRows(cluster.coordinator(1).executeWithPaging("select concat(v1), concat(v2), concat(v3) from " + KEYSPACE + ".tbl where pk = 1 group by pk",
+                assertRows(cluster.coordinator(1).executeWithPaging(withKeyspace("select concat(v1), concat(v2), concat(v3) from %s.tbl where pk = 1 group by pk"),
                                                                     ConsistencyLevel.ALL, i),
                            row("_ 1 2 3", "_ 1 2 3", "_ 1 2 3"));
 
-                assertRows(cluster.coordinator(1).executeWithPaging("select concat(v1), concat(v2), concat(v3) from " + KEYSPACE + ".tbl where pk = 1 group by pk limit 1",
+                assertRows(cluster.coordinator(1).executeWithPaging(withKeyspace("select concat(v1), concat(v2), concat(v3) from %s.tbl where pk = 1 group by pk limit 1"),
                                                                     ConsistencyLevel.ALL, i),
                            row("_ 1 2 3", "_ 1 2 3", "_ 1 2 3"));
 
-                assertRows(cluster.coordinator(1).executeWithPaging("select * from " + KEYSPACE + ".tbl where pk = 1 group by pk",
+                assertRows(cluster.coordinator(1).executeWithPaging(withKeyspace("select * from %s.tbl where pk = 1 group by pk"),
                                                                     ConsistencyLevel.ALL, i),
                            row(1, 1, "1", "1", "1"));
             }
@@ -125,15 +125,15 @@ public class GroupByTest extends TestBaseImpl
 
     private static void initFunctions(Cluster cluster)
     {
-        cluster.schemaChange("CREATE FUNCTION " + KEYSPACE + ".concat_strings_fn(a text, b text) " +
-                             "RETURNS NULL ON NULL INPUT " +
-                             "RETURNS text " +
-                             "LANGUAGE java " +
-                             "AS 'return a + \" \" + b;'");
+        cluster.schemaChange(withKeyspace("CREATE FUNCTION %s.concat_strings_fn(a text, b text) " +
+                                          "RETURNS NULL ON NULL INPUT " +
+                                          "RETURNS text " +
+                                          "LANGUAGE java " +
+                                          "AS 'return a + \" \" + b;'"));
 
-        cluster.schemaChange("CREATE AGGREGATE " + KEYSPACE + ".concat(text)" +
-                             " SFUNC concat_strings_fn" +
-                             " STYPE text" +
-                             " INITCOND '_'");
+        cluster.schemaChange(withKeyspace("CREATE AGGREGATE %s.concat(text)" +
+                                          " SFUNC concat_strings_fn" +
+                                          " STYPE text" +
+                                          " INITCOND '_'"));
     }
 }
