@@ -43,7 +43,7 @@ public class RowUtil
         {
             ResultMessage.Rows rows = (ResultMessage.Rows) res;
             String[] names = getColumnNames(rows.result.metadata.names);
-            Object[][] results = RowUtil.toObjects(rows);
+            Object[][] results = toObjects(rows);
             
             // Warnings may be null here, due to ClientWarn#getWarnings() handling of empty warning lists.
             List<String> warnings = res.getWarnings();
@@ -82,6 +82,19 @@ public class RowUtil
             }
         }
         return result;
+    }
+
+    public static Iterator<Object[]> toObjects(ResultSet rs)
+    {
+        return Iterators.transform(rs.iterator(), (Row row) -> {
+            final int numColumns = rs.getColumnDefinitions().size();
+            Object[] objectRow = new Object[numColumns];
+            for (int i = 0; i < numColumns; i++)
+            {
+                objectRow[i] = row.getObject(i);
+            }
+            return objectRow;
+        });
     }
 
     public static Iterator<Object[]> toIter(UntypedResultSet rs)
@@ -126,19 +139,4 @@ public class RowUtil
                                        return objectRow;
                                    });
     }
-
-    public static Iterator<Object[]> toObjects(ResultSet rs)
-    {
-        return Iterators.transform(rs.iterator(), (Row row) -> {
-            final int numColumns = rs.getColumnDefinitions().size();
-            Object[] objectRow = new Object[numColumns];
-            for (int i = 0; i < numColumns; i++)
-            {
-                objectRow[i] = row.getObject(i);
-            }
-            return objectRow;
-        });
-    }
-
-
 }
