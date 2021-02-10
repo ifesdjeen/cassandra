@@ -32,6 +32,7 @@ import org.apache.cassandra.thrift.CqlResultType;
 import org.apache.cassandra.thrift.CqlRow;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.service.pager.PagingState;
+import com.google.common.annotations.VisibleForTesting;
 
 public class ResultSet
 {
@@ -286,6 +287,7 @@ public class ResultSet
             names.add(name);
         }
 
+        @VisibleForTesting
         public PagingState getPagingState()
         {
             return pagingState;
