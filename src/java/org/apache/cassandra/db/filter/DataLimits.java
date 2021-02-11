@@ -320,16 +320,6 @@ public abstract class DataLimits
         public abstract boolean isDone();
         public abstract boolean isDoneForPartition();
 
-        public boolean needsMoreContents()
-        {
-            return isDone();
-        }
-
-        public boolean needsMoreContentsForPartition()
-        {
-            return isDoneForPartition();
-        }
-
         protected boolean isLive(Row row)
         {
             return assumeLiveData || row.hasLiveData(nowInSec, enforceStrictLiveness);
@@ -1041,18 +1031,6 @@ public abstract class DataLimits
             public boolean isDone()
             {
                 return groupCounted >= groupLimit;
-            }
-
-            @Override
-            public boolean needsMoreContents()
-            {
-                return isDone() || hasUnfinishedGroup;
-            }
-
-            @Override
-            public boolean needsMoreContentsForPartition()
-            {
-                return isDoneForPartition() || hasUnfinishedGroup;
             }
 
             @Override
