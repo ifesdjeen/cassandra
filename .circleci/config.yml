@@ -2290,7 +2290,7 @@ jobs:
           export PATH=$JAVA_HOME/bin:$PATH
           cd ~/cassandra
           mkdir ~/dtest_jars
-          git remote add apache git@github.com:ifesdjeen/cassandra.git
+          git remote add apache https://github.com/ifesdjeen/cassandra.git
           for branch in 16427-2.2 16427-3.0 16427-3.11 16427-trunk; do
             # check out the correct cassandra version:
             git remote set-branches --add apache '$branch'
