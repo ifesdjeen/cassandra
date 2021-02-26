@@ -84,7 +84,7 @@ public abstract class SSTableWriter extends SSTable implements Transactional
                             SerializationHeader header,
                             Collection<SSTableFlushObserver> observers)
     {
-        super(descriptor, components(metadata.get()), metadata, DatabaseDescriptor.getDiskOptimizationStrategy());
+        super(descriptor, components(metadata), metadata, DatabaseDescriptor.getDiskOptimizationStrategy());
         this.keyCount = keyCount;
         this.repairedAt = repairedAt;
         this.pendingRepair = pendingRepair;
@@ -152,8 +152,9 @@ public abstract class SSTableWriter extends SSTable implements Transactional
         return create(descriptor, keyCount, repairedAt, pendingRepair, isTransient, 0, header, indexes, lifecycleNewTracker);
     }
 
-    private static Set<Component> components(TableMetadata metadata)
+    private static Set<Component> components(TableMetadataRef metadataRef)
     {
+        TableMetadata metadata = metadataRef.get();
         Set<Component> components = new HashSet<Component>(Arrays.asList(Component.DATA,
                 Component.PRIMARY_INDEX,
                 Component.STATS,
@@ -164,7 +165,7 @@ public abstract class SSTableWriter extends SSTable implements Transactional
         if (metadata.params.bloomFilterFpChance < 1.0)
             components.add(Component.FILTER);
 
-        if (metadata.params.compression.isEnabled())
+        if (metadataRef.compressionParams().isEnabled())
         {
             components.add(Component.COMPRESSION_INFO);
         }

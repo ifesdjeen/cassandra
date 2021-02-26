@@ -32,6 +32,7 @@ public final class TableMetadataRef
     public final String name;
 
     private volatile TableMetadata metadata;
+    private volatile CompressionParams localCompressionParams;
 
     TableMetadataRef(TableMetadata metadata)
     {
@@ -68,6 +69,19 @@ public final class TableMetadataRef
     {
         metadata.validateCompatibility(get());
         this.metadata = metadata;
+    }
+
+    public void setLocalCompressionParams(CompressionParams params)
+    {
+        this.localCompressionParams = params;
+    }
+
+    public CompressionParams compressionParams()
+    {
+        if (localCompressionParams == null)
+            return metadata.params.compression;
+
+        return localCompressionParams;
     }
 
     @Override
