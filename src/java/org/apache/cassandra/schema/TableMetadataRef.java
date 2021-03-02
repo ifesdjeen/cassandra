@@ -69,6 +69,8 @@ public final class TableMetadataRef
     {
         metadata.validateCompatibility(get());
         this.metadata = metadata;
+        // Reset local compression params if global metadata is changed
+        this.localCompressionParams = null;
     }
 
     public void setLocalCompressionParams(CompressionParams params)
