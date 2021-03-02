@@ -365,6 +365,8 @@ public final class CFMetaData
     // are kept because they are often useful in a different format.
     private void rebuild()
     {
+        this.localCompressionParams = null;
+
         // A non-compact copy will be created lazily
         this.nonCompactCopy = null;
 
