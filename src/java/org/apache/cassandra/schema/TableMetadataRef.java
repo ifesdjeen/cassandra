@@ -32,6 +32,7 @@ public final class TableMetadataRef
     public final String name;
 
     private volatile TableMetadata metadata;
+    private volatile TableMetadata localTableMetadata;
     private volatile CompressionParams localCompressionParams;
 
     TableMetadataRef(TableMetadata metadata)
@@ -60,6 +61,17 @@ public final class TableMetadataRef
     }
 
     /**
+     * Returns node-local table metadata
+     */
+    public TableMetadata getLocal()
+    {
+        if (this.localTableMetadata != null)
+            return localTableMetadata;
+
+        return metadata;
+    }
+
+    /**
      * Update the reference with the most current version of {@link TableMetadata}
      * <p>
      * Must only be used by methods in {@link Schema}, *DO NOT* make public
@@ -69,21 +81,14 @@ public final class TableMetadataRef
     {
         metadata.validateCompatibility(get());
         this.metadata = metadata;
-        // Reset local compression params if global metadata is changed
-        this.localCompressionParams = null;
+        this.localTableMetadata = null;
     }
 
-    public void setLocalCompressionParams(CompressionParams params)
-    {
-        this.localCompressionParams = params;
-    }
 
-    public CompressionParams compressionParams()
+    public void setLocalOverrides(TableMetadata metadata)
     {
-        if (localCompressionParams == null)
-            return metadata.params.compression;
-
-        return localCompressionParams;
+        metadata.validateCompatibility(get());
+        this.localTableMetadata = metadata;
     }
 
     @Override
