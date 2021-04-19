@@ -65,6 +65,11 @@ public interface ClusteringIndexFilter
     public boolean isReversed();
 
     /**
+     * Whether or not it is guaranteed that after applying this filter, result set is going to be are empty.
+     */
+    public boolean isEmpty(ClusteringComparator comparator);
+
+    /**
      * Returns a filter for continuing the paging of this filter given the last returned clustering prefix.
      *
      * @param comparator the comparator for the table this is a filter for.

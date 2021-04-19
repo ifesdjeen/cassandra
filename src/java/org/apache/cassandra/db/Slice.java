@@ -211,28 +211,39 @@ public class Slice
         if (reversed)
         {
             int cmp = comparator.compare(lastReturned, start);
-            if (cmp < 0 || (!inclusive && cmp == 0))
+            assert cmp != 0;
+            // start is > than lastReturned; got nothing to return no more
+            if (cmp < 0)
                 return null;
 
             cmp = comparator.compare(end, lastReturned);
-            if (cmp < 0 || (inclusive && cmp == 0))
+            assert cmp != 0;
+            if (cmp < 0)
                 return this;
 
             ByteBuffer[] values = extractValues(lastReturned);
-            return new Slice(start, inclusive ? Bound.inclusiveEndOf(values) : Bound.exclusiveEndOf(values));
+            Slice slice = new Slice(start, inclusive ? Bound.inclusiveEndOf(values) : Bound.exclusiveEndOf(values));
+            if (slice.isEmpty(comparator))
+                return null;
+            return slice;
         }
         else
         {
             int cmp = comparator.compare(end, lastReturned);
-            if (cmp < 0 || (!inclusive && cmp == 0))
+            assert cmp != 0;
+            if (cmp < 0)
                 return null;
 
             cmp = comparator.compare(lastReturned, start);
-            if (cmp < 0 || (inclusive && cmp == 0))
+            assert cmp != 0;
+            if (cmp < 0)
                 return this;
 
             ByteBuffer[] values = extractValues(lastReturned);
-            return new Slice(inclusive ? Bound.inclusiveStartOf(values) : Bound.exclusiveStartOf(values), end);
+            Slice slice = new Slice(inclusive ? Bound.inclusiveStartOf(values) : Bound.exclusiveStartOf(values), end);
+            if (slice.isEmpty(comparator))
+                return null;
+            return slice;
         }
     }
 
