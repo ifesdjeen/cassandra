@@ -18,13 +18,28 @@
 
 package org.apache.cassandra.distributed.test.ring;
 
+import java.io.IOException;
 import java.util.Map;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 import org.junit.Assert;
 import org.junit.Test;
 
+import net.bytebuddy.ByteBuddy;
+import net.bytebuddy.dynamic.loading.ClassLoadingStrategy;
+import net.bytebuddy.implementation.MethodDelegation;
+import net.bytebuddy.implementation.bind.annotation.FieldValue;
+import net.bytebuddy.implementation.bind.annotation.SuperCall;
+import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.distributed.Cluster;
 import org.apache.cassandra.distributed.api.ConsistencyLevel;
 import org.apache.cassandra.distributed.api.ICluster;
@@ -33,8 +48,11 @@ import org.apache.cassandra.distributed.api.IInvokableInstance;
 import org.apache.cassandra.distributed.api.TokenSupplier;
 import org.apache.cassandra.distributed.shared.NetworkTopology;
 import org.apache.cassandra.distributed.test.TestBaseImpl;
+import org.apache.cassandra.locator.AbstractReplicationStrategy;
+import org.apache.cassandra.locator.EndpointsForRange;
 
 import static java.util.Arrays.asList;
+import static net.bytebuddy.matcher.ElementMatchers.named;
 import static org.apache.cassandra.distributed.action.GossipHelper.bootstrap;
 import static org.apache.cassandra.distributed.action.GossipHelper.pullSchemaFrom;
 import static org.apache.cassandra.distributed.action.GossipHelper.statusToBootstrap;
@@ -96,6 +114,67 @@ public class BootstrapTest extends TestBaseImpl
         }
     }
 
+    @Test
+    public void readsDuringBootstrapTest() throws IOException, ExecutionException, InterruptedException, TimeoutException
+    {
+        int originalNodeCount = 3;
+        int expandedNodeCount = originalNodeCount + 1;
+        ExecutorService es = Executors.newSingleThreadExecutor();
+        try (Cluster cluster = builder().withNodes(originalNodeCount)
+                                        .withTokenSupplier(TokenSupplier.evenlyDistributedTokens(expandedNodeCount))
+                                        .withNodeIdTopology(NetworkTopology.singleDcNetworkTopology(expandedNodeCount, "dc0", "rack0"))
+                                        .withConfig(config -> config.with(NETWORK, GOSSIP)
+                                                                    .set("read_request_timeout_in_ms", Integer.MAX_VALUE)
+                                                                    .set("request_timeout_in_ms", Integer.MAX_VALUE))
+                                        .withInstanceInitializer(BB::install)
+                                        .start())
+        {
+            String query = withKeyspace("SELECT * FROM %s.tbl WHERE id = ?");
+            cluster.schemaChange(withKeyspace("CREATE KEYSPACE IF NOT EXISTS %s WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 2};"));
+            cluster.schemaChange(withKeyspace("CREATE TABLE %s.tbl (id int PRIMARY KEY)"));
+            cluster.get(1).runOnInstance(() -> BB.block.set(true));
+            Future<?> read = es.submit(() -> cluster.coordinator(1).execute(query, ConsistencyLevel.QUORUM, 3));
+            long mark = cluster.get(1).logs().mark();
+            bootstrapAndJoinNode(cluster);
+            cluster.get(1).logs().watchFor(mark, "New node /127.0.0.4");
+            cluster.get(1).runOnInstance(() -> BB.block.set(false));
+            // populate cache
+            for (int i = 0; i < 10; i++)
+                cluster.coordinator(1).execute(query, ConsistencyLevel.QUORUM, i);
+            cluster.get(1).runOnInstance(() -> BB.latch.countDown());
+            read.get();
+        }
+        finally
+        {
+            es.shutdown();
+        }
+    }
+
+    public static class BB
+    {
+        public static final AtomicBoolean block = new AtomicBoolean();
+        public static final CountDownLatch latch = new CountDownLatch(1);
+        private static void install(ClassLoader cl, Integer instanceId)
+        {
+            if (instanceId != 1)
+                return;
+            new ByteBuddy().rebase(AbstractReplicationStrategy.class)
+                           .method(named("getCachedReplicas"))
+                           .intercept(MethodDelegation.to(BB.class))
+                           .make()
+                           .load(cl, ClassLoadingStrategy.Default.INJECTION);
+        }
+
+        public static EndpointsForRange getCachedReplicas(Token t,
+                                                          @FieldValue("keyspaceName") String keyspaceName,
+                                                          @SuperCall Callable<EndpointsForRange> zuper) throws Exception
+        {
+            if (keyspaceName.equals(KEYSPACE) && block.get())
+                latch.await();
+            return zuper.call();
+        }
+    }
+
     public static void populate(ICluster cluster, int from, int to)
     {
         populate(cluster, from, to, 1, 3, ConsistencyLevel.QUORUM);
@@ -120,4 +199,5 @@ public class BootstrapTest extends TestBaseImpl
                         .collect(Collectors.toMap(nodeId -> nodeId,
                                                   nodeId -> (Long) cluster.get(nodeId).executeInternal("SELECT count(*) FROM " + KEYSPACE + ".tbl")[0][0]));
     }
+
 }
