@@ -130,11 +130,17 @@ public class TokenMetadata
 
     private TokenMetadata(BiMultiValMap<Token, InetAddressAndPort> tokenToEndpointMap, BiMap<InetAddressAndPort, UUID> endpointsMap, Topology topology, IPartitioner partitioner)
     {
+        this(tokenToEndpointMap, endpointsMap, topology, partitioner, 0);
+    }
+
+    private TokenMetadata(BiMultiValMap<Token, InetAddressAndPort> tokenToEndpointMap, BiMap<InetAddressAndPort, UUID> endpointsMap, Topology topology, IPartitioner partitioner, long ringVersion)
+    {
         this.tokenToEndpointMap = tokenToEndpointMap;
         this.topology = topology;
         this.partitioner = partitioner;
         endpointToHostIdMap = endpointsMap;
         sortedTokens = sortTokens();
+        this.ringVersion = ringVersion;
     }
 
     /**
@@ -656,6 +662,23 @@ public class TokenMetadata
         }
     }
 
+    private TokenMetadata cloneOnlyTokenMapWithRingVersion()
+    {
+        lock.readLock().lock();
+        try
+        {
+            return new TokenMetadata(SortedBiMultiValMap.create(tokenToEndpointMap),
+                                     HashBiMap.create(endpointToHostIdMap),
+                                     topology,
+                                     partitioner,
+                                     ringVersion);
+        }
+        finally
+        {
+            lock.readLock().unlock();
+        }
+    }
+
     /**
      * Return a cached TokenMetadata with only tokenToEndpointMap, i.e., the same as cloneOnlyTokenMap but
      * uses a cached copy that is invalided when the ring changes, so in the common case
@@ -675,7 +698,7 @@ public class TokenMetadata
             if ((tm = cachedTokenMap.get()) != null)
                 return tm;
 
-            tm = cloneOnlyTokenMap();
+            tm = cloneOnlyTokenMapWithRingVersion();
             cachedTokenMap.set(tm);
             return tm;
         }

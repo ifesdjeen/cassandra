@@ -165,7 +165,7 @@ public class BootstrapTest extends TestBaseImpl
                            .load(cl, ClassLoadingStrategy.Default.INJECTION);
         }
 
-        public static EndpointsForRange getCachedReplicas(Token t,
+        public static EndpointsForRange getCachedReplicas(long ringVersion, Token t,
                                                           @FieldValue("keyspaceName") String keyspaceName,
                                                           @SuperCall Callable<EndpointsForRange> zuper) throws Exception
         {

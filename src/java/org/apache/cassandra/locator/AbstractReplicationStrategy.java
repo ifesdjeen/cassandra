@@ -54,10 +54,7 @@ public abstract class AbstractReplicationStrategy
     public final Map<String, String> configOptions;
     protected final String keyspaceName;
     private final TokenMetadata tokenMetadata;
-
-    // track when the token range changes, signaling we need to invalidate our endpoint cache
-    private volatile long lastInvalidatedVersion = 0;
-
+    private final ReplicaCache<Token, EndpointsForRange> replicas = new ReplicaCache<>();
     public IEndpointSnitch snitch;
 
     protected AbstractReplicationStrategy(String keyspaceName, TokenMetadata tokenMetadata, IEndpointSnitch snitch, Map<String, String> configOptions)
@@ -68,28 +65,6 @@ public abstract class AbstractReplicationStrategy
         this.snitch = snitch;
         this.configOptions = configOptions == null ? Collections.<String, String>emptyMap() : configOptions;
         this.keyspaceName = keyspaceName;
-    }
-
-    private final Map<Token, EndpointsForRange> cachedReplicas = new NonBlockingHashMap<>();
-
-    public EndpointsForRange getCachedReplicas(Token t)
-    {
-        long lastVersion = tokenMetadata.getRingVersion();
-
-        if (lastVersion > lastInvalidatedVersion)
-        {
-            synchronized (this)
-            {
-                if (lastVersion > lastInvalidatedVersion)
-                {
-                    logger.trace("clearing cached endpoints");
-                    cachedReplicas.clear();
-                    lastInvalidatedVersion = lastVersion;
-                }
-            }
-        }
-
-        return cachedReplicas.get(t);
     }
 
     /**
@@ -107,15 +82,16 @@ public abstract class AbstractReplicationStrategy
     public EndpointsForRange getNaturalReplicas(RingPosition<?> searchPosition)
     {
         Token searchToken = searchPosition.getToken();
+        long currentRingVersion = tokenMetadata.getRingVersion();
         Token keyToken = TokenMetadata.firstToken(tokenMetadata.sortedTokens(), searchToken);
-        EndpointsForRange endpoints = getCachedReplicas(keyToken);
+        EndpointsForRange endpoints = replicas.get(currentRingVersion, keyToken);
         if (endpoints == null)
         {
             TokenMetadata tm = tokenMetadata.cachedOnlyTokenMap();
             // if our cache got invalidated, it's possible there is a new token to account for too
             keyToken = TokenMetadata.firstToken(tm.sortedTokens(), searchToken);
             endpoints = calculateNaturalReplicas(searchToken, tm);
-            cachedReplicas.put(keyToken, endpoints);
+            replicas.put(tm.getRingVersion(), keyToken, endpoints);
         }
 
         return endpoints;
@@ -455,6 +431,50 @@ public abstract class AbstractReplicationStrategy
         {
             if (!expectedOptions.contains(key))
                 throw new ConfigurationException(String.format("Unrecognized strategy option {%s} passed to %s for keyspace %s", key, getClass().getSimpleName(), keyspaceName));
+        }
+    }
+
+    static class ReplicaCache<K, V>
+    {
+        private final Map<K, V> cachedReplicas = new NonBlockingHashMap<>();
+        private volatile long cachedVersion;
+
+        V get(long ringVersion, K t)
+        {
+            maybeClear(ringVersion);
+            V endpoints = cachedReplicas.get(t);
+            if (ringVersion != cachedVersion)
+                return null;
+
+            return endpoints;
+        }
+
+        void put(long ringVersion, K t, V value)
+        {
+            maybeClear(ringVersion);
+            if (ringVersion == cachedVersion)
+            {
+                synchronized (this)
+                {
+                    if (ringVersion == cachedVersion)
+                        cachedReplicas.put(t, value);
+                }
+            }
+        }
+
+        private void maybeClear(long ringVersion)
+        {
+            if (ringVersion > cachedVersion)
+            {
+                synchronized (this)
+                {
+                    if (ringVersion > cachedVersion)
+                    {
+                        cachedVersion = ringVersion;
+                        cachedReplicas.clear();
+                    }
+                }
+            }
         }
     }
 }
