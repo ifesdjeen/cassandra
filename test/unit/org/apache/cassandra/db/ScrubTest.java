@@ -737,7 +737,7 @@ public class ScrubTest
 
         cfs.loadNewSSTables();
 
-        cfs.sstablesRewrite(true, 1);
+        cfs.sstablesRewrite(true, Long.MAX_VALUE, false, 1);
 
         UntypedResultSet rs = QueryProcessor.executeInternal(String.format("SELECT * FROM \"%s\".%s", KEYSPACE, cf));
         assertEquals(1, rs.size());
