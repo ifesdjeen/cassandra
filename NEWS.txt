@@ -42,6 +42,16 @@ restore snapshots created with the previous major version using the
 'sstableloader' tool. You can upgrade the file format of your snapshots
 using the provided 'sstableupgrade' tool.
 
+3.11.12
+=======
+
+Statement re-prepare storms
+---------------------------
+   - CASSANDRA-15252 has changed how prepared statement ids are computed in order to avoid infinite re-prepare
+     loops caused by the driver. This new behaviour will be picked up only when the entire cluster has been updated
+     to 3.0.26 or higher. In case of a mixed version cluster, different major versions will be taken as a minimum
+     required version.
+
 3.11.11
 =======
 
