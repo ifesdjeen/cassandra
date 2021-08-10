@@ -29,7 +29,6 @@ import java.util.function.BiConsumer;
 
 import com.google.common.collect.Iterators;
 import org.junit.Assert;
-import org.junit.Test;
 
 import com.datastax.driver.core.Cluster;
 import com.datastax.driver.core.Host;
@@ -60,25 +59,9 @@ import static org.apache.cassandra.distributed.api.Feature.NATIVE_PROTOCOL;
 import static org.apache.cassandra.distributed.api.Feature.NETWORK;
 import static org.apache.cassandra.distributed.shared.AssertUtils.fail;
 
-public class ReprepareTest extends TestBaseImpl
+public class ReprepareTestBase extends TestBaseImpl
 {
-    @Test
-    public void testReprepareNewBehaviour() throws Throwable
-    {
-        testReprepare(PrepareBehaviour::newBehaviour,
-                      cfg(true, false),
-                      cfg(false, false));
-    }
-
-    @Test
-    public void testReprepareMixedVersion() throws Throwable
-    {
-        testReprepare(PrepareBehaviour::oldBehaviour,
-                      cfg(true, true),
-                      cfg(false, false));
-    }
-
-    private static ReprepareTestConfiguration cfg(boolean withUse, boolean skipBrokenBehaviours)
+    protected static ReprepareTestConfiguration cfg(boolean withUse, boolean skipBrokenBehaviours)
     {
         return new ReprepareTestConfiguration(withUse, skipBrokenBehaviours);
     }
@@ -135,68 +118,6 @@ public class ReprepareTest extends TestBaseImpl
         }
     }
 
-    @Test
-    public void testReprepareMixedVersionWithoutReset() throws Throwable
-    {
-        try (ICluster<IInvokableInstance> c = init(builder().withNodes(2)
-                                                            .withConfig(config -> config.with(GOSSIP, NETWORK, NATIVE_PROTOCOL))
-                                                            .withInstanceInitializer(PrepareBehaviour::oldBehaviour)
-                                                            .start()))
-        {
-            ForceHostLoadBalancingPolicy lbp = new ForceHostLoadBalancingPolicy();
-            c.schemaChange(withKeyspace("CREATE TABLE %s.tbl (pk int, ck int, v int, PRIMARY KEY (pk, ck));"));
-
-            // 1 has old behaviour
-            for (int firstContact : new int[]{ 1, 2 })
-            {
-                for (boolean withUse : new boolean[]{ true, false })
-                {
-                    for (boolean clearBetweenExecutions : new boolean[]{ true, false })
-                    {
-                        try (com.datastax.driver.core.Cluster cluster = com.datastax.driver.core.Cluster.builder()
-                                                                                                        .addContactPoint("127.0.0.1")
-                                                                                                        .addContactPoint("127.0.0.2")
-                                                                                                        .withLoadBalancingPolicy(lbp)
-                                                                                                        .build();
-                             Session session = cluster.connect())
-                        {
-                            if (withUse)
-                                session.execute(withKeyspace("USE %s"));
-
-                            lbp.setPrimary(firstContact);
-                            final PreparedStatement select = session.prepare(withKeyspace("SELECT * FROM %s.tbl"));
-                            session.execute(select.bind());
-
-                            if (clearBetweenExecutions)
-                                c.get(2).runOnInstance(QueryProcessor::clearPreparedStatementsCache);
-                            lbp.setPrimary(firstContact == 1 ? 2 : 1);
-                            session.execute(select.bind());
-
-                            if (clearBetweenExecutions)
-                                c.get(2).runOnInstance(QueryProcessor::clearPreparedStatementsCache);
-                            lbp.setPrimary(firstContact);
-                            session.execute(select.bind());
-
-                            c.get(2).runOnInstance(QueryProcessor::clearPreparedStatementsCache);
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    @Test
-    public void testReprepareTwoKeyspacesNewBehaviour() throws Throwable
-    {
-        testReprepareTwoKeyspaces(PrepareBehaviour::newBehaviour);
-    }
-
-    @Test
-    public void testReprepareTwoKeyspacesMixedVersion() throws Throwable
-    {
-        testReprepareTwoKeyspaces(PrepareBehaviour::oldBehaviour);
-    }
-
     public void testReprepareTwoKeyspaces(BiConsumer<ClassLoader, Integer> instanceInitializer) throws Throwable
     {
         try (ICluster<IInvokableInstance> c = init(builder().withNodes(2)
@@ -244,43 +165,12 @@ public class ReprepareTest extends TestBaseImpl
         }
     }
 
-    @Test
-    public void testReprepareUsingNewBehavior() throws Throwable
+    protected static class ReprepareTestConfiguration
     {
-        // fork of testReprepareMixedVersionWithoutReset, but makes sure oldBehavior has a clean state
-        try (ICluster<IInvokableInstance> c = init(builder().withNodes(2)
-                                                            .withConfig(config -> config.with(GOSSIP, NETWORK, NATIVE_PROTOCOL))
-                                                            .withInstanceInitializer(PrepareBehaviour::oldBehaviour)
-                                                            .start()))
-        {
-            ForceHostLoadBalancingPolicy lbp = new ForceHostLoadBalancingPolicy();
-            c.schemaChange(withKeyspace("CREATE TABLE %s.tbl (pk int, ck int, v int, PRIMARY KEY (pk, ck));"));
+        protected final boolean withUse;
+        protected final boolean skipBrokenBehaviours;
 
-            try (com.datastax.driver.core.Cluster cluster = com.datastax.driver.core.Cluster.builder()
-                                                                                            .addContactPoint("127.0.0.1")
-                                                                                            .addContactPoint("127.0.0.2")
-                                                                                            .withLoadBalancingPolicy(lbp)
-                                                                                            .build();
-                 Session session = cluster.connect())
-            {
-                session.execute(withKeyspace("USE %s"));
-
-                lbp.setPrimary(2);
-                final PreparedStatement select = session.prepare(withKeyspace("SELECT * FROM %s.tbl"));
-                session.execute(select.bind());
-
-                lbp.setPrimary(1);
-                session.execute(select.bind());
-            }
-        }
-    }
-
-    private static class ReprepareTestConfiguration
-    {
-        private final boolean withUse;
-        private final boolean skipBrokenBehaviours;
-
-        private ReprepareTestConfiguration(boolean withUse, boolean skipBrokenBehaviours)
+        protected ReprepareTestConfiguration(boolean withUse, boolean skipBrokenBehaviours)
         {
             this.withUse = withUse;
             this.skipBrokenBehaviours = skipBrokenBehaviours;
@@ -289,7 +179,7 @@ public class ReprepareTest extends TestBaseImpl
 
     public static class PrepareBehaviour
     {
-        private static void setReleaseVersion(ClassLoader cl, String value)
+        protected static void setReleaseVersion(ClassLoader cl, String value)
         {
             new ByteBuddy().rebase(FBUtilities.class)
                            .method(named("getReleaseVersionString"))
@@ -337,10 +227,10 @@ public class ReprepareTest extends TestBaseImpl
         }
     }
 
-    private static class ForceHostLoadBalancingPolicy implements LoadBalancingPolicy {
+    protected static class ForceHostLoadBalancingPolicy implements LoadBalancingPolicy {
 
-        private final List<Host> hosts = new CopyOnWriteArrayList<Host>();
-        private int currentPrimary = 0;
+        protected final List<Host> hosts = new CopyOnWriteArrayList<Host>();
+        protected int currentPrimary = 0;
 
         public void setPrimary(int idx) {
             this.currentPrimary = idx - 1; // arrays are 0-based
