@@ -2330,6 +2330,12 @@ public class Gossiper implements IFailureDetectionEventListener, GossiperMBean
         {
             return minVersionSupplier.get(delay, timeUnit);
         }
+        catch (TimeoutException e)
+        {
+            // Timeouts here are harmless: they won't cause reprepares and may only
+            // cause the old version of the hash to be kept for longer
+            return null;
+        }
         catch (Throwable e)
         {
             logger.error("Caught an exception while waiting for min version", e);
