@@ -472,7 +472,7 @@ public class QueryProcessor implements QueryHandler
             // expects into cache, so that it could get PREPARED response on the second try.
             ResultMessage.Prepared newBehavior = storePreparedStatement(queryString, null, prepared);
             ResultMessage.Prepared oldBehavior = clientState.getRawKeyspace() != null ? storePreparedStatement(queryString, clientState.getRawKeyspace(), prepared) : newBehavior;
-            CassandraVersion minVersion = Gossiper.instance.getMinVersion(5, TimeUnit.MILLISECONDS);
+            CassandraVersion minVersion = Gossiper.instance.getMinVersion(20, TimeUnit.MILLISECONDS);
 
             // Default to old behaviour in case we're not sure about the version. Even if we ever flip back to the old
             // behaviour due to the gossip bug or incorrect version string, we'll end up with two re-prepare round-trips.
