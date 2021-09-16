@@ -1783,7 +1783,11 @@ public class Gossiper implements IFailureDetectionEventListener, GossiperMBean
             }
             catch (Throwable t)
             {
-                logger.error(String.format("Can't parse version string %s", versionString), t);
+                JVMStabilityInspector.inspectThrowable(t);
+                String message = String.format("Can't parse version string %s", versionString);
+                logger.warn(message);
+                if (logger.isDebugEnabled())
+                    logger.debug(message, t);
                 return null;
             }
 
