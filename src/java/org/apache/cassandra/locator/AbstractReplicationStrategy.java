@@ -454,7 +454,8 @@ public abstract class AbstractReplicationStrategy
         {
             maybeClear(ringVersion);
             ReplicaHolder<K, V> current = cachedReplicas.get();
-            if (current.ringVersion == ringVersion)
+            // if we have the same ringVersion, but already know about the keyToken the endpoints should be the same
+            if (current.ringVersion == ringVersion && !current.replicas.containsKey(keyToken))
             {
                 ReplicaHolder<K, V> next = current.withReplica(keyToken, endpoints);
                 cachedReplicas.compareAndSet(current, next);
