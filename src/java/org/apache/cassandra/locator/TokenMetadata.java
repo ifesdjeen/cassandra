@@ -654,22 +654,6 @@ public class TokenMetadata
             return new TokenMetadata(SortedBiMultiValMap.create(tokenToEndpointMap),
                                      HashBiMap.create(endpointToHostIdMap),
                                      topology,
-                                     partitioner);
-        }
-        finally
-        {
-            lock.readLock().unlock();
-        }
-    }
-
-    private TokenMetadata cloneOnlyTokenMapWithRingVersion()
-    {
-        lock.readLock().lock();
-        try
-        {
-            return new TokenMetadata(SortedBiMultiValMap.create(tokenToEndpointMap),
-                                     HashBiMap.create(endpointToHostIdMap),
-                                     topology,
                                      partitioner,
                                      ringVersion);
         }
@@ -698,7 +682,7 @@ public class TokenMetadata
             if ((tm = cachedTokenMap.get()) != null)
                 return tm;
 
-            tm = cloneOnlyTokenMapWithRingVersion();
+            tm = cloneOnlyTokenMap();
             cachedTokenMap.set(tm);
             return tm;
         }

@@ -23,8 +23,10 @@ import java.lang.reflect.Method;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 
 import com.google.common.base.Preconditions;
+import com.google.common.collect.ImmutableMap;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -436,45 +438,50 @@ public abstract class AbstractReplicationStrategy
 
     static class ReplicaCache<K, V>
     {
-        private final Map<K, V> cachedReplicas = new NonBlockingHashMap<>();
-        private volatile long cachedVersion;
+        private final AtomicReference<ReplicaHolder<K, V>> cachedReplicas = new AtomicReference<>(new ReplicaHolder<>(0, ImmutableMap.of()));
 
         V get(long ringVersion, K t)
         {
             maybeClear(ringVersion);
-            V endpoints = cachedReplicas.get(t);
-            if (ringVersion != cachedVersion)
+            ReplicaHolder<K, V> replicaHolder = cachedReplicas.get();
+            if (ringVersion != replicaHolder.ringVersion)
                 return null;
 
-            return endpoints;
+            return replicaHolder.replicas.get(t);
         }
 
         void put(long ringVersion, K t, V value)
         {
             maybeClear(ringVersion);
-            if (ringVersion == cachedVersion)
+            ReplicaHolder<K, V> current = cachedReplicas.get();
+            if (current.ringVersion == ringVersion)
             {
-                synchronized (this)
-                {
-                    if (ringVersion == cachedVersion)
-                        cachedReplicas.put(t, value);
-                }
+                ReplicaHolder<K, V> next = current.withReplica(t, value);
+                cachedReplicas.compareAndSet(current, next);
             }
         }
 
         private void maybeClear(long ringVersion)
         {
-            if (ringVersion > cachedVersion)
-            {
-                synchronized (this)
-                {
-                    if (ringVersion > cachedVersion)
-                    {
-                        cachedVersion = ringVersion;
-                        cachedReplicas.clear();
-                    }
-                }
-            }
+            if (ringVersion > cachedReplicas.get().ringVersion)
+                cachedReplicas.set(new ReplicaHolder<>(ringVersion, ImmutableMap.of()));
+        }
+    }
+
+    static class ReplicaHolder<K, V>
+    {
+        private final long ringVersion;
+        private final ImmutableMap<K, V> replicas;
+
+        ReplicaHolder(long ringVersion, ImmutableMap<K, V> replicas)
+        {
+            this.ringVersion = ringVersion;
+            this.replicas = replicas;
+        }
+
+        ReplicaHolder<K, V> withReplica(K key, V value)
+        {
+            return new ReplicaHolder<>(ringVersion, ImmutableMap.<K, V>builder().putAll(replicas).put(key, value).build());
         }
     }
 }
