@@ -440,23 +440,23 @@ public abstract class AbstractReplicationStrategy
     {
         private final AtomicReference<ReplicaHolder<K, V>> cachedReplicas = new AtomicReference<>(new ReplicaHolder<>(0, ImmutableMap.of()));
 
-        V get(long ringVersion, K t)
+        V get(long ringVersion, K keyToken)
         {
             maybeClear(ringVersion);
             ReplicaHolder<K, V> replicaHolder = cachedReplicas.get();
             if (ringVersion != replicaHolder.ringVersion)
                 return null;
 
-            return replicaHolder.replicas.get(t);
+            return replicaHolder.replicas.get(keyToken);
         }
 
-        void put(long ringVersion, K t, V value)
+        void put(long ringVersion, K keyToken, V endpoints)
         {
             maybeClear(ringVersion);
             ReplicaHolder<K, V> current = cachedReplicas.get();
             if (current.ringVersion == ringVersion)
             {
-                ReplicaHolder<K, V> next = current.withReplica(t, value);
+                ReplicaHolder<K, V> next = current.withReplica(keyToken, endpoints);
                 cachedReplicas.compareAndSet(current, next);
             }
         }
