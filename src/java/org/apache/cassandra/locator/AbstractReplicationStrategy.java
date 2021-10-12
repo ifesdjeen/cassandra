@@ -22,7 +22,9 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicReference;
 
 import com.google.common.base.Preconditions;
@@ -390,7 +392,7 @@ public abstract class AbstractReplicationStrategy
     {
         String className = cls.contains(".") ? cls : "org.apache.cassandra.locator." + cls;
 
-        if ("org.apache.cassandra.locator.OldNetworkTopologyStrategy".equals(className)) // see CASSANDRA-16301 
+        if ("org.apache.cassandra.locator.OldNetworkTopologyStrategy".equals(className)) // see CASSANDRA-16301
             throw new ConfigurationException("The support for the OldNetworkTopologyStrategy has been removed in C* version 4.0. The keyspace strategy should be switch to NetworkTopologyStrategy");
 
         Class<AbstractReplicationStrategy> strategyClass = FBUtilities.classForName(className, "replication strategy");
@@ -438,12 +440,12 @@ public abstract class AbstractReplicationStrategy
 
     static class ReplicaCache<K, V>
     {
-        private final AtomicReference<ReplicaHolder<K, V>> cachedReplicas = new AtomicReference<>(new ReplicaHolder<>(0, ImmutableMap.of()));
+        private final AtomicReference<ReplicaHolder<K, V>> cachedReplicas = new AtomicReference<>(new ReplicaHolder<>(0));
 
         V get(long ringVersion, K keyToken)
         {
-            maybeClear(ringVersion);
             ReplicaHolder<K, V> replicaHolder = cachedReplicas.get();
+
             if (ringVersion != replicaHolder.ringVersion)
                 return null;
 
@@ -452,37 +454,32 @@ public abstract class AbstractReplicationStrategy
 
         void put(long ringVersion, K keyToken, V endpoints)
         {
-            maybeClear(ringVersion);
             ReplicaHolder<K, V> current = cachedReplicas.get();
+
+            while (ringVersion > current.ringVersion)
+            {
+                ReplicaHolder<K, V> next = new ReplicaHolder<>(ringVersion);
+                if (cachedReplicas.compareAndSet(current, next)) {
+                    current = next;
+                    break;
+                }
+            }
+
             // if we have the same ringVersion, but already know about the keyToken the endpoints should be the same
             if (current.ringVersion == ringVersion && !current.replicas.containsKey(keyToken))
-            {
-                ReplicaHolder<K, V> next = current.withReplica(keyToken, endpoints);
-                cachedReplicas.compareAndSet(current, next);
-            }
-        }
-
-        private void maybeClear(long ringVersion)
-        {
-            if (ringVersion > cachedReplicas.get().ringVersion)
-                cachedReplicas.set(new ReplicaHolder<>(ringVersion, ImmutableMap.of()));
+                current.replicas.put(keyToken, endpoints);
         }
     }
 
     static class ReplicaHolder<K, V>
     {
         private final long ringVersion;
-        private final ImmutableMap<K, V> replicas;
+        private final ConcurrentMap<K, V> replicas;
 
-        ReplicaHolder(long ringVersion, ImmutableMap<K, V> replicas)
+        ReplicaHolder(long ringVersion)
         {
             this.ringVersion = ringVersion;
-            this.replicas = replicas;
-        }
-
-        ReplicaHolder<K, V> withReplica(K key, V value)
-        {
-            return new ReplicaHolder<>(ringVersion, ImmutableMap.<K, V>builder().putAll(replicas).put(key, value).build());
+            this.replicas = new NonBlockingHashMap<>();
         }
     }
 }
