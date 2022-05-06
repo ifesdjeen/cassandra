@@ -21,6 +21,7 @@ package org.apache.cassandra.distributed.upgrade;
 import java.net.InetAddress;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -42,7 +43,6 @@ import org.slf4j.LoggerFactory;
 
 import harry.core.Configuration;
 import harry.core.Run;
-import harry.data.ResultSetRow;
 import harry.ddl.ColumnSpec;
 import harry.ddl.SchemaGenerators;
 import harry.ddl.SchemaSpec;
@@ -56,7 +56,6 @@ import harry.operations.CompiledStatement;
 import harry.operations.Query;
 import harry.operations.WriteHelper;
 import harry.reconciler.PartitionState;
-import harry.reconciler.Reconciler;
 import harry.util.BitSet;
 import net.bytebuddy.ByteBuddy;
 import net.bytebuddy.dynamic.loading.ClassLoadingStrategy;
@@ -66,7 +65,6 @@ import org.apache.cassandra.distributed.UpgradeableCluster;
 import org.apache.cassandra.distributed.api.ConsistencyLevel;
 import org.apache.cassandra.distributed.api.Feature;
 import org.apache.cassandra.distributed.api.ICluster;
-import org.apache.cassandra.distributed.api.IInstance;
 import org.apache.cassandra.distributed.api.IInstanceConfig;
 import org.apache.cassandra.distributed.api.IUpgradeableInstance;
 import org.apache.cassandra.distributed.fuzz.UpgradableInJvmSut;
@@ -108,13 +106,13 @@ public class MixedModeColumnFilterTest
         }
     }
 
-    public static class SyntheticTest // TODO: horrible name
+    public static class DescriptorSelector
     {
         private static long PD_STREAM = System.nanoTime();
         private final OpSelectors.Rng rng;
         private final SchemaSpec schema;
 
-        public SyntheticTest(OpSelectors.Rng rng, SchemaSpec schema)
+        public DescriptorSelector(OpSelectors.Rng rng, SchemaSpec schema)
         {
             this.schema = schema;
             this.rng = rng;
@@ -140,15 +138,21 @@ public class MixedModeColumnFilterTest
     public static Surjections.Surjection<SchemaSpec> defaultSchemaSpecGen(String ks, String table)
     {
         return new SchemaGenerators.Builder(ks, () -> table)
-        .partitionKeySpec(1, 1,
-                          ColumnSpec.int64Type)
-        .clusteringKeySpec(1, 1,
-                           ColumnSpec.int64Type)
-        .regularColumnSpec(64, 64,
-                           ColumnSpec.int64Type)
-        .staticColumnSpec(2, 2,
-                          ColumnSpec.int64Type)
-        .surjection();
+               .partitionKeySpec(1, 2,
+                                 ColumnSpec.int64Type,
+                                 ColumnSpec.asciiType(5, 256))
+               .clusteringKeySpec(1, 2,
+                                  ColumnSpec.int64Type,
+                                  ColumnSpec.asciiType(2, 3),
+                                  ColumnSpec.ReversedType.getInstance(ColumnSpec.int64Type),
+                                  ColumnSpec.ReversedType.getInstance(ColumnSpec.asciiType(2, 3)))
+               .regularColumnSpec(2, 2,
+                                  ColumnSpec.int64Type,
+                                  ColumnSpec.asciiType(5, 3))
+               .staticColumnSpec(2, 2,
+                                 ColumnSpec.int64Type,
+                                 ColumnSpec.asciiType(4, 3))
+               .surjection();
     }
 
     public static Configuration.ConfigurationBuilder sharedConfiguration(long seed, SchemaSpec schema, SystemUnderTest sut)
@@ -163,12 +167,12 @@ public class MixedModeColumnFilterTest
                                                        .setPartitionDescriptorSelector(new Configuration.DefaultPDSelectorConfiguration(1, 200))
                                                        .setSUT(() -> sut);
     }
+
     public static Configuration.CDSelectorConfigurationBuilder sharedCDSelectorConfiguration()
     {
         return new Configuration.CDSelectorConfigurationBuilder()
         .setNumberOfModificationsDistribution(new Configuration.ConstantDistributionConfig(2))
         .setRowsPerModificationDistribution(new Configuration.ConstantDistributionConfig(2))
-        .setMaxPartitionSize(100)
         .setOperationKindWeights(new Configuration.OperationKindSelectorBuilder()
                                  .addWeight(OpSelectors.OperationKind.DELETE_ROW, 1)
                                  .addWeight(OpSelectors.OperationKind.DELETE_COLUMN, 1)
@@ -185,7 +189,7 @@ public class MixedModeColumnFilterTest
 
     public static <T> BitSet subsetToBitset(List<T> superset, Set<T> subset)
     {
-        BitSet bitSet = new BitSet.BitSet64Bit(superset.size());
+        BitSet bitSet = BitSet.allUnset(superset.size());
         for (int i = 0; i < superset.size(); i++)
         {
             if (subset.contains(superset.get(i)))
@@ -194,57 +198,17 @@ public class MixedModeColumnFilterTest
         return bitSet;
     }
 
-    public static Set<ColumnSpec<?>> randomSubset(List<ColumnSpec<?>> superset, Random e)
-    {
-        Set<ColumnSpec<?>> set = new HashSet<>();
-        boolean hadRegular = false;
-        for (ColumnSpec<?> v : superset)
-        {
-            // TODO: allow selecting without partition and clustering key, too
-            if (e.nextBoolean() || v.kind == ColumnSpec.Kind.CLUSTERING || v.kind == ColumnSpec.Kind.PARTITION_KEY)
-            {
-                set.add(v);
-                hadRegular |= v.kind == ColumnSpec.Kind.REGULAR;
-            }
-        }
-
-        // TODO: this is an oversimplification and a workaround for "Invalid restrictions on clustering columns since the UPDATE statement modifies only static columns"
-        if (!hadRegular)
-            return randomSubset(superset, e);
-
-        return set;
-    }
-
-
-
     public static boolean isValidSubset(List<ColumnSpec<?>> superset, BitSet bitSet)
     {
         boolean hasRegular = false;
         for (int i = 0; i < superset.size(); i++)
         {
             ColumnSpec<?> column = superset.get(i);
-            if (column.kind == ColumnSpec.Kind.PARTITION_KEY && !bitSet.isSet(i))
-                return false;
-            if (column.kind == ColumnSpec.Kind.CLUSTERING && !bitSet.isSet(i))
-                return false;
             if (column.kind == ColumnSpec.Kind.REGULAR && bitSet.isSet(i))
                 hasRegular = true;
         }
 
         return hasRegular;
-    }
-
-    public static boolean hasPrimaryKey(List<ColumnSpec<?>> superset, BitSet bitSet)
-    {
-        for (int i = 0; i < superset.size(); i++)
-        {
-            ColumnSpec<?> column = superset.get(i);
-            if (column.kind == ColumnSpec.Kind.PARTITION_KEY && !bitSet.isSet(i))
-                return false;
-            if (column.kind == ColumnSpec.Kind.CLUSTERING && !bitSet.isSet(i))
-                return false;
-        }
-        return true;
     }
 
     public static boolean hasAnyRegularColumns(Set<ColumnSpec<?>> columns)
@@ -275,11 +239,11 @@ public class MixedModeColumnFilterTest
         final SchemaSpec schema;
         final Configuration config;
         final Run run;
-        final SyntheticTest test;
+        final DescriptorSelector test;
         final ModelState state;
         final Random rng;
 
-        public TestHolder(SchemaSpec schema, Configuration config, Run run, SyntheticTest test, ModelState state, Random rng) {
+        public TestHolder(SchemaSpec schema, Configuration config, Run run, DescriptorSelector test, ModelState state, Random rng) {
             this.schema = schema;
             this.config = config;
             this.run = run;
@@ -293,66 +257,73 @@ public class MixedModeColumnFilterTest
     {
         final SchemaSpec schema = holder.schema;
         final Run run = holder.run;
-        SyntheticTest test = holder.test;
+        DescriptorSelector test = holder.test;
         ModelState state = holder.state;
         final Random rng = holder.rng;
 
         int partitionIdx = 0;
+        final long RUNS = 10;
 
-        final long columnCombinations = BitSet.bitMask(schema.allColumns.size());
-        for (int i = 1; i <= columnCombinations; i++)
+        for (int i = 1; i <= RUNS; i++)
         {
-            BitSet subset = BitSet.create(i, schema.allColumns.size());
+            BitSet subset = BitSet.allUnset(schema.allColumns.size());
+            for (int j = 0; j < subset.size(); j++)
+            {
+                if (rng.nextBoolean())
+                    subset.set(j);
+            }
             if (!isValidSubset(schema.allColumns, subset))
                 continue;
 
             int pdIdx = partitionIdx++;
-            int cdIdx = rng.nextInt(rowsPerPartition);
             long pd = test.pd(pdIdx);
-            long cd = test.cd(pdIdx, cdIdx);
 
-            long[] vds = run.descriptorSelector.descriptors(pd, cd, state.lts, 0, schema.regularColumns,
-                                                            schema.regularColumnsMask(),
-                                                            subset,
-                                                            schema.regularColumnsOffset);
-            long[] sds = run.descriptorSelector.descriptors(pd, cd, state.lts, 0, schema.staticColumns,
-                                                            schema.staticColumnsMask,
-                                                            subset,
-                                                            schema.staticColumnsOffset);
+            for (int j = 0; j < 10; j++)
+            {
+                int cdIdx = rng.nextInt(rowsPerPartition);
+                long cd = test.cd(pdIdx, cdIdx);
 
-            CompiledStatement statement = WriteHelper.inflateUpdate(schema, pd, cd, vds, sds, run.clock.rts(state.lts));
-            final String updateString = statement.cql();
-            final Object[] bindings = statement.bindings();
-            logger.info("Update {} bindings {}", updateString, bindings);
-            sut.cluster.coordinator(1).execute(updateString, ConsistencyLevel.QUORUM, bindings);
+                long[] vds = run.descriptorSelector.descriptors(pd, cd, state.lts, 0, schema.regularColumns,
+                                                                schema.regularColumnsMask(),
+                                                                subset,
+                                                                schema.regularColumnsOffset);
+                long[] sds = run.descriptorSelector.descriptors(pd, cd, state.lts, 0, schema.staticColumns,
+                                                                schema.staticColumnsMask,
+                                                                subset,
+                                                                schema.staticColumnsOffset);
 
-            PartitionState partitionState = state.state.get(pd);
-            if (partitionState == null) {
-                partitionState = new PartitionState(pd, schema);
-                state.state.put(pd, partitionState);
+                CompiledStatement statement = WriteHelper.inflateUpdate(schema, pd, cd, vds, sds, run.clock.rts(state.lts));
+                //logger.info("Update {} bindings {}", statement.cql(), Arrays.toString(statement.bindings()));
+                sut.cluster.coordinator(1).execute(statement.cql(), ConsistencyLevel.QUORUM, statement.bindings());
+
+                PartitionState partitionState = state.state.get(pd);
+                if (partitionState == null)
+                {
+                    partitionState = new PartitionState(pd, schema);
+                    state.state.put(pd, partitionState);
+                }
+
+                partitionState.writeStaticRow(sds, state.lts);
+                partitionState.write(cd, vds, state.lts, true);
+
+                state.lts++;
             }
-
-            partitionState.writeStaticRow(sds, state.lts);
-            partitionState.write(cd, vds, state.lts, true);
-
-            state.lts++;
         }
     }
 
-    public static List<ResultSetRow> execute(IInstance instance, OpSelectors.MonotonicClock clock, Query query, Set<ColumnSpec<?>> columns)
+    static boolean selectsNonPartitionColumns(Collection<ColumnSpec<?>> selection)
     {
-        CompiledStatement compiled = query.toSelectStatement(columns, true);
-        final String queryString = compiled.cql();
-        final Object[] bindings = compiled.bindings();
-        logger.info("Executing {} with {}", queryString, bindings);
-        Object[][] objects = instance.coordinator().execute(queryString, ConsistencyLevel.ALL, bindings);
-        List<ResultSetRow> result = new ArrayList<>();
-        for (Object[] obj : objects)
-            result.add(SelectHelper.resultSetToRow(query.schemaSpec, clock, SelectHelper.adjustForSelection(query.schemaSpec, columns, obj)));
-        return result;
+        if (selection == null)
+            return true;
+        for (ColumnSpec<?> column : selection)
+        {
+            if (column.kind == ColumnSpec.Kind.CLUSTERING || column.kind == ColumnSpec.Kind.REGULAR)
+                return true;
+        }
+        return false;
     }
 
-    Set<ColumnSpec<?>> selectColumnSpecs(List<ColumnSpec<?>> columns, int selected)
+    static Set<ColumnSpec<?>> selectColumnSpecs(List<ColumnSpec<?>> columns, int selected)
     {
         Set<ColumnSpec<?>> result = new HashSet<>();
         for (int index = 0; selected != 0; selected>>=1, index++)
@@ -366,9 +337,10 @@ public class MixedModeColumnFilterTest
     final static int STATIC_COLUMN_LIMIT = 2;
     final static int REGULAR_COLUMN_LIMIT = 2;
 
-    List<Set<ColumnSpec<?>>> significantColumnSelections(SchemaSpec schema)
+    static List<Set<ColumnSpec<?>>> significantColumnSelections(SchemaSpec schema)
     {
         List<Set<ColumnSpec<?>>> result = new ArrayList<>();
+        result.add(null); // wildcard queries
         final int pkMax = 1 << schema.partitionKeys.size();
         for (int pkBits = 0; pkBits < pkMax; pkBits++)
         {
@@ -386,7 +358,7 @@ public class MixedModeColumnFilterTest
         return result;
     }
 
-    private void addRegularAndStaticCombinations(SchemaSpec schema, List<Set<ColumnSpec<?>>> result, Set<ColumnSpec<?>> keyCols)
+    private static void addRegularAndStaticCombinations(SchemaSpec schema, List<Set<ColumnSpec<?>>> result, Set<ColumnSpec<?>> keyCols)
     {
         final int sMax = 1 << Math.min(STATIC_COLUMN_LIMIT, schema.regularColumns.size());; // none, first, second, both or all
 
@@ -407,7 +379,7 @@ public class MixedModeColumnFilterTest
         }
     }
 
-    private void addRegularCombinations(SchemaSpec schema, List<Set<ColumnSpec<?>>> result, Set<ColumnSpec<?>> otherCols)
+    private static void addRegularCombinations(SchemaSpec schema, List<Set<ColumnSpec<?>>> result, Set<ColumnSpec<?>> otherCols)
     {
         final int rMax = 1 << Math.min(REGULAR_COLUMN_LIMIT, schema.regularColumns.size());
         for (int rBits = 0; rBits < rMax; rBits++)
@@ -419,6 +391,7 @@ public class MixedModeColumnFilterTest
                 Set<ColumnSpec<?>> complementrCols = new HashSet<>(schema.regularColumns);
                 complementrCols.removeAll(rCols);
                 complementrCols.addAll(otherCols);
+
                 result.add(complementrCols);
             }
 
@@ -427,44 +400,93 @@ public class MixedModeColumnFilterTest
         }
     }
 
-    void validate(UpgradableInJvmSut sut, TestHolder holder)
+    void validate(UpgradableInJvmSut sut, TestHolder holder, Random rng)
     {
         final SchemaSpec schema = holder.schema;
         final Run run = holder.run;
-        ModelState state = holder.state;
+        final ModelState state = holder.state;
 
         List<Set<ColumnSpec<?>>> testSelections = significantColumnSelections(schema);
 
         // Validate that all partitions correspond to our expectations
         state.state.forEach((pd, partitionState) -> {
-            logger.info("Checking pd {}", pd);
-
-            for (Reconciler.RowState rs: partitionState.rows(false))
+            List<Long> clusteringDescriptors = new ArrayList<>(partitionState.rows().keySet());
+            for (Set<ColumnSpec<?>> selection : testSelections)
             {
-                long cd = rs.cd;
-                logger.info("Checking pd {} cd {}", pd, cd);
-
-                Query query = Query.singleClustering(schema, pd, cd, false);
-
-                sut.cluster().forEach(instance -> {
-                    for (Set<ColumnSpec<?>> selectionSubset : testSelections)
+                if (selection != null && selection.isEmpty())
+                    continue;
+                long cd1tmp = clusteringDescriptors.get(rng.nextInt(clusteringDescriptors.size()));
+                long cd2tmp;
+                while (true)
+                {
+                    long tmp = clusteringDescriptors.get(rng.nextInt(clusteringDescriptors.size()));
+                    if (tmp != cd1tmp)
                     {
-                        if (!hasAnyRegularColumns(selectionSubset))
-                            continue;
-
-                        final List<ResultSetRow> actualRows = execute(instance, run.clock, query, selectionSubset);
-                        QuiescentChecker.validate(schema,
-                                                  selectionSubset,
-                                                  partitionState,
-                                                  actualRows,
-                                                  query);
-                        //            // TODO: allow sub-selection
-                        //            // TODO: allow selecting without writetime
+                        cd2tmp = tmp;
+                        break;
                     }
-                });
+                }
+
+                long cd1 = Math.min(cd1tmp, cd2tmp);
+                long cd2 = Math.max(cd1tmp, cd2tmp);
+
+                Query query;
+
+                // Select entire partition
+                query = Query.selectPartition(schema, pd, false);
+                QuiescentChecker.validate(schema,
+                                          selection,
+                                          state.state.get(pd),
+                                          SelectHelper.execute(sut, run.clock, query, selection),
+                                          query);
+
+                if (selectsNonPartitionColumns(selection))
+                {
+                    // Select single row
+                    query = Query.singleClustering(schema, pd, cd1, false);
+                    QuiescentChecker.validate(schema,
+                                              selection,
+                                              state.state.get(pd).apply(query),
+                                              SelectHelper.execute(sut, run.clock, query, selection),
+                                              query);
+
+
+                    // Select slice, ie a > ? AND b = ?
+                    try
+                    {
+                        query = Query.clusteringSliceQuery(schema, pd, cd1, rng.nextLong(), true, true, false);
+                    }
+                    catch (IllegalArgumentException impossibleQuery)
+                    {
+                        continue;
+                    }
+
+                    QuiescentChecker.validate(schema,
+                                              selection,
+                                              state.state.get(pd).apply(query),
+                                              SelectHelper.execute(sut, run.clock, query, selection),
+                                              query);
+
+
+                    // Select range, ie a > ? AND a < ?
+                    try
+                    {
+                        query = Query.clusteringRangeQuery(schema, pd, cd1, cd2, rng.nextLong(), true, true, false);
+                    }
+                    catch (IllegalArgumentException impossibleQuery)
+                    {
+                        continue;
+                    }
+                    QuiescentChecker.validate(schema,
+                                              selection,
+                                              state.state.get(pd).apply(query),
+                                              SelectHelper.execute(sut, run.clock, query, selection),
+                                              query);
+                }
             }
         });
     }
+
     @BeforeClass
     static public void beforeClass() throws Throwable
     {
@@ -493,11 +515,12 @@ public class MixedModeColumnFilterTest
         // 4 node cluster - when in mixed mode, two of each version so they can be tested as local and remote.
         final int nodeCount = 4;
         int rowsPerPartition = 10;
+        final Random rng = new Random(1);
 
         // Check versions required for test are present
         Versions dtestVersions = Versions.find();
         List<Versions.Version> upgradeOrder = stringVersions.stream()
-                                                      .map(v -> dtestVersions.get(v.toString()))
+                                                      .map(v -> dtestVersions.get(v))
                                                       .collect(Collectors.toList());
         Versions.Version earliestVersion = upgradeOrder.get(0);
 
@@ -511,7 +534,7 @@ public class MixedModeColumnFilterTest
 
             UpgradableInJvmSut sut = new UpgradableInJvmSut(cluster);
 
-            TestHolder[] tests = new TestHolder[100];
+            TestHolder[] tests = new TestHolder[10];
             for (int schemaDescriptor = 0; schemaDescriptor < tests.length; schemaDescriptor++)
             {
                 SchemaSpec schema = defaultSchemaSpecGen("harry", "tbl" + schemaDescriptor).inflate(schemaDescriptor);
@@ -520,15 +543,13 @@ public class MixedModeColumnFilterTest
 
                 Configuration config = sharedConfiguration(1, schema, sut).build();
                 Run run = config.createRun();
-                SyntheticTest test = new SyntheticTest(run.rng, schema);
+                DescriptorSelector test = new DescriptorSelector(run.rng, schema);
 
                 ModelState state = new ModelState(new HashMap<>());
-                Random rng = new Random(1);
-
                 tests[schemaDescriptor] = new TestHolder(schema, config, run, test, state, rng);
 
                 populate(sut, tests[schemaDescriptor], rowsPerPartition);
-                validate(sut, tests[schemaDescriptor]);
+                validate(sut, tests[schemaDescriptor], rng);
             }
 
             for (int upgradeOrderIdx = 1; upgradeOrderIdx < upgradeOrder.size() - 1; upgradeOrderIdx++)
@@ -550,7 +571,7 @@ public class MixedModeColumnFilterTest
 
             for (int schemaDescriptor = 0; schemaDescriptor < tests.length; schemaDescriptor++)
             {
-                validate(sut, tests[schemaDescriptor]);
+                validate(sut, tests[schemaDescriptor], rng);
             }
 
             // Upgrade final two cluster nodes - simulating prepare statements
@@ -559,7 +580,7 @@ public class MixedModeColumnFilterTest
             final InstanceVersions fullyUpgradedInstanceVersions = upgradeInstances(cluster, upgradeVersion, 3, 4);
             for (int schemaDescriptor = 0; schemaDescriptor < tests.length; schemaDescriptor++)
             {
-                validate(sut, tests[schemaDescriptor]);
+                validate(sut, tests[schemaDescriptor], rng);
             }
 
             // Update and select from fully upgraded cluster with upgradeFromVersion cleared on all hosts
@@ -567,7 +588,7 @@ public class MixedModeColumnFilterTest
 
             for (int schemaDescriptor = 0; schemaDescriptor < tests.length; schemaDescriptor++)
             {
-                validate(sut, tests[schemaDescriptor]);
+                validate(sut, tests[schemaDescriptor], rng);
             }
         }
     }
