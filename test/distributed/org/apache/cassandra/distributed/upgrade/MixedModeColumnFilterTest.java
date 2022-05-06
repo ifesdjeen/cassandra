@@ -21,10 +21,8 @@ package org.apache.cassandra.distributed.upgrade;
 import java.net.InetAddress;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
@@ -35,9 +33,7 @@ import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
-import com.google.common.collect.Sets;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
@@ -148,7 +144,7 @@ public class MixedModeColumnFilterTest
                           ColumnSpec.int64Type)
         .clusteringKeySpec(1, 1,
                            ColumnSpec.int64Type)
-        .regularColumnSpec(1, 1,
+        .regularColumnSpec(64, 64,
                            ColumnSpec.int64Type)
         .staticColumnSpec(2, 2,
                           ColumnSpec.int64Type)
@@ -367,6 +363,9 @@ public class MixedModeColumnFilterTest
         return result;
     }
 
+    final static int STATIC_COLUMN_LIMIT = 2;
+    final static int REGULAR_COLUMN_LIMIT = 2;
+
     List<Set<ColumnSpec<?>>> significantColumnSelections(SchemaSpec schema)
     {
         List<Set<ColumnSpec<?>>> result = new ArrayList<>();
@@ -378,32 +377,54 @@ public class MixedModeColumnFilterTest
             final int ckMax = 1 << schema.clusteringKeys.size();
             for (int ckBits = 0; ckBits < ckMax; ckBits++)
             {
-                Set<ColumnSpec<?>> ckCols = selectColumnSpecs(schema.clusteringKeys, ckBits);
+                Set<ColumnSpec<?>> keyCols = selectColumnSpecs(schema.clusteringKeys, ckBits);
+                keyCols.addAll(pkCols);
 
-                final int sMax = 1 << schema.staticColumns.size();
-                for (int sBits = 0; sBits < sMax; sBits++)
-                {
-                    Set<ColumnSpec<?>> sCols = selectColumnSpecs(schema.staticColumns, sBits);
-
-                    final int rMax = 1 << schema.regularColumns.size();
-                    for (int rBits = 0; rBits < rMax; rBits++)
-                    {
-                        Set<ColumnSpec<?>> entry = selectColumnSpecs(schema.regularColumns, rBits);
-                        entry.addAll(sCols);
-                        entry.addAll(ckCols);
-                        entry.addAll(pkCols);
-
-                        result.add(entry);
-
-                        if (rBits > 2)
-                            rBits = rMax - 1;
-                    }
-                    if (sBits > 2)
-                        sBits = sMax - 1;
-                }
+                addRegularAndStaticCombinations(schema, result, keyCols);
             }
         }
         return result;
+    }
+
+    private void addRegularAndStaticCombinations(SchemaSpec schema, List<Set<ColumnSpec<?>>> result, Set<ColumnSpec<?>> keyCols)
+    {
+        final int sMax = 1 << Math.min(STATIC_COLUMN_LIMIT, schema.regularColumns.size());; // none, first, second, both or all
+
+        for (int sBits = 0; sBits < sMax; sBits++)
+        {
+            Set<ColumnSpec<?>> sCols = selectColumnSpecs(schema.staticColumns, sBits);
+
+            if (schema.staticColumns.size() > STATIC_COLUMN_LIMIT)
+            {
+                Set<ColumnSpec<?>> complementsCols = new HashSet<>(schema.staticColumns);
+                complementsCols.removeAll(sCols);
+                complementsCols.addAll(keyCols);
+                addRegularCombinations(schema, result, complementsCols);
+            }
+
+            sCols.addAll(keyCols);
+            addRegularCombinations(schema, result, sCols);
+        }
+    }
+
+    private void addRegularCombinations(SchemaSpec schema, List<Set<ColumnSpec<?>>> result, Set<ColumnSpec<?>> otherCols)
+    {
+        final int rMax = 1 << Math.min(REGULAR_COLUMN_LIMIT, schema.regularColumns.size());
+        for (int rBits = 0; rBits < rMax; rBits++)
+        {
+            Set<ColumnSpec<?>> rCols = selectColumnSpecs(schema.regularColumns, rBits);
+
+            if (schema.regularColumns.size() > REGULAR_COLUMN_LIMIT)
+            {
+                Set<ColumnSpec<?>> complementrCols = new HashSet<>(schema.regularColumns);
+                complementrCols.removeAll(rCols);
+                complementrCols.addAll(otherCols);
+                result.add(complementrCols);
+            }
+
+            rCols.addAll(otherCols);
+            result.add(rCols);
+        }
     }
 
     void validate(UpgradableInJvmSut sut, TestHolder holder)
