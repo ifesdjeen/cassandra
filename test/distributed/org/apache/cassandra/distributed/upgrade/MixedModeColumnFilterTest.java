@@ -21,8 +21,10 @@ package org.apache.cassandra.distributed.upgrade;
 import java.net.InetAddress;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
@@ -33,7 +35,9 @@ import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
+import com.google.common.collect.Sets;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
@@ -247,17 +251,15 @@ public class MixedModeColumnFilterTest
         return true;
     }
 
-    public static boolean hasAnyRegularColumns(List<ColumnSpec<?>> superset, BitSet bitSet)
+    public static boolean hasAnyRegularColumns(Set<ColumnSpec<?>> columns)
     {
-        boolean hasRegular = false;
-        for (int i = 0; i < superset.size(); i++)
+        for (ColumnSpec<?> column : columns)
         {
-            ColumnSpec<?> column = superset.get(i);
-            if (column.kind == ColumnSpec.Kind.REGULAR && bitSet.isSet(i))
-                hasRegular = true;
+            if (column.kind == ColumnSpec.Kind.REGULAR)
+                return true;
         }
 
-        return hasRegular;
+        return false;
     }
 
     public static Set<ColumnSpec<?>> subset(List<ColumnSpec<?>> superset, BitSet bitSet)
@@ -354,11 +356,63 @@ public class MixedModeColumnFilterTest
         return result;
     }
 
+    Set<ColumnSpec<?>> selectColumnSpecs(List<ColumnSpec<?>> columns, int selected)
+    {
+        Set<ColumnSpec<?>> result = new HashSet<>();
+        for (int index = 0; selected != 0; selected>>=1, index++)
+        {
+            if ((selected & 1) == 1)
+                result.add(columns.get(index));
+        }
+        return result;
+    }
+
+    List<Set<ColumnSpec<?>>> significantColumnSelections(SchemaSpec schema)
+    {
+        List<Set<ColumnSpec<?>>> result = new ArrayList<>();
+        final int pkMax = 1 << schema.partitionKeys.size();
+        for (int pkBits = 0; pkBits < pkMax; pkBits++)
+        {
+            Set<ColumnSpec<?>> pkCols = selectColumnSpecs(schema.partitionKeys, pkBits);
+
+            final int ckMax = 1 << schema.clusteringKeys.size();
+            for (int ckBits = 0; ckBits < ckMax; ckBits++)
+            {
+                Set<ColumnSpec<?>> ckCols = selectColumnSpecs(schema.clusteringKeys, ckBits);
+
+                final int sMax = 1 << schema.staticColumns.size();
+                for (int sBits = 0; sBits < sMax; sBits++)
+                {
+                    Set<ColumnSpec<?>> sCols = selectColumnSpecs(schema.staticColumns, sBits);
+
+                    final int rMax = 1 << schema.regularColumns.size();
+                    for (int rBits = 0; rBits < rMax; rBits++)
+                    {
+                        Set<ColumnSpec<?>> entry = selectColumnSpecs(schema.regularColumns, rBits);
+                        entry.addAll(sCols);
+                        entry.addAll(ckCols);
+                        entry.addAll(pkCols);
+
+                        result.add(entry);
+
+                        if (rBits > 2)
+                            rBits = rMax - 1;
+                    }
+                    if (sBits > 2)
+                        sBits = sMax - 1;
+                }
+            }
+        }
+        return result;
+    }
+
     void validate(UpgradableInJvmSut sut, TestHolder holder)
     {
         final SchemaSpec schema = holder.schema;
         final Run run = holder.run;
         ModelState state = holder.state;
+
+        List<Set<ColumnSpec<?>>> testSelections = significantColumnSelections(schema);
 
         // Validate that all partitions correspond to our expectations
         state.state.forEach((pd, partitionState) -> {
@@ -372,23 +426,17 @@ public class MixedModeColumnFilterTest
                 Query query = Query.singleClustering(schema, pd, cd, false);
 
                 sut.cluster().forEach(instance -> {
-                    for (int columnPicker = 1; columnPicker <= BitSet.bitMask(schema.allColumns.size()); columnPicker++)
+                    for (Set<ColumnSpec<?>> selectionSubset : testSelections)
                     {
-
-                        BitSet selectionBitset = BitSet.create(columnPicker, schema.allColumns.size());
-                        if (!hasAnyRegularColumns(schema.allColumns, selectionBitset))
+                        if (!hasAnyRegularColumns(selectionSubset))
                             continue;
-                        Set<ColumnSpec<?>> selectionSubset = subset(schema.allColumns, selectionBitset);
 
                         final List<ResultSetRow> actualRows = execute(instance, run.clock, query, selectionSubset);
-                        if (hasPrimaryKey(schema.allColumns, selectionBitset))
-                        {
-                            QuiescentChecker.validate(schema,
-                                                      selectionSubset,
-                                                      partitionState,
-                                                      actualRows,
-                                                      query);
-                        }
+                        QuiescentChecker.validate(schema,
+                                                  selectionSubset,
+                                                  partitionState,
+                                                  actualRows,
+                                                  query);
                         //            // TODO: allow sub-selection
                         //            // TODO: allow selecting without writetime
                     }
