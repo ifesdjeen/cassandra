@@ -104,27 +104,23 @@ public final class Schema implements SchemaProvider
         SchemaDiagnostics.schemataLoaded(this);
     }
 
+    synchronized public void cas(String name, java.util.function.Function<KeyspaceMetadata, KeyspaceMetadata> transform)
+    {
+        KeyspaceMetadata previous = keyspaces.getNullable(name);
+        KeyspaceMetadata next = transform.apply(previous);
+        if (previous == null)
+            loadNew(next);
+        else
+            reload(previous, next);
+
+        keyspaces = keyspaces.withAddedOrUpdated(next);
+    }
+
     /**
      * Update (or insert) new keyspace definition
      *
      * @param ksm The metadata about keyspace
      */
-    synchronized public boolean cas(KeyspaceMetadata expected, KeyspaceMetadata ksm)
-    {
-        KeyspaceMetadata previous = keyspaces.getNullable(ksm.name);
-
-        if (expected != previous)
-            return false;
-
-        if (previous == null)
-            loadNew(ksm);
-        else
-            reload(previous, ksm);
-
-        keyspaces = keyspaces.withAddedOrUpdated(ksm);
-        return true;
-    }
-
     synchronized public void load(KeyspaceMetadata ksm)
     {
         KeyspaceMetadata previous = keyspaces.getNullable(ksm.name);
