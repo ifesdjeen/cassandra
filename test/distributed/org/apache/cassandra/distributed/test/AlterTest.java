@@ -18,6 +18,10 @@
 
 package org.apache.cassandra.distributed.test;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
+
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -25,9 +29,60 @@ import org.apache.cassandra.db.Keyspace;
 import org.apache.cassandra.distributed.api.ICluster;
 import org.apache.cassandra.distributed.api.IInvokableInstance;
 import org.apache.cassandra.distributed.api.IIsolatedExecutor;
+import org.apache.cassandra.schema.Schema;
 
 public class AlterTest extends TestBaseImpl
 {
+    @Test
+    public void testAtomicityOfSchemaUpdates() throws Throwable
+    {
+        try (ICluster<IInvokableInstance> cluster = init(builder().withNodes(1)
+                                                                  .start()))
+        {
+            List<Thread> threads = new ArrayList<>();
+            AtomicInteger counter = new AtomicInteger();
+            for (int i = 0; i < 10; i++)
+            {
+                Thread thread = new Thread(() -> {
+                    while (!Thread.currentThread().isInterrupted())
+                    {
+                        try
+                        {
+                            int cnt = counter.incrementAndGet();
+                            cluster.schemaChange("CREATE TABLE " + KEYSPACE + ".tbl" + cnt + " (pk int, ck int, v int, PRIMARY KEY (pk, ck));");
+                            cluster.get(1).runOnInstance(() -> {
+                                assert Schema.instance.getKeyspaceInstance("distributed_test_keyspace").getColumnFamilyStore("tbl" + cnt) != null;
+                            });
+                        }
+                        catch (Throwable t)
+                        {
+                            t.printStackTrace();
+                        }
+                    }
+
+                });
+                threads.add(thread);
+                thread.start();
+            }
+
+            Thread.sleep(5000);
+            for (Thread thread : threads)
+            {
+                thread.interrupt();
+            }
+
+            for (Thread thread : threads)
+            {
+                thread.join();
+            }
+            System.out.println("count = " + counter.get());
+            Thread.sleep(10_000);
+            cluster.get(1).runOnInstance(() -> {
+                System.out.println("count = " + Keyspace.open("distributed_test_keyspace").getColumnFamilyStores().size());
+            });
+        }
+    }
+
     @Test
     public void getAndSetCompressionParametersTest() throws Throwable
     {

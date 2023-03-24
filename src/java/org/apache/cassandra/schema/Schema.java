@@ -109,6 +109,22 @@ public final class Schema implements SchemaProvider
      *
      * @param ksm The metadata about keyspace
      */
+    synchronized public boolean cas(KeyspaceMetadata expected, KeyspaceMetadata ksm)
+    {
+        KeyspaceMetadata previous = keyspaces.getNullable(ksm.name);
+
+        if (expected != previous)
+            return false;
+
+        if (previous == null)
+            loadNew(ksm);
+        else
+            reload(previous, ksm);
+
+        keyspaces = keyspaces.withAddedOrUpdated(ksm);
+        return true;
+    }
+
     synchronized public void load(KeyspaceMetadata ksm)
     {
         KeyspaceMetadata previous = keyspaces.getNullable(ksm.name);
@@ -121,7 +137,7 @@ public final class Schema implements SchemaProvider
         keyspaces = keyspaces.withAddedOrUpdated(ksm);
     }
 
-    private void loadNew(KeyspaceMetadata ksm)
+    private synchronized void loadNew(KeyspaceMetadata ksm)
     {
         ksm.tablesAndViews()
            .forEach(metadata -> metadataRefs.put(metadata.id, new TableMetadataRef(metadata)));
@@ -133,7 +149,7 @@ public final class Schema implements SchemaProvider
         SchemaDiagnostics.metadataInitialized(this, ksm);
     }
 
-    private void reload(KeyspaceMetadata previous, KeyspaceMetadata updated)
+    private synchronized void reload(KeyspaceMetadata previous, KeyspaceMetadata updated)
     {
         Keyspace keyspace = getKeyspaceInstance(updated.name);
         if (null != keyspace)

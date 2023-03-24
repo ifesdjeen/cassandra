@@ -503,32 +503,41 @@ public class CQLSSTableWriter implements Closeable
             synchronized (CQLSSTableWriter.class)
             {
                 if (Schema.instance.getKeyspaceMetadata(SchemaConstants.SCHEMA_KEYSPACE_NAME) == null)
-                    Schema.instance.load(SchemaKeyspace.metadata());
+                    Schema.instance.cas(null, SchemaKeyspace.metadata());
                 if (Schema.instance.getKeyspaceMetadata(SchemaConstants.SYSTEM_KEYSPACE_NAME) == null)
-                    Schema.instance.load(SystemKeyspace.metadata());
+                    Schema.instance.cas(null, SystemKeyspace.metadata());
 
                 String keyspaceName = schemaStatement.keyspace();
 
-                if (Schema.instance.getKeyspaceMetadata(keyspaceName) == null)
+                KeyspaceMetadata ksm;
+                TableMetadata tableMetadata;
+                while (true)
                 {
-                    Schema.instance.load(KeyspaceMetadata.create(keyspaceName,
-                                                                 KeyspaceParams.simple(1),
-                                                                 Tables.none(),
-                                                                 Views.none(),
-                                                                 Types.none(),
-                                                                 Functions.none()));
+                    ksm = Schema.instance.getKeyspaceMetadata(keyspaceName);
+                    if (ksm == null)
+                    {
+                        Types types = createTypes(keyspaceName);
+                        tableMetadata = createTable(types);
+                        if (Schema.instance.cas(ksm, KeyspaceMetadata.create(keyspaceName,
+                                                                             KeyspaceParams.simple(1),
+                                                                             Tables.of(tableMetadata),
+                                                                             Views.none(),
+                                                                             types,
+                                                                             Functions.none())))
+                            break;
+                    }
+                    else {
+                        tableMetadata = ksm.tables.getNullable(schemaStatement.table());
+                        if (tableMetadata == null)
+                        {
+                            Types types = createTypes(keyspaceName);
+                            tableMetadata = createTable(types);
+                            if (Schema.instance.cas(ksm,
+                                                    ksm.withSwapped(ksm.tables.with(tableMetadata)).withSwapped(types)))
+                                break;
+                        }
+                    }
                 }
-
-                KeyspaceMetadata ksm = Schema.instance.getKeyspaceMetadata(keyspaceName);
-
-                TableMetadata tableMetadata = ksm.tables.getNullable(schemaStatement.table());
-                if (tableMetadata == null)
-                {
-                    Types types = createTypes(keyspaceName);
-                    tableMetadata = createTable(types);
-                    Schema.instance.load(ksm.withSwapped(ksm.tables.with(tableMetadata)).withSwapped(types));
-                }
-
                 UpdateStatement preparedInsert = prepareInsert();
 
                 TableMetadataRef ref = TableMetadataRef.forOfflineTools(tableMetadata);
