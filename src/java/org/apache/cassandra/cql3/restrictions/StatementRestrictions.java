@@ -779,7 +779,12 @@ public final class StatementRestrictions
         if (filterRestrictions.isEmpty())
             return RowFilter.none();
 
-        RowFilter filter = RowFilter.create();
+        ConsistencyLevel cl = options.getConsistency();
+        boolean isStrict = cl == ConsistencyLevel.ONE || cl == ConsistencyLevel.LOCAL_ONE || cl == ConsistencyLevel.NODE_LOCAL
+                           // With zero or one restricted mutable columns, strict filtering is safe even at higher consistency levels.
+                           || nonPrimaryKeyRestrictions.getColumnDefinitions().size() <= 1;
+
+        RowFilter filter = RowFilter.create(isStrict);
         for (Restrictions restrictions : filterRestrictions.getRestrictions())
             restrictions.addToRowFilter(filter, indexRegistry, options);
 

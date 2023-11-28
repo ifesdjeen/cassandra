@@ -84,7 +84,7 @@ public class StorageAttachedIndexSearcher implements Index.Searcher
         for (RowFilter.Expression expression : queryController.filterOperation())
         {
             if (queryController.hasAnalyzer(expression))
-                return applyIndexFilter(fullResponse, Operation.buildFilter(queryController), queryContext);
+                return applyIndexFilter(fullResponse, Operation.buildFilter(queryController, true), queryContext);
         }
 
         // if no analyzer does transformation
@@ -140,7 +140,7 @@ public class StorageAttachedIndexSearcher implements Index.Searcher
             this.keyRanges = queryController.dataRanges().iterator();
             this.currentKeyRange = keyRanges.next().keyRange();
             this.resultKeyIterator = Operation.buildIterator(queryController);
-            this.filterTree = Operation.buildFilter(queryController);
+            this.filterTree = Operation.buildFilter(queryController, queryController.usesStrictFiltering());
             this.queryController = queryController;
             this.executionController = executionController;
             this.queryContext = queryContext;
@@ -383,7 +383,6 @@ public class StorageAttachedIndexSearcher implements Index.Searcher
         private UnfilteredRowIterator applyIndexFilter(PrimaryKey key, UnfilteredRowIterator partition, FilterTree tree, QueryContext queryContext)
         {
             Row staticRow = partition.staticRow();
-
             List<Unfiltered> clusters = new ArrayList<>();
 
             // We need to filter the partition rows before filtering on the static row. If this is done in the other
@@ -392,7 +391,6 @@ public class StorageAttachedIndexSearcher implements Index.Searcher
             while (partition.hasNext())
             {
                 Unfiltered row = partition.next();
-
                 queryContext.rowsFiltered++;
                 if (tree.isSatisfiedBy(partition.partitionKey(), row, staticRow))
                 {
