@@ -18,16 +18,22 @@
 
 package org.apache.cassandra.tcm.listeners;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import org.apache.cassandra.schema.KeyspaceMetadata;
 import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.tcm.ClusterMetadata;
 
 public class PlacementsChangeListener implements ChangeListener
 {
+    private static final Logger logger = LoggerFactory.getLogger(PlacementsChangeListener.class);
     @Override
     public void notifyPostCommit(ClusterMetadata prev, ClusterMetadata next, boolean fromSnapshot)
     {
-        if (shouldInvalidate(prev, next))
+        boolean shouldInvalidate = shouldInvalidate(prev, next);
+        logger.info("Should invalidate " + shouldInvalidate);
+        if (shouldInvalidate)
             StorageService.instance.invalidateLocalRanges();
     }
 

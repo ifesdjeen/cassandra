@@ -55,8 +55,7 @@ import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FBUtilities;
 
 import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotSame;
-import static org.junit.Assert.assertSame;
+import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 public class DiskBoundaryManagerTest extends CQLTester
@@ -120,27 +119,38 @@ public class DiskBoundaryManagerTest extends CQLTester
     @Test
     public void updateTokensTest() throws UnknownHostException
     {
-        //do not use mock to since it will not be invalidated after alter keyspace
+        //do not use mock to since it will not be invalidated afla/ter alter keyspace
+        Epoch before = ClusterMetadata.current().epoch;
         DiskBoundaryManager dbm = getCurrentColumnFamilyStore().diskBoundaryManager;
         DiskBoundaries dbv1 = dbm.getDiskBoundaries(mock);
         InetAddressAndPort ep = InetAddressAndPort.getByName("127.0.0.10");
+        logger.info("Before unsafe join");
         UnsafeJoin.unsafeJoin(Register.register(new NodeAddresses(ep)), BootStrapper.getRandomTokens(ClusterMetadata.current(), 10));
+        logger.info("After unsafe join");
+        Epoch after = ClusterMetadata.current().epoch;
         DiskBoundaries dbv2 = dbm.getDiskBoundaries(mock);
-        assertFalse(dbv1.equals(dbv2));
+        assertFalse(String.format("Epoch before/after %s/%s. Disk boundaries: %s %s", before, after, dbv1, dbv2),
+                    dbv1.equals(dbv2));
     }
 
     @Test
     public void alterKeyspaceTest() throws Throwable
     {
+        Epoch before = ClusterMetadata.current().epoch;
         //do not use mock to since it will not be invalidated after alter keyspace
         DiskBoundaryManager dbm = getCurrentColumnFamilyStore().diskBoundaryManager;
         DiskBoundaries dbv1 = dbm.getDiskBoundaries(mock);
+        logger.info("Before alter");
         execute("alter keyspace "+keyspace()+" with replication = { 'class' : 'SimpleStrategy', 'replication_factor' : 3 }");
+        logger.info("After alter");
+        Epoch after = ClusterMetadata.current().epoch;
         DiskBoundaries dbv2 = dbm.getDiskBoundaries(mock);
-        assertNotSame(dbv1, dbv2);
+        assertFalse(String.format("Epoch before/after %s/%s. Disk boundaries: %s %s", before, after, dbv1, dbv2),
+                    dbv1.equals(dbv2));
+        after = ClusterMetadata.current().epoch;
         DiskBoundaries dbv3 = dbm.getDiskBoundaries(mock);
-        assertSame(dbv2, dbv3);
-
+        assertTrue(String.format("Epoch before/after %s/%s. Disk boundaries: %s %s", before, after, dbv1, dbv2),
+                   dbv2.equals(dbv3));
     }
 
     @Test
