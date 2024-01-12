@@ -30,6 +30,11 @@ import org.apache.cassandra.harry.tracker.DefaultDataTracker;
 @Ignore
 public class SAITest extends IntegrationTestBase
 {
+    private static final int RUNS = 100;
+    private static final int OPERATIONS_PER_RUN = 100_000;
+    private static final int MAX_PARTITION_SIZE = 10_000;
+    private static final int VALIDATION_SKIP = 1000;
+
     long seed = 1;
 
     @Test
@@ -46,7 +51,7 @@ public class SAITest extends IntegrationTestBase
                                            Arrays.asList(ColumnSpec.regularColumn("v1", ColumnSpec.asciiType(40, 100)),
                                                          ColumnSpec.regularColumn("v2", ColumnSpec.int64Type),
                                                          ColumnSpec.regularColumn("v3", ColumnSpec.int64Type)),
-                                           Arrays.asList());
+                                           List.of());
 
         beforeEach();
 
@@ -71,30 +76,31 @@ public class SAITest extends IntegrationTestBase
 
 //        cluster.disableAutoCompaction(schema.keyspace);
 
-        int maxPartitionSize = 10_000;
         DataTracker tracker = new DefaultDataTracker();
-        TokenPlacementModel.ReplicationFactor rf = new TokenPlacementModel.SimpleReplicationFactor(1);
-        ReplayingHistoryBuilder history = new ReplayingHistoryBuilder(seed, maxPartitionSize, 10_000, tracker, sut, schema, rf, SystemUnderTest.ConsistencyLevel.ALL);
-        for (int p = 0; p < 100; p++)
+        TokenPlacementModel.ReplicationFactor rf = new TokenPlacementModel.SimpleReplicationFactor(cluster.size());
+        ReplayingHistoryBuilder history = new ReplayingHistoryBuilder(seed, MAX_PARTITION_SIZE, 10_000, tracker, sut, schema, rf, SystemUnderTest.ConsistencyLevel.ALL);
+
+        for (int p = 0; p < RUNS; p++)
         {
             EntropySource entropySource = new JdkRandomEntropySource(p);
             long[] values = new long[5];
             for (int i = 0; i < values.length; i++)
                 values[i] = entropySource.next();
-            for (int i = 0; i < 100_000; i++)
+            
+            for (int i = 0; i < OPERATIONS_PER_RUN; i++)
             {
                 int partition = entropySource.nextInt(0, 100);
                 System.out.println(i);
                 history.visitPartition(partition)
-                       .insert(entropySource.nextInt(maxPartitionSize),
+                       .insert(entropySource.nextInt(MAX_PARTITION_SIZE),
                                new long[]{ entropySource.nextBoolean() ? DataGenerators.UNSET_DESCR : values[entropySource.nextInt(values.length)],
                                            entropySource.nextBoolean() ? DataGenerators.UNSET_DESCR : values[entropySource.nextInt(values.length)],
                                            entropySource.nextBoolean() ? DataGenerators.UNSET_DESCR : values[entropySource.nextInt(values.length)] });
 
                 if (entropySource.nextFloat() > 0.99f)
                 {
-                    int row1 = entropySource.nextInt(maxPartitionSize);
-                    int row2 = entropySource.nextInt(maxPartitionSize);
+                    int row1 = entropySource.nextInt(MAX_PARTITION_SIZE);
+                    int row2 = entropySource.nextInt(MAX_PARTITION_SIZE);
                     history.visitPartition(partition).deleteRowRange(Math.min(row1, row2),
                                                                      Math.max(row1, row2),
                                                                      entropySource.nextBoolean(),
@@ -118,7 +124,7 @@ public class SAITest extends IntegrationTestBase
                 if (entropySource.nextFloat() > 0.9995f)
                     history.visitPartition(partition).deletePartition();
 
-                if (i % 1000 != 0)
+                if (i % VALIDATION_SKIP != 0)
                     continue;
 
                 for (int j = 0; j < 10; j++)
@@ -171,7 +177,10 @@ public class SAITest extends IntegrationTestBase
 
                     Reconciler reconciler = new Reconciler(history.presetSelector, schema, history::visitor);
                     Set<ColumnSpec<?>> columns = new HashSet<>(schema.allColumns);
-                    QuiescentChecker.validate(schema, tracker, columns,
+
+                    QuiescentChecker.validate(schema, 
+                                              tracker,
+                                              columns,
                                               reconciler.inflatePartitionState(pd, tracker, query).filter(query),
                                               SelectHelper.execute(sut, history.clock(), query),
                                               query);
