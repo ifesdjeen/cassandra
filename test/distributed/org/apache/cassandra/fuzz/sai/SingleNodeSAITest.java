@@ -172,6 +172,7 @@ public class SingleNodeSAITest extends IntegrationTestBase
                 for (int j = 0; j < 100; j++)
                 {
                     List<Relation> relations = new ArrayList<>();
+                    List<Relation> relationsWithoutStatic = new ArrayList<>();
 
                     // For one text column and 2 numeric columns, we can use between 1 and 5 total relations.
                     int num = random.nextInt(1, 5);
@@ -205,6 +206,7 @@ public class SingleNodeSAITest extends IntegrationTestBase
 
 //                    if (random.nextFloat() > 0.75f)
                     {
+                        relationsWithoutStatic.addAll(relations);
                         relations.add(Relation.relation(Relation.RelationKind.EQ,
                                                         schema.staticColumns.get(0),
                                                         values[random.nextInt(values.length)]));
@@ -217,24 +219,49 @@ public class SingleNodeSAITest extends IntegrationTestBase
 
                     PartitionState modelState = reconciler.inflatePartitionState(pd, tracker, query).filter(query);
 
-                    if (modelState.rows().size() > 0)
+                    if (modelState.rows().size() > 0) {
                         logger.debug("Model contains {} matching rows for query {}.", modelState.rows().size(), query);
+                    }
 
-                    Model model = new AgainstSutChecker(tracker, history.clock(), sut, schema, doubleWriteSchema);
+
                     try
                     {
-                        model.validate(query);
+                        QuiescentChecker.validate(schema,
+                                tracker,
+                                columns,
+                                modelState,
+                                SelectHelper.execute(sut, history.clock(), query),
+                                query);
+
                     }
                     catch (Throwable t)
                     {
-                        t.printStackTrace();
+                        logger.debug("Model contains {} matching rows for query without statics {}.", modelState.rows().size(), new FilteringQuery(pd, false, relationsWithoutStatic, schema));
+                        QuiescentChecker.validate(schema,
+                                tracker,
+                                columns,
+                                modelState,
+                                SelectHelper.execute(sut, history.clock(),
+                                        new FilteringQuery(pd, false, relationsWithoutStatic, schema)),
+                                query);
+                        System.out.println("SUCEEDS without a query on STATIC");
+
+                        cluster.get(1).nodetool("flush", schema.keyspace, schema.table);
+                        QuiescentChecker.validate(schema,
+                                tracker,
+                                columns,
+                                modelState,
+                                SelectHelper.execute(sut, history.clock(), query),
+                                query);
+                        System.out.println("SUCEEDS after flush!");
+                        throw t;
+
+//                        Model model = new AgainstSutChecker(tracker, history.clock(), sut, schema, doubleWriteSchema);
+//                        model.validate(query);
+
                     }
-                    QuiescentChecker.validate(schema,
-                                              tracker,
-                                              columns,
-                                              modelState,
-                                              SelectHelper.execute(sut, history.clock(), query),
-                                              query);
+
+
                 }
             }
 
