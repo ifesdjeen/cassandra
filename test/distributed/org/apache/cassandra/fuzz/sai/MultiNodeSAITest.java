@@ -25,7 +25,7 @@ import org.apache.cassandra.distributed.Cluster;
 import org.apache.cassandra.harry.sut.injvm.InJvmSut;
 import org.apache.cassandra.harry.sut.injvm.InJvmSutBase;
 
-public class MultiNodeSingleNodeSAITest extends SingleNodeSAITest
+public class MultiNodeSAITest extends SingleNodeSAITest
 {
     @BeforeClass
     public static void before() throws Throwable

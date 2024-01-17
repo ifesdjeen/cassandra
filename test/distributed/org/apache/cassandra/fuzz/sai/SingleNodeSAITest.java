@@ -47,8 +47,8 @@ import org.apache.cassandra.harry.tracker.DefaultDataTracker;
 
 public class SingleNodeSAITest extends IntegrationTestBase
 {
-    private static final int RUNS = 3;
-    private static final int OPERATIONS_PER_RUN = 20_000;
+    private static final int RUNS = 10;
+    private static final int OPERATIONS_PER_RUN = 100_000;
     private static final int MAX_PARTITION_SIZE = 10_000;
     private static final int VALIDATION_SKIP = 1000;
     private static final int NUM_PARTITIONS = 100;
@@ -65,14 +65,11 @@ public class SingleNodeSAITest extends IntegrationTestBase
                                                          ColumnSpec.ck("pk3", ColumnSpec.int64Type)),
                                            Arrays.asList(ColumnSpec.ck("ck1", ColumnSpec.asciiType(4, 100)),
                                                          ColumnSpec.ck("ck2", ColumnSpec.asciiType, true),
-                                                         ColumnSpec.ck("ck3", ColumnSpec.int64Type)
-                                                         ),
+                                                         ColumnSpec.ck("ck3", ColumnSpec.int64Type)),
                                            Arrays.asList(ColumnSpec.regularColumn("v1", ColumnSpec.asciiType(40, 100)),
                                                          ColumnSpec.regularColumn("v2", ColumnSpec.int64Type),
                                                          ColumnSpec.regularColumn("v3", ColumnSpec.int64Type)),
-                                           List.of());
-
-        beforeEach();
+                                           List.of(ColumnSpec.staticColumn("s1", ColumnSpec.asciiType(40, 100))));
 
         sut.schemaChange(schema.compile().cql());
         sut.schemaChange(schema.cloneWithName(schema.keyspace, schema.table + "_debug").compile().cql());
@@ -92,6 +89,11 @@ public class SingleNodeSAITest extends IntegrationTestBase
                                        schema.keyspace,
                                        schema.table,
                                        schema.regularColumns.get(2).name));
+        sut.schemaChange(String.format("CREATE INDEX %s_sai_idx ON %s.%s (%s) USING 'sai';",
+                                       schema.staticColumns.get(0).name,
+                                       schema.keyspace,
+                                       schema.table,
+                                       schema.staticColumns.get(0).name));
 
         DataTracker tracker = new DefaultDataTracker();
         TokenPlacementModel.ReplicationFactor rf = new TokenPlacementModel.SimpleReplicationFactor(cluster.size());
@@ -122,18 +124,17 @@ public class SingleNodeSAITest extends IntegrationTestBase
 
                 history.visitPartition(partitionIndex)
                        .insert(random.nextInt(MAX_PARTITION_SIZE),
-                               new long[]{ random.nextBoolean() ? DataGenerators.UNSET_DESCR : values[random.nextInt(values.length)],
-                                           random.nextBoolean() ? DataGenerators.UNSET_DESCR : values[random.nextInt(values.length)],
-                                           random.nextBoolean() ? DataGenerators.UNSET_DESCR : values[random.nextInt(values.length)] });
+                               new long[] { random.nextBoolean() ? DataGenerators.UNSET_DESCR : values[random.nextInt(values.length)],
+                                            random.nextBoolean() ? DataGenerators.UNSET_DESCR : values[random.nextInt(values.length)],
+                                            random.nextBoolean() ? DataGenerators.UNSET_DESCR : values[random.nextInt(values.length)] },
+                               new long[] { random.nextBoolean() ? DataGenerators.UNSET_DESCR : values[random.nextInt(values.length)] });
 
                 if (random.nextFloat() > 0.99f)
                 {
                     int row1 = random.nextInt(MAX_PARTITION_SIZE);
                     int row2 = random.nextInt(MAX_PARTITION_SIZE);
-                    history.visitPartition(partitionIndex).deleteRowRange(Math.min(row1, row2),
-                                                                          Math.max(row1, row2),
-                                                                          random.nextBoolean(),
-                                                                          random.nextBoolean());
+                    history.visitPartition(partitionIndex).deleteRowRange(Math.min(row1, row2), Math.max(row1, row2),
+                                                                          random.nextBoolean(), random.nextBoolean());
                 }
                 else if (random.nextFloat() > 0.999f)
                 {
@@ -174,7 +175,7 @@ public class SingleNodeSAITest extends IntegrationTestBase
                     pick.add(new ArrayList<>(Arrays.asList(Relation.RelationKind.EQ, Relation.RelationKind.GT, Relation.RelationKind.LT)));
                     pick.add(new ArrayList<>(Arrays.asList(Relation.RelationKind.EQ, Relation.RelationKind.GT, Relation.RelationKind.LT)));
 
-                    if (random.nextBoolean())
+                    if (random.nextFloat() > 0.75f)
                     {
                         relations.addAll(Query.clusteringSliceQuery(schema, partitionIndex,
                                                                     random.next(),
@@ -195,13 +196,23 @@ public class SingleNodeSAITest extends IntegrationTestBase
                                                             values[random.nextInt(values.length)]));
                     }
 
+                    if (random.nextFloat() > 0.75f)
+                    {
+                        relations.add(Relation.relation(Relation.RelationKind.EQ,
+                                                        schema.staticColumns.get(0),
+                                                        values[random.nextInt(values.length)]));
+                    }
+
                     long pd = history.presetSelector.pdAtPosition(partitionIndex);
                     FilteringQuery query = new FilteringQuery(pd, false, relations, schema);
                     Reconciler reconciler = new Reconciler(history.presetSelector, schema, history::visitor);
                     Set<ColumnSpec<?>> columns = new HashSet<>(schema.allColumns);
 
                     PartitionState modelState = reconciler.inflatePartitionState(pd, tracker, query).filter(query);
-                    logger.debug("Model state contains {} rows.", modelState.rows().size());
+                    
+                    if (modelState.rows().size() > 0)
+                        logger.debug("Model contains {} matching rows for query {}.", modelState.rows().size(), query);
+
                     QuiescentChecker.validate(schema,
                                               tracker,
                                               columns,
