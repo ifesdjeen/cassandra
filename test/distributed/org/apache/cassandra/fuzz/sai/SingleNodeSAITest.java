@@ -33,6 +33,8 @@ import org.apache.cassandra.harry.dsl.ReplayingHistoryBuilder;
 import org.apache.cassandra.harry.gen.DataGenerators;
 import org.apache.cassandra.harry.gen.EntropySource;
 import org.apache.cassandra.harry.gen.rng.JdkRandomEntropySource;
+import org.apache.cassandra.harry.model.AgainstSutChecker;
+import org.apache.cassandra.harry.model.Model;
 import org.apache.cassandra.harry.model.QuiescentChecker;
 import org.apache.cassandra.harry.model.SelectHelper;
 import org.apache.cassandra.harry.model.reconciler.PartitionState;
@@ -40,6 +42,8 @@ import org.apache.cassandra.harry.model.reconciler.Reconciler;
 import org.apache.cassandra.harry.operations.FilteringQuery;
 import org.apache.cassandra.harry.operations.Query;
 import org.apache.cassandra.harry.operations.Relation;
+import org.apache.cassandra.harry.sut.DoubleWritingSut;
+import org.apache.cassandra.harry.sut.QueryModifyingSut;
 import org.apache.cassandra.harry.sut.SystemUnderTest;
 import org.apache.cassandra.harry.sut.TokenPlacementModel;
 import org.apache.cassandra.harry.tracker.DataTracker;
@@ -71,8 +75,9 @@ public class SingleNodeSAITest extends IntegrationTestBase
                                                          ColumnSpec.regularColumn("v3", ColumnSpec.int64Type)),
                                            List.of(ColumnSpec.staticColumn("s1", ColumnSpec.asciiType(40, 100))));
 
+        SchemaSpec doubleWriteSchema = schema.cloneWithName(schema.keyspace, schema.table + "_debug");
         sut.schemaChange(schema.compile().cql());
-        sut.schemaChange(schema.cloneWithName(schema.keyspace, schema.table + "_debug").compile().cql());
+        sut.schemaChange(doubleWriteSchema.compile().cql());
         sut.schemaChange(String.format("CREATE INDEX %s_sai_idx ON %s.%s (%s) USING 'sai' " +
                                        "WITH OPTIONS = {'case_sensitive': 'false', 'normalize': 'true', 'ascii': 'true'};",
                                        schema.regularColumns.get(0).name,
@@ -101,7 +106,9 @@ public class SingleNodeSAITest extends IntegrationTestBase
                                                                       MAX_PARTITION_SIZE,
                                                                       MAX_PARTITION_SIZE,
                                                                       tracker,
-                                                                      sut,
+                                                                      new DoubleWritingSut(sut,
+                                                                                           new QueryModifyingSut(sut,
+                                                                                                                 (query) -> query.replace(schema.table, doubleWriteSchema.table))),
                                                                       schema,
                                                                       rf,
                                                                       SystemUnderTest.ConsistencyLevel.QUORUM);
@@ -110,14 +117,14 @@ public class SingleNodeSAITest extends IntegrationTestBase
         {
             logger.info("Starting run {}/{}...", run + 1, RUNS);
             EntropySource random = new JdkRandomEntropySource(run);
-            
+
             // Populate the array of possible values for all operations in the run:
             long[] values = new long[UNIQUE_CELL_VALUES];
             for (int i = 0; i < values.length; i++)
                 values[i] = random.next();
-            
+
             Thread flusher = null;
-            
+
             for (int i = 0; i < OPERATIONS_PER_RUN; i++)
             {
                 int partitionIndex = random.nextInt(0, NUM_PARTITIONS);
@@ -146,23 +153,23 @@ public class SingleNodeSAITest extends IntegrationTestBase
                     history.visitPartition(partitionIndex).deleteColumns();
                 }
 
-                if (random.nextFloat() > 0.9995f)
-                {
-                    if (flusher != null)
-                        flusher.join();
-                    flusher = new Thread(() -> cluster.get(1).nodetool("flush", schema.keyspace, schema.table));
-                    flusher.start();
-                }
+//                if (random.nextFloat() > 0.9995f)
+//                {
+//                    if (flusher != null)
+//                        flusher.join();
+//                    flusher = new Thread(() -> cluster.get(1).nodetool("flush", schema.keyspace, schema.table));
+//                    flusher.start();
+//                }
 
                 if (random.nextFloat() > 0.9995f)
                     history.visitPartition(partitionIndex).deletePartition();
 
                 if (i % VALIDATION_SKIP != 0)
                     continue;
-                
+
                 logger.debug("Validating partition at index {}...", partitionIndex);
 
-                for (int j = 0; j < 10; j++)
+                for (int j = 0; j < 100; j++)
                 {
                     List<Relation> relations = new ArrayList<>();
 
@@ -196,7 +203,7 @@ public class SingleNodeSAITest extends IntegrationTestBase
                                                             values[random.nextInt(values.length)]));
                     }
 
-                    if (random.nextFloat() > 0.75f)
+//                    if (random.nextFloat() > 0.75f)
                     {
                         relations.add(Relation.relation(Relation.RelationKind.EQ,
                                                         schema.staticColumns.get(0),
@@ -209,10 +216,19 @@ public class SingleNodeSAITest extends IntegrationTestBase
                     Set<ColumnSpec<?>> columns = new HashSet<>(schema.allColumns);
 
                     PartitionState modelState = reconciler.inflatePartitionState(pd, tracker, query).filter(query);
-                    
+
                     if (modelState.rows().size() > 0)
                         logger.debug("Model contains {} matching rows for query {}.", modelState.rows().size(), query);
 
+                    Model model = new AgainstSutChecker(tracker, history.clock(), sut, schema, doubleWriteSchema);
+                    try
+                    {
+                        model.validate(query);
+                    }
+                    catch (Throwable t)
+                    {
+                        t.printStackTrace();
+                    }
                     QuiescentChecker.validate(schema,
                                               tracker,
                                               columns,

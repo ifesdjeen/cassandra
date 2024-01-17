@@ -58,8 +58,7 @@ public class RangeTombstoneBurnTest extends IntegrationTestBase
             sut.schemaChange(doubleWriteSchema.compile().cql());
 
             QueryModifyingSut sut = new QueryModifyingSut(this.sut,
-                                                          schema.table,
-                                                          doubleWriteSchema.table);
+                                                          (query) -> query.replace(schema.table, doubleWriteSchema.table));
 
             cluster.get(1).nodetool("disableautocompaction");
 

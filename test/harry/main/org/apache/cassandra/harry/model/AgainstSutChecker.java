@@ -74,12 +74,13 @@ public class AgainstSutChecker implements Model
         tracker.beginValidation(query.pd);
         CompiledStatement s1 = query.toSelectStatement(schema.allColumnsSet, true);
         CompiledStatement s2 = s1.withSchema(schema.keyspace, schema.table,
-                                             doubleWriteTable.keyspace, doubleWriteTable.table);
+                                             doubleWriteTable.keyspace, doubleWriteTable.table)
+                                 .allowFiltering();
         List<ResultSetRow> rows1 = SelectHelper.execute(sut, clock, s1, schema);
         List<ResultSetRow> rows2 = SelectHelper.execute(sut, clock, s2, doubleWriteTable);
 
         if (rows1.size() != rows2.size())
-            throw new IllegalStateException(String.format("Sizes do not match %d %d", rows1.size(), rows2.size()));
+            throw new IllegalStateException(String.format("Sizes do not match %d (%s) %d (%s)", rows1.size(), schema.table, rows2.size(), doubleWriteTable.table));
 
         for (int i = 0; i < rows1.size(); i++)
         {

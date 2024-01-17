@@ -19,6 +19,7 @@
 package org.apache.cassandra.harry.sut;
 
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Function;
 
 import org.apache.cassandra.harry.model.AgainstSutChecker;
 
@@ -42,16 +43,13 @@ import org.apache.cassandra.harry.model.AgainstSutChecker;
 public class QueryModifyingSut implements SystemUnderTest
 {
     private final SystemUnderTest delegate;
-    private final String toReplace;
-    private final String replacement;
+    private final Function<String, String> mutate;
 
     public QueryModifyingSut(SystemUnderTest delegate,
-                             String toReplace,
-                             String replacement)
+                             Function<String, String> mutate)
     {
         this.delegate = delegate;
-        this.toReplace = toReplace;
-        this.replacement = replacement;
+        this.mutate = mutate;
     }
 
     public boolean isShutdown()
@@ -66,14 +64,14 @@ public class QueryModifyingSut implements SystemUnderTest
 
     public Object[][] execute(String statement, ConsistencyLevel cl, Object... bindings)
     {
-        return delegate.execute(statement.replaceAll(toReplace, replacement),
+        return delegate.execute(mutate.apply(statement),
                                 cl,
                                 bindings);
     }
 
     public CompletableFuture<Object[][]> executeAsync(String statement, ConsistencyLevel cl, Object... bindings)
     {
-        return delegate.executeAsync(statement.replaceAll(toReplace, replacement),
+        return delegate.executeAsync(mutate.apply(statement),
                                      cl,
                                      bindings);
     }
