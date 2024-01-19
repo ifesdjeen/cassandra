@@ -150,7 +150,7 @@ public class SingleNodeSAITest extends IntegrationTestBase
                 {
                     if (flusher != null)
                         flusher.join();
-                    flusher = new Thread(() -> cluster.get(1).nodetool("flush", schema.keyspace, schema.table));
+                    flusher = new Thread(() -> cluster.get(random.nextInt(cluster.size()) + 1).nodetool("flush", schema.keyspace, schema.table));
                     flusher.start();
                 }
 

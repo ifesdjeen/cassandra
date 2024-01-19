@@ -22,6 +22,7 @@ import org.junit.Before;
 import org.junit.BeforeClass;
 
 import org.apache.cassandra.distributed.Cluster;
+import org.apache.cassandra.harry.operations.CompiledStatement;
 import org.apache.cassandra.harry.sut.injvm.InJvmSut;
 import org.apache.cassandra.harry.sut.injvm.InJvmSutBase;
 
@@ -40,7 +41,15 @@ public class MultiNodeSAITest extends SingleNodeSAITest
         });
         cluster.startup();
         cluster = init(cluster);
-        sut = new InJvmSut(cluster);
+        sut = new InJvmSut(cluster) {
+            @Override
+            public Object[][] execute(String cql, ConsistencyLevel cl, Object[] bindings)
+            {
+                if (cql.contains("SELECT"))
+                    return super.execute(cql, ConsistencyLevel.ALL, bindings);
+                return super.execute(cql, ConsistencyLevel.NODE_LOCAL, bindings);
+            }
+        };
     }
 
     @Before
