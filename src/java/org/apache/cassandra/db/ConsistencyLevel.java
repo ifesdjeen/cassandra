@@ -65,12 +65,12 @@ public enum ConsistencyLevel
         }
     }
 
-    private ConsistencyLevel(int code)
+    ConsistencyLevel(int code)
     {
         this(code, false);
     }
 
-    private ConsistencyLevel(int code, boolean isDCLocal)
+    ConsistencyLevel(int code, boolean isDCLocal)
     {
         this.code = code;
         this.isDCLocal = isDCLocal;
@@ -256,6 +256,11 @@ public enum ConsistencyLevel
 
         if (isSerialConsistency())
             throw new InvalidRequestException("Counter operations are inherently non-serializable");
+    }
+
+    public boolean needsReconciliation()
+    {
+        return this != ConsistencyLevel.ONE && this != ConsistencyLevel.LOCAL_ONE && this != ConsistencyLevel.NODE_LOCAL;
     }
 
     private void requireNetworkTopologyStrategy(AbstractReplicationStrategy replicationStrategy) throws InvalidRequestException

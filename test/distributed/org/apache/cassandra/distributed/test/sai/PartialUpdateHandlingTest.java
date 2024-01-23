@@ -23,6 +23,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -83,7 +84,8 @@ import static org.apache.cassandra.index.sai.plan.Expression.IndexOperator.RANGE
 public class PartialUpdateHandlingTest extends TestBaseImpl
 {
     private static final String TEST_TABLE_NAME = "test_partial_updates";
-    private static final int PARTITIONS_PER_TEST = 10;
+    private static final int PARTITIONS_PER_TEST = 20;
+    private static final int PAGE_SIZE = PARTITIONS_PER_TEST / 4;
     private static final int NODES = 3;
 
     private static Cluster CLUSTER;
@@ -416,7 +418,15 @@ public class PartialUpdateHandlingTest extends TestBaseImpl
                 node2IndexStatusFrom3 = null;
             }
 
-            Object[][] result = CLUSTER.coordinator(1).execute(select.toString(), specification.readCL);
+            Object[][] fullResult = CLUSTER.coordinator(1).execute(select.toString(), specification.readCL);
+
+            if (!specification.restrictPartitionKey)
+            {
+                // If we're not restricting on partition key, we expect PARTITIONS_PER_TEST / 2 results, and so using a
+                // PAGE_SIZE of PARTITIONS_PER_TEST / 4 should create at least one page boundary.
+                Iterator<Object[]> pagedResult = CLUSTER.coordinator(1).executeWithPaging(select.toString(), specification.readCL, PAGE_SIZE);
+                assertRows(pagedResult, fullResult);
+            }
 
             // ...but bring it back up immediately after we make the query:
             if (specification.readCL == QUORUM)
@@ -427,7 +437,7 @@ public class PartialUpdateHandlingTest extends TestBaseImpl
                 CLUSTER.get(3).runOnInstance(() -> IndexStatusManager.instance.peerIndexStatus.put(node2AddressAndPort, node2IndexStatusFrom3));
             }
 
-            return result;
+            return fullResult;
         }
 
         private static boolean isNotIndexed(String column)

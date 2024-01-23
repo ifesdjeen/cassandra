@@ -1014,7 +1014,7 @@ public abstract class ReadCommand extends AbstractReadQuery
         private static final int IS_DIGEST = 0x01;
         private static final int IS_FOR_THRIFT = 0x02;
         private static final int HAS_INDEX = 0x04;
-        private static final int ACCEPTS_TRIANSIENT = 0x08;
+        private static final int ACCEPTS_TRANSIENT = 0x08;
         private static final int STRICT_FILTERING = 0x10;
 
         private final SchemaProvider schema;
@@ -1042,12 +1042,12 @@ public abstract class ReadCommand extends AbstractReadQuery
 
         private static boolean acceptsTransient(int flags)
         {
-            return (flags & ACCEPTS_TRIANSIENT) != 0;
+            return (flags & ACCEPTS_TRANSIENT) != 0;
         }
 
         private static int acceptsTransientFlag(boolean acceptsTransient)
         {
-            return acceptsTransient ? ACCEPTS_TRIANSIENT : 0;
+            return acceptsTransient ? ACCEPTS_TRANSIENT : 0;
         }
 
         // We don't set this flag anymore, but still look if we receive a

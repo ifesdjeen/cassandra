@@ -126,11 +126,13 @@ public class FilterTree
         if (baseOperator == BooleanOperator.AND && !strict)
         {
             Long lastTimestamp = null;
-            Iterator<ColumnMetadata> columns = expressions.keySet().iterator();
 
-            while (columns.hasNext())
+            for (ColumnMetadata column : expressions.keySet())
             {
-                ColumnMetadata column = columns.next();
+                // We only care about partial updates on non-key columns. 
+                if (column.isPrimaryKeyColumn())
+                    continue;
+
                 Row row = column.kind == Kind.STATIC ? staticRow : regularRow;
                 ColumnData data = row.getColumnData(column);
 
