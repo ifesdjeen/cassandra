@@ -85,8 +85,9 @@ import static org.apache.cassandra.cql3.statements.RequestValidations.checkNotNu
  * be handled by a 2ndary index, and the rest is simply filtered out from the
  * result set (the later can only happen if the query was using ALLOW FILTERING).
  */
-public abstract class RowFilter implements Iterable<RowFilter.Expression>
+public class RowFilter implements Iterable<RowFilter.Expression>
 {
+    private static RowFilter NONE = new RowFilter(Collections.emptyList(), false);
     private static final Logger logger = LoggerFactory.getLogger(RowFilter.class);
 
     public static final Serializer serializer = new Serializer();
@@ -116,17 +117,12 @@ public abstract class RowFilter implements Iterable<RowFilter.Expression>
 
     public static RowFilter create(boolean isStrict)
     {
-        return new CQLFilter(new ArrayList<>(), isStrict);
-    }
-
-    public static RowFilter create(int capacity)
-    {
-        return new CQLFilter(new ArrayList<>(capacity), true);
+        return new RowFilter(new ArrayList<>(), isStrict);
     }
 
     public static RowFilter none()
     {
-        return CQLFilter.NONE;
+        return NONE;
     }
 
     public SimpleExpression add(ColumnMetadata def, Operator op, ByteBuffer value)
@@ -150,11 +146,6 @@ public abstract class RowFilter implements Iterable<RowFilter.Expression>
     {
         expression.validate();
         expressions.add(expression);
-    }
-
-    public void addUserExpression(UserExpression e)
-    {
-        expressions.add(e);
     }
 
     public List<Expression> getExpressions()
@@ -182,7 +173,64 @@ public abstract class RowFilter implements Iterable<RowFilter.Expression>
         return false;
     }
 
-    protected abstract Transformation<BaseRowIterator<?>> filter(TableMetadata metadata, long nowInSec);
+    protected Transformation<BaseRowIterator<?>> filter(TableMetadata metadata, long nowInSec)
+    {
+        List<Expression> partitionLevelExpressions = new ArrayList<>();
+        List<Expression> rowLevelExpressions = new ArrayList<>();
+        for (Expression e: expressions)
+        {
+            if (e.column.isStatic() || e.column.isPartitionKey())
+                partitionLevelExpressions.add(e);
+            else
+                rowLevelExpressions.add(e);
+        }
+
+        long numberOfRegularColumnExpressions = rowLevelExpressions.size();
+        final boolean filterNonStaticColumns = numberOfRegularColumnExpressions > 0;
+
+        return new Transformation<BaseRowIterator<?>>()
+        {
+            DecoratedKey pk;
+
+            protected BaseRowIterator<?> applyToPartition(BaseRowIterator<?> partition)
+            {
+                pk = partition.partitionKey();
+
+                // Short-circuit all partitions that won't match based on static and partition keys
+                for (Expression e : partitionLevelExpressions)
+                    if (!e.isSatisfiedBy(metadata, partition.partitionKey(), partition.staticRow()))
+                    {
+                        partition.close();
+                        return null;
+                    }
+
+                BaseRowIterator<?> iterator = partition instanceof UnfilteredRowIterator
+                        ? Transformation.apply((UnfilteredRowIterator) partition, this)
+                        : Transformation.apply((RowIterator) partition, this);
+
+                if (filterNonStaticColumns && !iterator.hasNext())
+                {
+                    iterator.close();
+                    return null;
+                }
+
+                return iterator;
+            }
+
+            public Row applyToRow(Row row)
+            {
+                Row purged = row.purge(DeletionPurger.PURGE_ALL, nowInSec, metadata.enforceStrictLiveness());
+                if (purged == null)
+                    return null;
+
+                for (Expression e : rowLevelExpressions)
+                    if (!e.isSatisfiedBy(metadata, pk, purged))
+                        return null;
+
+                return row;
+            }
+        };
+    }
 
     /**
      * Filters the provided iterator so that only the row satisfying the expression of this filter
@@ -313,12 +361,10 @@ public abstract class RowFilter implements Iterable<RowFilter.Expression>
         return withNewExpressions(Collections.emptyList());
     }
 
-    public RowFilter restrict(Predicate<Expression> filter)
+    protected RowFilter withNewExpressions(List<Expression> expressions)
     {
-        return withNewExpressions(expressions.stream().filter(filter).collect(Collectors.toList()));
+        return new RowFilter(expressions, isStrict());
     }
-
-    protected abstract RowFilter withNewExpressions(List<Expression> expressions);
 
     public boolean isEmpty()
     {
@@ -356,80 +402,6 @@ public abstract class RowFilter implements Iterable<RowFilter.Expression>
             sb.append(expressions.get(i).toString(cql));
         }
         return sb.toString();
-    }
-
-    private static class CQLFilter extends RowFilter
-    {
-        static CQLFilter NONE = new CQLFilter(Collections.emptyList(), false);
-
-        private CQLFilter(List<Expression> expressions, boolean useStrictFiltering)
-        {
-            super(expressions, useStrictFiltering);
-        }
-
-        protected Transformation<BaseRowIterator<?>> filter(TableMetadata metadata, long nowInSec)
-        {
-            List<Expression> partitionLevelExpressions = new ArrayList<>();
-            List<Expression> rowLevelExpressions = new ArrayList<>();
-            for (Expression e: expressions)
-            {
-                if (e.column.isStatic() || e.column.isPartitionKey())
-                    partitionLevelExpressions.add(e);
-                else
-                    rowLevelExpressions.add(e);
-            }
-
-            long numberOfRegularColumnExpressions = rowLevelExpressions.size();
-            final boolean filterNonStaticColumns = numberOfRegularColumnExpressions > 0;
-
-            return new Transformation<BaseRowIterator<?>>()
-            {
-                DecoratedKey pk;
-
-                protected BaseRowIterator<?> applyToPartition(BaseRowIterator<?> partition)
-                {
-                    pk = partition.partitionKey();
-
-                    // Short-circuit all partitions that won't match based on static and partition keys
-                    for (Expression e : partitionLevelExpressions)
-                        if (!e.isSatisfiedBy(metadata, partition.partitionKey(), partition.staticRow()))
-                        {
-                            partition.close();
-                            return null;
-                        }
-
-                    BaseRowIterator<?> iterator = partition instanceof UnfilteredRowIterator
-                                                  ? Transformation.apply((UnfilteredRowIterator) partition, this)
-                                                  : Transformation.apply((RowIterator) partition, this);
-
-                    if (filterNonStaticColumns && !iterator.hasNext())
-                    {
-                        iterator.close();
-                        return null;
-                    }
-
-                    return iterator;
-                }
-
-                public Row applyToRow(Row row)
-                {
-                    Row purged = row.purge(DeletionPurger.PURGE_ALL, nowInSec, metadata.enforceStrictLiveness());
-                    if (purged == null)
-                        return null;
-
-                    for (Expression e : rowLevelExpressions)
-                        if (!e.isSatisfiedBy(metadata, pk, purged))
-                            return null;
-
-                    return row;
-                }
-            };
-        }
-
-        protected RowFilter withNewExpressions(List<Expression> expressions)
-        {
-            return new CQLFilter(expressions, isStrict());
-        }
     }
 
     public static abstract class Expression
@@ -1112,7 +1084,7 @@ public abstract class RowFilter implements Iterable<RowFilter.Expression>
             for (int i = 0; i < size; i++)
                 expressions.add(Expression.serializer.deserialize(in, version, metadata));
 
-            return new CQLFilter(expressions, useStrictFiltering);
+            return new RowFilter(expressions, useStrictFiltering);
         }
 
         public long serializedSize(RowFilter filter, int version)
