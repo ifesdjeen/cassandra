@@ -141,9 +141,9 @@ public class PartialUpdateHandlingTest extends TestBaseImpl
             this.validationMode = validationMode;
         }
 
-        public Object[] nonKeyColumns()
+        public String[] nonKeyColumns()
         {
-            return Arrays.stream(columns).filter(c -> !c.equals("ck") && !c.equals("pk") && !c.equals("pk2")).toArray();
+            return Arrays.stream(columns).filter(c -> !c.equals("ck") && !c.equals("pk") && !c.equals("pk2")).toArray(String[]::new);
         }
 
         public String tableName()
@@ -216,10 +216,10 @@ public class PartialUpdateHandlingTest extends TestBaseImpl
                 row.put("pk2", partitionKey);
                 row.put("ck", 0);
 
-                for (Object column : specification.nonKeyColumns())
+                for (String column : specification.nonKeyColumns())
                 {
                     int value = nextCellValue++;
-                    row.put((String) column, value);
+                    row.put(column, value);
                     insert.append(", ").append(value);
                 }
 
@@ -242,7 +242,7 @@ public class PartialUpdateHandlingTest extends TestBaseImpl
 
             for (int i = 0; i < PARTITIONS_PER_TEST; i++)
             {
-                for (Object column : specification.nonKeyColumns())
+                for (String column : specification.nonKeyColumns())
                 {
                     if (specification.partialUpdateType == StatementType.INSERT)
                         node = updateReplica(node, column, i);
@@ -254,7 +254,7 @@ public class PartialUpdateHandlingTest extends TestBaseImpl
             }
         }
 
-        private int updateReplica(int node, Object column, int partitionIndex)
+        private int updateReplica(int node, String column, int partitionIndex)
         {
             int value = nextCellValue++;
 
@@ -263,7 +263,7 @@ public class PartialUpdateHandlingTest extends TestBaseImpl
             if (currentRows.size() > partitionIndex)
             {
                 // A row already exists, so just update it:
-                currentRows.get(partitionIndex).put((String) column, value);
+                currentRows.get(partitionIndex).put(column, value);
             }
             else
             {
@@ -272,7 +272,7 @@ public class PartialUpdateHandlingTest extends TestBaseImpl
                 row.put("pk", partitionKey);
                 row.put("pk2", partitionKey);
                 row.put("ck", 0);
-                row.put((String) column, value);
+                row.put(column, value);
                 currentRows.add(row);
 
                 assert currentRows.size() == partitionIndex + 1 : "Partition " + partitionIndex + " added at position " + (currentRows.size() - 1);
@@ -333,8 +333,8 @@ public class PartialUpdateHandlingTest extends TestBaseImpl
                 int partitionKey = specification.partitionKey + i;
                 List<Object> expectedRow = Lists.newArrayList(partitionKey, partitionKey, 0);
 
-                for (Object column : specification.nonKeyColumns())
-                    expectedRow.add(currentRows.get(i).get((String) column));
+                for (String column : specification.nonKeyColumns())
+                    expectedRow.add(currentRows.get(i).get(column));
 
                 expectedRows[i] = expectedRow.toArray();
             }
