@@ -21,8 +21,10 @@ package org.apache.cassandra.distributed.test.log;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
 
 import com.google.common.util.concurrent.Uninterruptibles;
+import org.junit.Assert;
 import org.junit.Test;
 
 import org.apache.cassandra.distributed.Cluster;
@@ -43,6 +45,7 @@ import org.apache.cassandra.tcm.ClusterMetadataService;
 import org.apache.cassandra.tcm.Epoch;
 import org.apache.cassandra.tcm.log.LogState;
 import org.apache.cassandra.tcm.transformations.TriggerSnapshot;
+import org.apache.cassandra.utils.FBUtilities;
 
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
@@ -79,6 +82,7 @@ public class FetchLogFromPeersTest extends TestBaseImpl
             cluster.schemaChange(withKeyspace("alter keyspace %s with replication = {'class':'SimpleStrategy', 'replication_factor':3}"));
             cluster.schemaChange(withKeyspace("create table %s.tbl (id int primary key)"));
 
+            // Create divergence between node 1 and 2
             cluster.filters().inbound().from(1).to(2).drop();
 
             IInstanceConfig config = cluster.newInstanceConfig();
@@ -87,14 +91,32 @@ public class FetchLogFromPeersTest extends TestBaseImpl
 
             cluster.get(1).shutdown().get();
 
+            ClusterUtils.waitForCMSToQuiesce(cluster, cluster.get(3), 1, 2);
+            Assert.assertEquals(2,
+                                cluster.stream().filter(i -> i.config().num() != 1).map(i -> {
+                                    return i.callOnInstance(() -> {
+                                        System.out.println("GOT EPOCH = " + FBUtilities.getBroadcastAddressAndPort() + " " + ClusterMetadata.current().epoch.getEpoch());
+                                        return ClusterMetadata.current().epoch.getEpoch();
+                                    });
+                                }).collect(Collectors.toSet()).size());
+
             // node2 is behind, writing to it will cause a failure, but it will then catch up
             try
             {
                 cluster.coordinator(2).execute(withKeyspace("insert into %s.tbl (id) values (3)"), ConsistencyLevel.QUORUM);
                 fail("writing should fail");
             }
-            catch (Exception ignored) {}
-
+            catch (Exception writeTimeout)
+            {
+                Assert.assertTrue(writeTimeout.getMessage().contains("Operation timed out"));
+            }
+            ClusterUtils.waitForCMSToQuiesce(cluster, cluster.get(3), 1);
+            Assert.assertEquals(1,
+                                cluster.stream().filter(i -> i.config().num() != 1).map(i -> {
+                                    return i.callOnInstance(() -> {
+                                        return ClusterMetadata.current().epoch.getEpoch();
+                                    });
+                                }).collect(Collectors.toSet()).size());
             cluster.coordinator(2).execute(withKeyspace("insert into %s.tbl (id) values (3)"), ConsistencyLevel.QUORUM);
         }
     }
