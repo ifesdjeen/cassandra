@@ -356,12 +356,18 @@ public class AccordCommandStore extends CommandStore implements CacheSize
 
     boolean validateCommand(TxnId txnId, Command evicting)
     {
+        if (!Invariants.isParanoid())
+            return true;
+
         Command reloaded = loadCommand(txnId);
-        return (evicting == null && reloaded == null) || (evicting != null && reloaded != null && reloaded.isEqualOrFuller(evicting));
+        return Objects.equals(evicting, reloaded);
     }
 
     boolean validateTimestampsForKey(RoutableKey key, TimestampsForKey evicting)
     {
+        if (!Invariants.isParanoid())
+            return true;
+
         TimestampsForKey reloaded = AccordKeyspace.unsafeLoadTimestampsForKey(this, (PartitionKey) key);
         return Objects.equals(evicting, reloaded);
     }
@@ -378,6 +384,9 @@ public class AccordCommandStore extends CommandStore implements CacheSize
 
     boolean validateCommandsForKey(RoutableKey key, CommandsForKey evicting)
     {
+        if (!Invariants.isParanoid())
+            return true;
+
         CommandsForKey reloaded = AccordKeyspace.loadCommandsForKey(this, (PartitionKey) key);
         return Objects.equals(evicting, reloaded);
     }
@@ -494,7 +503,6 @@ public class AccordCommandStore extends CommandStore implements CacheSize
             commandsForRanges.preExecute();
 
         current = AccordSafeCommandStore.create(preLoadContext, commands, timestampsForKeys, commandsForKeys, commandsForRanges, this);
-
         return current;
     }
 
@@ -506,8 +514,14 @@ public class AccordCommandStore extends CommandStore implements CacheSize
     public void completeOperation(AccordSafeCommandStore store)
     {
         Invariants.checkState(current == store);
-        current.complete();
-        current = null;
+        try
+        {
+            current.postExecute();
+        }
+        finally
+        {
+            current = null;
+        }
     }
 
     public void abortCurrentOperation()

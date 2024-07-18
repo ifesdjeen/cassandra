@@ -83,7 +83,11 @@ public class AsyncLoader
                                                                                                 List<AsyncChain<?>> listenChains)
     {
         S safeRef = cache.acquire(key);
-        context.put(key, safeRef);
+        if (context.putIfAbsent(key, safeRef) != null)
+        {
+            cache.release(safeRef);
+            return;
+        }
         AccordCachingState.Status status = safeRef.globalStatus(); // globalStatus() completes
         switch (status)
         {
@@ -140,8 +144,7 @@ public class AsyncLoader
         switch (keysOrRanges.domain())
         {
             case Key:
-                // cast to Keys fails...
-                Iterable<Key> keys = (Iterable<Key>) keysOrRanges;
+                AbstractKeys<Key> keys = (AbstractKeys<Key>) keysOrRanges;
                 keys.forEach(key -> referenceAndAssembleReadsForKey(key, context, chains));
                 break;
             case Range:
@@ -233,9 +236,11 @@ public class AsyncLoader
         {
             case INITIALIZED:
                 state(State.SETUP);
+
             case SETUP:
                 readResult = referenceAndDispatchReads(context);
                 state(State.LOADING);
+
             case LOADING:
                 if (readResult != null)
                 {
@@ -252,13 +257,17 @@ public class AsyncLoader
                     }
                 }
                 state(State.FINISHED);
+
             case FINISHED:
                 break;
+
             default:
                 throw new IllegalStateException("Unexpected state: " + state);
         }
 
-        logger.trace("Exiting load for {} with state {}: {} {}", callback, state, txnIds, keysOrRanges);
+        if (logger.isTraceEnabled())
+            logger.trace("Exiting load for {} with state {}: {} {}", callback, state, txnIds, keysOrRanges);
+
         return state == State.FINISHED;
     }
 }

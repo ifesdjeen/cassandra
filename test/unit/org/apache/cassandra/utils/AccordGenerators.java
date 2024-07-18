@@ -48,7 +48,6 @@ import org.apache.cassandra.service.accord.api.AccordRoutingKey;
 import org.apache.cassandra.service.accord.api.PartitionKey;
 import org.quicktheories.impl.JavaRandom;
 
-import static accord.utils.AccordGens.txnIds;
 import static org.apache.cassandra.service.accord.AccordTestUtils.TABLE_ID1;
 import static org.apache.cassandra.service.accord.AccordTestUtils.createPartialTxn;
 
@@ -70,7 +69,7 @@ public class AccordGenerators
 
     public static Gen<Command> commands()
     {
-        Gen<TxnId> ids = txnIds();
+        Gen<TxnId> ids = AccordGens.txnIds();
         //TODO switch to Status once all types are supported
         Gen<SupportedCommandTypes> supportedTypes = Gens.enums().all(SupportedCommandTypes.class);
         //TODO goes against fuzz testing, and also limits to a very specific table existing...
@@ -207,6 +206,16 @@ public class AccordGenerators
         return AccordGens.keyDeps(AccordGenerators.keys(partitioner));
     }
 
+    public static Gen<KeyDeps> directKeyDepsGen()
+    {
+        return AccordGens.directKeyDeps(AccordGenerators.keys());
+    }
+
+    public static Gen<KeyDeps> directKeyDepsGen(IPartitioner partitioner)
+    {
+        return AccordGens.directKeyDeps(AccordGenerators.keys(partitioner));
+    }
+
     public static Gen<RangeDeps> rangeDepsGen()
     {
         return AccordGens.rangeDeps(AccordGenerators.range());
@@ -219,12 +228,12 @@ public class AccordGenerators
 
     public static Gen<Deps> depsGen()
     {
-        return AccordGens.deps(keyDepsGen(), rangeDepsGen());
+        return AccordGens.deps(keyDepsGen(), rangeDepsGen(), directKeyDepsGen());
     }
 
     public static Gen<Deps> depsGen(IPartitioner partitioner)
     {
-        return AccordGens.deps(keyDepsGen(partitioner), rangeDepsGen(partitioner));
+        return AccordGens.deps(keyDepsGen(partitioner), rangeDepsGen(partitioner), directKeyDepsGen(partitioner));
     }
 
     public static <T> Gen<T> fromQT(org.quicktheories.core.Gen<T> qt)

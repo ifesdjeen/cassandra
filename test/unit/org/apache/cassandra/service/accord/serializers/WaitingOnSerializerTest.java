@@ -57,13 +57,13 @@ public class WaitingOnSerializerTest
             TxnId txnId = TxnId.NONE;
             if (waitingOn.appliedOrInvalidated != null) txnId = new TxnId(txnId.epoch(), txnId.hlc(), txnId.kind(), Routable.Domain.Range, txnId.node);
             buffer.clear();
-            long expectedSize = WaitingOnSerializer.serializedSize(txnId, waitingOn);
+            long expectedSize = WaitingOnSerializer.serializedSize(waitingOn);
             WaitingOnSerializer.serialize(txnId, waitingOn, buffer);
             Assertions.assertThat(buffer.getLength()).isEqualTo(expectedSize);
-            Command.WaitingOn read = WaitingOnSerializer.deserialize(txnId, waitingOn.keys, waitingOn.txnIds, new DataInputBuffer(buffer.unsafeGetBufferAndFlip(), false));
+            Command.WaitingOn read = WaitingOnSerializer.deserialize(txnId, waitingOn.keys, waitingOn.directRangeDeps, waitingOn.directKeyDeps, new DataInputBuffer(buffer.unsafeGetBufferAndFlip(), false));
             Assertions.assertThat(read)
                       .isEqualTo(waitingOn)
-                      .isEqualTo(WaitingOnSerializer.deserialize(txnId, waitingOn.keys, waitingOn.txnIds, WaitingOnSerializer.serialize(txnId, waitingOn)));
+                      .isEqualTo(WaitingOnSerializer.deserialize(txnId, waitingOn.keys, waitingOn.directRangeDeps, waitingOn.directKeyDeps, WaitingOnSerializer.serialize(txnId, waitingOn)));
         });
     }
 
@@ -99,7 +99,7 @@ public class WaitingOnSerializerTest
                 }
             }
 
-            return new Command.WaitingOn(deps.keyDeps.keys(), deps.rangeDeps.txnIds(), Utils.ensureImmutable(waitingOn), Utils.ensureImmutable(appliedOrInvalidated));
+            return new Command.WaitingOn(deps.keyDeps.keys(), deps.rangeDeps, deps.directKeyDeps, Utils.ensureImmutable(waitingOn), Utils.ensureImmutable(appliedOrInvalidated));
         };
     }
 }

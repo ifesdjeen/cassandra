@@ -27,9 +27,33 @@ import accord.local.Command.TransientListener;
 import accord.local.Listeners;
 import accord.local.SafeCommand;
 import accord.primitives.TxnId;
+import org.apache.cassandra.utils.concurrent.Ref;
 
 public class AccordSafeCommand extends SafeCommand implements AccordSafeState<TxnId, Command>
 {
+    public static class DebugAccordSafeCommand extends AccordSafeCommand
+    {
+        final Ref<?> selfRef;
+        public DebugAccordSafeCommand(AccordCachingState<TxnId, Command> global)
+        {
+            super(global);
+            selfRef = new Ref<>(this, null);
+            selfRef.debug(global.key().toString());
+        }
+
+        @Override
+        public void invalidate()
+        {
+            super.invalidate();
+            selfRef.release();
+        }
+
+        public static void trace(AccordSafeCommand safeCommand, String message)
+        {
+            ((DebugAccordSafeCommand)safeCommand).selfRef.debug(message);
+        }
+    }
+
     private boolean invalidated;
     private final AccordCachingState<TxnId, Command> global;
     private Command original;
@@ -109,13 +133,6 @@ public class AccordSafeCommand extends SafeCommand implements AccordSafeState<Tx
         checkNotInvalidated();
         original = global.get();
         current = original;
-    }
-
-    @Override
-    public void postExecute()
-    {
-        checkNotInvalidated();
-        global.set(current);
     }
 
     @Override

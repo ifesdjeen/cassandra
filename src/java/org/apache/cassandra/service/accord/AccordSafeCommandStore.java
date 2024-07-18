@@ -299,27 +299,6 @@ public class AccordSafeCommandStore extends AbstractSafeCommandStore<AccordSafeC
     }
 
     @Override
-    protected void invalidateSafeState()
-    {
-        commands.values().forEach(AccordSafeCommand::invalidate);
-        timestampsForKeys.values().forEach(AccordSafeTimestampsForKey::invalidate);
-        commandsForKeys.values().forEach(AccordSafeCommandsForKey::invalidate);
-    }
-
-    public void postExecute(Map<TxnId, AccordSafeCommand> commands,
-                            Map<Key, AccordSafeTimestampsForKey> timestampsForKey,
-                            Map<Key, AccordSafeCommandsForKey> commandsForKeys,
-                            @Nullable AccordSafeCommandsForRanges commandsForRanges)
-    {
-        postExecute();
-        commands.values().forEach(AccordSafeState::postExecute);
-        timestampsForKey.values().forEach(AccordSafeState::postExecute);
-        commandsForKeys.values().forEach(AccordSafeState::postExecute);
-        if (commandsForRanges != null)
-            commandsForRanges.postExecute();
-    }
-
-    @Override
     public String toString()
     {
         return "AccordSafeCommandStore(id=" + commandStore().id() + ")";

@@ -262,12 +262,13 @@ public abstract class AsyncOperation<R> extends AsyncChains.Head<R> implements R
                     }
                 }
 
-                safeStore.postExecute(context.commands, context.timestampsForKey, context.commandsForKey, context.commandsForRanges);
-                context.releaseResources(commandStore);
                 commandStore.completeOperation(safeStore);
+                context.releaseResources(commandStore);
+
                 if (diffs != null)
                 {
                     state(COMPLETING);
+                    // TODO (required): we should allow for an exception to be provided by the commit log if it fails (though we probably need to panic in this case anyway)
                     this.commandStore.appendCommands(diffs, sanityCheck, () -> finish(result, null));
                     return;
                 }
@@ -316,6 +317,12 @@ public abstract class AsyncOperation<R> extends AsyncChains.Head<R> implements R
     {
         Invariants.checkState(this.callback == null);
         this.callback = callback;
+        if (commandStore.inStore())
+        {
+            state(LOADING);
+            if (!loader.load(context, this::onLoaded))
+                return;
+        }
         commandStore.executor().execute(this);
     }
 

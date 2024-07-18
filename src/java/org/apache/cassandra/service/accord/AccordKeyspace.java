@@ -550,9 +550,8 @@ public class AccordKeyspace
               + format("key %s, ", KEY_TUPLE)
               + "data blob, "
               + "PRIMARY KEY((store_id, key_token, key))"
-              + ')')
-               // TODO (expected): make this uncompressed, as not very compressable (except perhaps the primary key, but could switch to operating on tokens directly)
-//               + " WITH compression = {'enabled':'false'};")
+              + ')'
+               + " WITH compression = {'class':'NoopCompressor'};")
         .partitioner(FOR_KEYS_LOCAL_PARTITIONER)
         .build();
     }
@@ -624,7 +623,7 @@ public class AccordKeyspace
             if (current == null)
                 return null;
 
-            CommandsForKey updated = current.withRedundantBefore(redundantBefore);
+            CommandsForKey updated = current.withRedundantBeforeAtLeast(redundantBefore);
             if (current == updated)
                 return row;
 

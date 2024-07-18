@@ -374,7 +374,7 @@ public class AsyncLoaderTest
     @Test
     public void inProgressCFKSaveTest()
     {
-        this.inProgressCFKSaveTest(COMMANDS, AccordCommandStore::commandsForKeyCache, context -> context.commandsForKey, CommandsForKey::new, (cfk, u) -> cfk.update(null, u));
+        this.inProgressCFKSaveTest(COMMANDS, AccordCommandStore::commandsForKeyCache, context -> context.commandsForKey, CommandsForKey::new, (cfk, u) -> cfk.update(u).cfk());
     }
 
     @Test

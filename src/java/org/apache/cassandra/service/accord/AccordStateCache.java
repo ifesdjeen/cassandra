@@ -474,6 +474,7 @@ public class AccordStateCache extends IntrusiveLinkedList<AccordCachingState<?,?
 
             if (safeRef.hasUpdate())
                 node.set(safeRef.current());
+            safeRef.invalidate();
 
             maybeUpdateSize(node, heapEstimator);
 
