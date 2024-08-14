@@ -517,12 +517,9 @@ public class AccordTestUtils
 
     public static void appendCommandsBlocking(AccordCommandStore commandStore, Command before, Command after)
     {
-        SavedCommand.SavedDiff diff = SavedCommand.diff(before, after);
-        if (diff != null)
-        {
-            Condition condition = Condition.newOneTimeCondition();
-            commandStore.appendCommands(Collections.singletonList(diff), null, condition::signal);
-            condition.awaitUninterruptibly(30, TimeUnit.SECONDS);
-        }
+        SavedCommand.Writer<TxnId> diff = new SavedCommand.DiffWriter(before, after);
+        Condition condition = Condition.newOneTimeCondition();
+        commandStore.appendCommands(Collections.singletonList(diff), null, condition::signal);
+        condition.awaitUninterruptibly(30, TimeUnit.SECONDS);
     }
 }
