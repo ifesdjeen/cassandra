@@ -53,7 +53,6 @@ import accord.impl.TimestampsForKey;
 import accord.local.Command;
 import accord.local.CommandStore;
 import accord.local.DurableBefore;
-import accord.local.Listeners;
 import accord.local.Node;
 import accord.local.RedundantBefore;
 import accord.local.SaveStatus;
@@ -146,7 +145,6 @@ import org.apache.cassandra.service.accord.serializers.CommandSerializers;
 import org.apache.cassandra.service.accord.serializers.CommandStoreSerializers;
 import org.apache.cassandra.service.accord.serializers.CommandsForKeySerializer;
 import org.apache.cassandra.service.accord.serializers.KeySerializers;
-import org.apache.cassandra.service.accord.serializers.ListenerSerializers;
 import org.apache.cassandra.service.accord.serializers.TopologySerializers;
 import org.apache.cassandra.utils.Clock.Global;
 import org.apache.cassandra.utils.btree.BTree;
@@ -249,7 +247,6 @@ public class AccordKeyspace
     public static class LocalVersionedSerializers
     {
         static final LocalVersionedSerializer<Route<?>> route = localSerializer(KeySerializers.route);
-        static final LocalVersionedSerializer<Command.DurableAndIdempotentListener> listeners = localSerializer(ListenerSerializers.listener);
         static final LocalVersionedSerializer<Topology> topology = localSerializer(TopologySerializers.topology);
         static final LocalVersionedSerializer<ReducingRangeMap<Timestamp>> rejectBefore = localSerializer(CommandStoreSerializers.rejectBefore);
         static final LocalVersionedSerializer<DurableBefore> durableBefore = localSerializer(CommandStoreSerializers.durableBefore);
@@ -1132,18 +1129,6 @@ public class AccordKeyspace
         {
             throw new RuntimeException(e);
         }
-    }
-
-    private static Listeners.Immutable deserializeListeners(UntypedResultSet.Row row) throws IOException
-    {
-        Set<ByteBuffer> serialized = row.getSet("listeners", BytesType.instance);
-        if (serialized == null || serialized.isEmpty())
-            return Listeners.Immutable.EMPTY;
-
-        Listeners<Command.DurableAndIdempotentListener> result = new Listeners<>();
-        for (ByteBuffer bytes : serialized)
-            result.add(deserialize(bytes, LocalVersionedSerializers.listeners));
-        return new Listeners.Immutable(result);
     }
 
     public static PartitionKey deserializeKey(ByteBuffer buffer)

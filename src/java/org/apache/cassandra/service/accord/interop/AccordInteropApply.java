@@ -21,10 +21,10 @@ package org.apache.cassandra.service.accord.interop;
 import java.util.BitSet;
 import javax.annotation.Nullable;
 
+import accord.api.LocalListeners;
 import accord.api.Result;
 import accord.local.Command;
 import accord.local.Node.Id;
-import accord.local.PreLoadContext;
 import accord.local.SafeCommand;
 import accord.local.SafeCommandStore;
 import accord.local.Status;
@@ -47,9 +47,9 @@ import org.apache.cassandra.io.IVersionedSerializer;
 import org.apache.cassandra.service.accord.AccordMessageSink.AccordMessageType;
 import org.apache.cassandra.service.accord.serializers.ApplySerializers.ApplySerializer;
 import org.apache.cassandra.service.accord.txn.AccordUpdate;
+import org.jctools.queues.MpscChunkedArrayQueue;
 
 import static accord.utils.Invariants.checkState;
-import static accord.utils.MapReduceConsume.forEach;
 import static com.google.common.base.Preconditions.checkArgument;
 
 /**
@@ -58,7 +58,7 @@ import static com.google.common.base.Preconditions.checkArgument;
  * // and these all are a bit copy pasta in terms of managing things like waiting on, obsoletion, cancellation/listeners, insufficient etc. and it would be less fragile
  * // in the long run to not duplicate these kind of difficult to get right mechanism and have a single pluggable framework to request each specific behavior
  */
-public class AccordInteropApply extends Apply implements Command.TransientListener
+public class AccordInteropApply extends Apply implements LocalListeners.ComplexListener
 {
     public static final Apply.Factory FACTORY = new Apply.Factory()
     {
@@ -85,6 +85,7 @@ public class AccordInteropApply extends Apply implements Command.TransientListen
 
     transient BitSet waitingOn;
     transient int waitingOnCount;
+    MpscChunkedArrayQueue<LocalListeners.Registered> listeners = new MpscChunkedArrayQueue<>(4, Integer.MAX_VALUE);
 
     private AccordInteropApply(Kind kind, TxnId txnId, PartialRoute<?> route, long waitForEpoch, Seekables<?, ?> keys, Timestamp executeAt, PartialDeps deps, @Nullable PartialTxn txn, @Nullable FullRoute<?> fullRoute, Writes writes, Result result)
     {
@@ -137,7 +138,7 @@ public class AccordInteropApply extends Apply implements Command.TransientListen
                     waitingOn.set(safeStore.commandStore().id());
                     ++waitingOnCount;
                 }
-                safeCommand.addListener(this);
+                listeners.add(safeStore.register(txnId, this));
                 break;
 
             case Applied:
@@ -190,11 +191,7 @@ public class AccordInteropApply extends Apply implements Command.TransientListen
 
     private void cancel()
     {
-        node.commandStores().mapReduceConsume(this, waitingOn.stream(), forEach(safeStore -> {
-            SafeCommand safeCommand = safeStore.ifInitialised(txnId);
-            if (safeCommand != null)
-                safeCommand.removeListener(this);
-        }, node.agent()));
+        listeners.drain(LocalListeners.Registered::cancel);
     }
     
     @Override
@@ -234,7 +231,7 @@ public class AccordInteropApply extends Apply implements Command.TransientListen
     }
 
     @Override
-    public void onChange(SafeCommandStore safeStore, SafeCommand safeCommand)
+    public boolean notify(SafeCommandStore safeStore, SafeCommand safeCommand)
     {
         Command command = safeCommand.current();
 
@@ -248,20 +245,14 @@ public class AccordInteropApply extends Apply implements Command.TransientListen
             case PreCommitted:
             case Committed:
             case PreApplied:
-                return;
+                return true;
 
             case Applied:
             case Invalidated:
             case Truncated:
         }
 
-        if (safeCommand.removeListener(this))
-            ack();
-    }
-
-    @Override
-    public PreLoadContext listenerPreLoadContext(TxnId caller)
-    {
-        return PreLoadContext.contextFor(txnId);
+        ack();
+        return false;
     }
 }

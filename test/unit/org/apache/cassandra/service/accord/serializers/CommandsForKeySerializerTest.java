@@ -356,7 +356,7 @@ public class CommandsForKeySerializerTest
     @Test
     public void serde()
     {
-        testOne(-669467611022826851L);
+        testOne(-8928257345122888710L);
         Random random = new Random();
         for (int i = 0 ; i < 10000 ; ++i)
         {

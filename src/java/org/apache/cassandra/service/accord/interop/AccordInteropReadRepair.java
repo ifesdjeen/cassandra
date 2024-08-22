@@ -108,7 +108,7 @@ public class AccordInteropReadRepair extends ReadData
 
     private final Mutation mutation;
 
-    private static final IVersionedSerializer<Data> noop_data_serializer = new IVersionedSerializer<Data>()
+    private static final IVersionedSerializer<Data> noop_data_serializer = new IVersionedSerializer<>()
     {
         @Override
         public void serialize(Data t, DataOutputPlus out, int version) throws IOException {}
@@ -156,9 +156,9 @@ public class AccordInteropReadRepair extends ReadData
     }
 
     @Override
-    protected ReadOk constructReadOk(Ranges unavailable, Data data)
+    protected ReadOk constructReadOk(Ranges unavailable, Ranges notReady, Data data)
     {
-        return new InteropReadRepairOk(unavailable, data);
+        return new InteropReadRepairOk(unavailable, notReady, data);
     }
 
     @Override
@@ -169,9 +169,9 @@ public class AccordInteropReadRepair extends ReadData
 
     private static class InteropReadRepairOk extends ReadOk
     {
-        public InteropReadRepairOk(@Nullable Ranges unavailable, @Nullable Data data)
+        public InteropReadRepairOk(@Nullable Ranges unavailable, @Nullable Ranges notReady, @Nullable Data data)
         {
-            super(unavailable, data);
+            super(unavailable, notReady, data);
         }
 
         @Override

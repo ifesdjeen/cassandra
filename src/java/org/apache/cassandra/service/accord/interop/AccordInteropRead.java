@@ -182,9 +182,9 @@ public class AccordInteropRead extends ReadData
     }
 
     @Override
-    protected ReadOk constructReadOk(Ranges unavailable, Data data)
+    protected ReadOk constructReadOk(Ranges unavailable, Ranges notReady, Data data)
     {
-        return new InteropReadOk(unavailable, data);
+        return new InteropReadOk(unavailable, notReady, data);
     }
 
     @Override
@@ -204,9 +204,9 @@ public class AccordInteropRead extends ReadData
 
     private static class InteropReadOk extends ReadOk
     {
-        public InteropReadOk(@Nullable Ranges unavailable, @Nullable Data data)
+        public InteropReadOk(@Nullable Ranges unavailable, @Nullable Ranges notReady, @Nullable Data data)
         {
-            super(unavailable, data);
+            super(unavailable, notReady, data);
         }
 
         @Override

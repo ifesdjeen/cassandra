@@ -25,7 +25,6 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
@@ -55,8 +54,10 @@ import accord.coordinate.Timeout;
 import accord.coordinate.TopologyMismatch;
 import accord.impl.AbstractConfigurationService;
 import accord.impl.CoordinateDurabilityScheduling;
-import accord.impl.SimpleProgressLog;
+import accord.impl.DefaultLocalListeners;
+import accord.impl.DefaultRemoteListeners;
 import accord.impl.SizeOfIntersectionSorter;
+import accord.impl.progresslog.DefaultProgressLogs;
 import accord.local.CommandStores;
 import accord.local.DurableBefore;
 import accord.local.Node;
@@ -64,7 +65,6 @@ import accord.local.Node.Id;
 import accord.local.NodeTimeService;
 import accord.local.RedundantBefore;
 import accord.local.ShardDistributor.EvenSplit;
-import accord.messages.LocalRequest;
 import accord.messages.Request;
 import accord.primitives.Keys;
 import accord.primitives.Ranges;
@@ -352,7 +352,6 @@ public class AccordService implements IAccordService, Shutdownable
         this.journal = new AccordJournal(configService, DatabaseDescriptor.getAccord().journal);
         this.node = new Node(localId,
                              messageSink,
-                             this::handleLocalRequest,
                              configService,
                              AccordService::uniqueNow,
                              NodeTimeService.elapsedWrapperFromMonotonicSource(NANOSECONDS, Clock.Global::nanoTime),
@@ -363,7 +362,9 @@ public class AccordService implements IAccordService, Shutdownable
                              scheduler,
                              CompositeTopologySorter.create(SizeOfIntersectionSorter.SUPPLIER,
                                                             new AccordTopologySorter.Supplier(configService, DatabaseDescriptor.getEndpointSnitch())),
-                             SimpleProgressLog::new,
+                             DefaultRemoteListeners::new,
+                             DefaultProgressLogs::new,
+                             DefaultLocalListeners.Factory::new,
                              AccordCommandStores.factory(journal),
                              new AccordInteropFactory(agent, configService),
                              configuration);
@@ -739,13 +740,6 @@ public class AccordService implements IAccordService, Shutdownable
             metrics.timeouts.mark();
             throw newTimeout(asyncTxnResult.txnId, isWrite, consistencyLevel);
         }
-    }
-
-    private <R> void handleLocalRequest(LocalRequest<R> request, BiConsumer<? super R, Throwable> callback, Node node)
-    {
-        // currently, we only create LocalRequests that have side effects and need to be persisted
-        Invariants.checkState(request.type().hasSideEffects());
-        journal.processLocalRequest(request, callback);
     }
 
     private static RequestTimeoutException newTimeout(TxnId txnId, boolean isWrite, ConsistencyLevel consistencyLevel)

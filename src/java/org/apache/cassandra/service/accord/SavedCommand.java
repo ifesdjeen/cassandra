@@ -28,7 +28,6 @@ import com.google.common.annotations.VisibleForTesting;
 import accord.api.Result;
 import accord.local.Command;
 import accord.local.CommonAttributes;
-import accord.local.Listeners;
 import accord.local.SaveStatus;
 import accord.local.Status;
 import accord.primitives.Ballot;
@@ -69,8 +68,7 @@ public class SavedCommand
         PARTIAL_DEPS,
         ADDITIONAL_KEYS,
         WAITING_ON,
-        WRITES,
-        LISTENERS
+        WRITES
     }
 
     public final TxnId txnId;
@@ -88,7 +86,6 @@ public class SavedCommand
     public final Seekables<?, ?> additionalKeysOrRanges;
 
     public final Writes writes;
-    public final Listeners.Immutable<Command.DurableAndIdempotentListener> listeners;
 
     public SavedCommand(TxnId txnId,
                         Timestamp executeAt,
@@ -103,8 +100,7 @@ public class SavedCommand
                         PartialDeps partialDeps,
                         Seekables<?, ?> additionalKeysOrRanges,
 
-                        Writes writes,
-                        Listeners.Immutable<Command.DurableAndIdempotentListener> listeners)
+                        Writes writes)
     {
         this.txnId = txnId;
         this.executeAt = executeAt;
@@ -120,7 +116,6 @@ public class SavedCommand
         this.additionalKeysOrRanges = additionalKeysOrRanges;
 
         this.writes = writes;
-        this.listeners = listeners;
     }
 
     public static SavedDiff diff(Command before, Command after)
@@ -144,8 +139,7 @@ public class SavedCommand
                              ifNotEqual(before, after, Command::additionalKeysOrRanges, false),
 
                              waitingOn,
-                             ifNotEqual(before, after, Command::writes, false),
-                             ifNotEqual(before, after, Command::durableListeners, true));
+                             ifNotEqual(before, after, Command::writes, false));
     }
 
     static Command reconstructFromDiff(List<LoadedDiff> diffs)
@@ -178,7 +172,6 @@ public class SavedCommand
 
         WaitingOnProvider waitingOnProvider = null;
         Writes writes = null;
-        Listeners.Immutable listeners = null;
 
         for (LoadedDiff diff : diffs)
         {
@@ -209,8 +202,6 @@ public class SavedCommand
                 waitingOnProvider = diff.waitingOn;
             if (diff.writes != null)
                 writes = diff.writes;
-            if (diff.listeners != null)
-                listeners = diff.listeners;
         }
 
         CommonAttributes.Mutable attrs = new CommonAttributes.Mutable(txnId);
@@ -227,8 +218,6 @@ public class SavedCommand
             attrs.partialDeps(partialDeps);
         if (additionalKeysOrRanges != null)
             attrs.additionalKeysOrRanges(additionalKeysOrRanges);
-        if (listeners != null && !listeners.isEmpty())
-            attrs.setListeners(listeners);
 
         Command.WaitingOn waitingOn = null;
         if (waitingOnProvider != null)
@@ -306,10 +295,9 @@ public class SavedCommand
                          Seekables<?, ?> additionalKeysOrRanges,
 
                          Command.WaitingOn waitingOn,
-                         Writes writes,
-                         Listeners.Immutable<Command.DurableAndIdempotentListener> listeners)
+                         Writes writes)
         {
-            super(txnId, executeAt, saveStatus, durability, acceptedOrCommitted, promised, route, partialTxn, partialDeps, additionalKeysOrRanges, writes, listeners);
+            super(txnId, executeAt, saveStatus, durability, acceptedOrCommitted, promised, route, partialTxn, partialDeps, additionalKeysOrRanges, writes);
             this.waitingOn = waitingOn;
         }
 
@@ -350,10 +338,9 @@ public class SavedCommand
                           Seekables<?, ?> additionalKeysOrRanges,
 
                           WaitingOnProvider waitingOn,
-                          Writes writes,
-                          Listeners.Immutable<Command.DurableAndIdempotentListener> listeners)
+                          Writes writes)
         {
-            super(txnId, executeAt, saveStatus, durability, acceptedOrCommitted, promised, route, partialTxn, partialDeps, additionalKeysOrRanges, writes, listeners);
+            super(txnId, executeAt, saveStatus, durability, acceptedOrCommitted, promised, route, partialTxn, partialDeps, additionalKeysOrRanges, writes);
             this.waitingOn = waitingOn;
         }
 
@@ -406,12 +393,6 @@ public class SavedCommand
             if (diff.writes != null)
                 CommandSerializers.writes.serializedSize(diff.writes, userVersion);
 
-            if (diff.listeners != null && !diff.listeners.isEmpty())
-            {
-                size += Byte.BYTES;
-                for (Command.DurableAndIdempotentListener listener : diff.listeners)
-                    size += AccordKeyspace.LocalVersionedSerializers.listeners.serializedSize(listener);
-            }
             return (int) size;
         }
 
@@ -456,14 +437,6 @@ public class SavedCommand
 
             if (diff.writes != null)
                 CommandSerializers.writes.serialize(diff.writes, out, userVersion);
-
-            if (diff.listeners != null && !diff.listeners.isEmpty())
-            {
-                out.writeByte(diff.listeners.size());
-                for (Command.DurableAndIdempotentListener listener : diff.listeners)
-                    AccordKeyspace.LocalVersionedSerializers.listeners.serialize(listener, out);
-            }
-
         }
 
         private static int getFlags(SavedDiff diff)
@@ -497,8 +470,6 @@ public class SavedCommand
                 flags = setBit(flags, HasFields.WAITING_ON.ordinal());
             if (diff.writes != null)
                 flags = setBit(flags, HasFields.WRITES.ordinal());
-            if (diff.listeners != null && !diff.listeners.isEmpty())
-                flags = setBit(flags, HasFields.LISTENERS.ordinal());
             return flags;
         }
 
@@ -522,7 +493,6 @@ public class SavedCommand
 
             WaitingOnProvider waitingOn = (txn, deps) -> null;
             Writes writes = null;
-            Listeners.Immutable listeners = null;
 
             if (isSet(flags, HasFields.TXN_ID.ordinal()))
                 txnId = CommandSerializers.txnId.deserialize(in, userVersion);
@@ -567,15 +537,6 @@ public class SavedCommand
             if (isSet(flags, HasFields.WRITES.ordinal()))
                 writes = CommandSerializers.writes.deserialize(in, userVersion);
 
-            if (isSet(flags, HasFields.LISTENERS.ordinal()))
-            {
-                Listeners builder = Listeners.Immutable.EMPTY.mutable();
-                int cnt = in.readByte();
-                for (int i = 0; i < cnt; i++)
-                    builder.add(AccordKeyspace.LocalVersionedSerializers.listeners.deserialize(in));
-                listeners = new Listeners.Immutable(builder);
-            }
-
             return new LoadedDiff(txnId,
                                   executedAt,
                                   saveStatus,
@@ -590,8 +551,7 @@ public class SavedCommand
                                   additionalKeysOrRanges,
 
                                   waitingOn,
-                                  writes,
-                                  listeners);
+                                  writes);
         }
     }
 

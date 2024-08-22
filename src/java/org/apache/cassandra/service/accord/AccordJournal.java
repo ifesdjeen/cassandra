@@ -41,7 +41,6 @@ import accord.local.Command;
 import accord.local.Node;
 import accord.messages.AbstractEpochRequest;
 import accord.messages.Commit;
-import accord.messages.LocalRequest;
 import accord.messages.Message;
 import accord.messages.MessageType;
 import accord.messages.ReplyContext;
@@ -74,9 +73,7 @@ import org.apache.cassandra.service.accord.serializers.ApplySerializers;
 import org.apache.cassandra.service.accord.serializers.BeginInvalidationSerializers;
 import org.apache.cassandra.service.accord.serializers.CommitSerializers;
 import org.apache.cassandra.service.accord.serializers.EnumSerializer;
-import org.apache.cassandra.service.accord.serializers.FetchSerializers;
 import org.apache.cassandra.service.accord.serializers.InformDurableSerializers;
-import org.apache.cassandra.service.accord.serializers.InformOfTxnIdSerializers;
 import org.apache.cassandra.service.accord.serializers.PreacceptSerializers;
 import org.apache.cassandra.service.accord.serializers.RecoverySerializers;
 import org.apache.cassandra.service.accord.serializers.SetDurableSerializers;
@@ -94,12 +91,7 @@ import static accord.messages.MessageType.COMMIT_INVALIDATE_REQ;
 import static accord.messages.MessageType.COMMIT_MAXIMAL_REQ;
 import static accord.messages.MessageType.COMMIT_SLOW_PATH_REQ;
 import static accord.messages.MessageType.INFORM_DURABLE_REQ;
-import static accord.messages.MessageType.INFORM_OF_TXN_REQ;
 import static accord.messages.MessageType.PRE_ACCEPT_REQ;
-import static accord.messages.MessageType.PROPAGATE_APPLY_MSG;
-import static accord.messages.MessageType.PROPAGATE_OTHER_MSG;
-import static accord.messages.MessageType.PROPAGATE_PRE_ACCEPT_MSG;
-import static accord.messages.MessageType.PROPAGATE_STABLE_MSG;
 import static accord.messages.MessageType.SET_GLOBALLY_DURABLE_REQ;
 import static accord.messages.MessageType.SET_SHARD_DURABLE_REQ;
 import static accord.messages.MessageType.STABLE_FAST_PATH_REQ;
@@ -203,19 +195,6 @@ public class AccordJournal implements IJournal, Shutdownable
             delayedRequestProcessor.delay(requestContext);
     }
 
-    /**
-     * Accord protocol messages originating from local node, e.g. Propagate.
-     */
-    @SuppressWarnings("rawtypes, unchecked")
-    public <R> void processLocalRequest(LocalRequest request, BiConsumer<? super R, Throwable> callback)
-    {
-        LocalRequestContext requestContext = LocalRequestContext.create(request, callback);
-        if (node.topology().hasEpoch(request.waitForEpoch()))
-            request.process(node, requestContext.callback);
-        else
-            delayedRequestProcessor.delay(requestContext);
-    }
-
     @Override
     public Command loadCommand(int commandStoreId, TxnId txnId)
     {
@@ -291,29 +270,6 @@ public class AccordJournal implements IJournal, Shutdownable
         }
 
         public abstract void process(Node node, AccordEndpointMapper endpointMapper);
-    }
-
-    private static class LocalRequestContext<T> extends RequestContext
-    {
-        private final BiConsumer<T, Throwable> callback;
-        private final LocalRequest<T> request;
-
-        LocalRequestContext(long waitForEpoch, LocalRequest<T> request, BiConsumer<T, Throwable> callback)
-        {
-            super(waitForEpoch);
-            this.callback = callback;
-            this.request = request;
-        }
-
-        public void process(Node node, AccordEndpointMapper endpointMapper)
-        {
-            request.process(node, callback);
-        }
-
-        static <R> LocalRequestContext<R> create(LocalRequest<R> request, BiConsumer<R, Throwable> callback)
-        {
-            return new LocalRequestContext<>(request.waitForEpoch(), request, callback);
-        }
     }
 
     /**
@@ -453,7 +409,6 @@ public class AccordJournal implements IJournal, Shutdownable
 
     private static final TxnIdProvider EPOCH = msg -> ((AbstractEpochRequest<?>) msg).txnId;
     private static final TxnIdProvider TXN   = msg -> ((TxnRequest<?>) msg).txnId;
-    private static final TxnIdProvider LOCAL = msg -> ((LocalRequest<?>) msg).primaryTxnId();
     private static final TxnIdProvider INVL  = msg -> ((Commit.Invalidate) msg).primaryTxnId();
 
     /**
@@ -485,16 +440,9 @@ public class AccordJournal implements IJournal, Shutdownable
 
         BEGIN_RECOVER                 (73, BEGIN_RECOVER_REQ,        RecoverySerializers.request,           TXN  ),
         BEGIN_INVALIDATE              (74, BEGIN_INVALIDATE_REQ,     BeginInvalidationSerializers.request,  EPOCH),
-        INFORM_OF_TXN                 (75, INFORM_OF_TXN_REQ,        InformOfTxnIdSerializers.request,      EPOCH),
         INFORM_DURABLE                (76, INFORM_DURABLE_REQ,       InformDurableSerializers.request,      TXN  ),
         SET_SHARD_DURABLE             (77, SET_SHARD_DURABLE_REQ,    SetDurableSerializers.shardDurable,    EPOCH),
         SET_GLOBALLY_DURABLE          (78, SET_GLOBALLY_DURABLE_REQ, SetDurableSerializers.globallyDurable, EPOCH),
-
-        /* Accord local messages */
-        PROPAGATE_PRE_ACCEPT          (79, PROPAGATE_PRE_ACCEPT_MSG, FetchSerializers.propagate, LOCAL),
-        PROPAGATE_STABLE              (80, PROPAGATE_STABLE_MSG,     FetchSerializers.propagate, LOCAL),
-        PROPAGATE_APPLY               (81, PROPAGATE_APPLY_MSG,      FetchSerializers.propagate, LOCAL),
-        PROPAGATE_OTHER               (82, PROPAGATE_OTHER_MSG,      FetchSerializers.propagate, LOCAL),
 
         /* C* interop messages */
         INTEROP_COMMIT                (83, INTEROP_COMMIT_MINIMAL_REQ,  STABLE_FAST_PATH_REQ, AccordInteropCommit.serializer, TXN),

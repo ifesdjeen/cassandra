@@ -43,7 +43,7 @@ public class GetEphmrlReadDepsSerializers
         }
 
         @Override
-        public GetEphemeralReadDeps deserializeBody(DataInputPlus in, int version, TxnId txnId, PartialRoute<?> scope, long waitForEpoch, long minEpoch, boolean doNotComputeProgressKey) throws IOException
+        public GetEphemeralReadDeps deserializeBody(DataInputPlus in, int version, TxnId txnId, PartialRoute<?> scope, long waitForEpoch, long minEpoch) throws IOException
         {
             Seekables<?, ?> keys = KeySerializers.seekables.deserialize(in, version);
             long executionEpoch = in.readUnsignedVInt();

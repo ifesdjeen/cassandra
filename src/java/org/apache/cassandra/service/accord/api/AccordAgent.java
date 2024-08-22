@@ -26,8 +26,11 @@ import org.slf4j.LoggerFactory;
 
 import accord.api.Agent;
 import accord.api.EventsListener;
+import accord.api.ProgressLog;
+import accord.api.ProgressLog.BlockedUntil;
 import accord.api.Result;
 import accord.local.Command;
+import accord.local.CommandStore;
 import accord.local.Node;
 import accord.primitives.Ranges;
 import accord.primitives.Seekables;
@@ -146,5 +149,23 @@ public class AccordAgent implements Agent
     public EventsListener metricsEventsListener()
     {
         return AccordMetrics.Listener.instance;
+    }
+
+    @Override
+    public long attemptCoordinationDelay(TxnId txnId, CommandStore commandStore, TimeUnit units)
+    {
+
+    }
+
+    @Override
+    public long seekProgressDelay(int retryCount, TxnId txnId, BlockedUntil blockedUntil, TimeUnit units)
+    {
+
+    }
+
+    @Override
+    public long retryAwaitTimeout(int retryCount, BlockedUntil retrying, TimeUnit units)
+    {
+        return ;
     }
 }

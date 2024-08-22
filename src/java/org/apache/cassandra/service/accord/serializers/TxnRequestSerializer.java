@@ -33,7 +33,7 @@ public abstract class TxnRequestSerializer<T extends TxnRequest<?>> implements I
     void serializeHeader(T msg, DataOutputPlus out, int version) throws IOException
     {
         CommandSerializers.txnId.serialize(msg.txnId, out, version);
-        KeySerializers.partialRoute.serialize(msg.scope, out, version);
+        KeySerializers.route.serialize(msg.scope, out, version);
         out.writeUnsignedVInt(msg.waitForEpoch);
     }
 
@@ -61,7 +61,7 @@ public abstract class TxnRequestSerializer<T extends TxnRequest<?>> implements I
     long serializedHeaderSize(T msg, int version)
     {
         return CommandSerializers.txnId.serializedSize(msg.txnId, version)
-               + KeySerializers.partialRoute.serializedSize(msg.scope(), version) +
+               + KeySerializers.route.serializedSize(msg.scope(), version) +
                TypeSizes.sizeofUnsignedVInt(msg.waitForEpoch);
     }
 
@@ -79,25 +79,24 @@ public abstract class TxnRequestSerializer<T extends TxnRequest<?>> implements I
         void serializeHeader(T msg, DataOutputPlus out, int version) throws IOException
         {
             super.serializeHeader(msg, out, version);
-            out.writeUnsignedVInt(msg.minUnsyncedEpoch);
-            out.writeBoolean(msg.doNotComputeProgressKey);
+            out.writeUnsignedVInt(msg.minEpoch);
         }
 
-        public abstract T deserializeBody(DataInputPlus in, int version, TxnId txnId, PartialRoute<?> scope, long waitForEpoch, long minEpoch, boolean doNotComputeProgressKey) throws IOException;
+        public abstract T deserializeBody(DataInputPlus in, int version, TxnId txnId, PartialRoute<?> scope, long waitForEpoch, long minEpoch) throws IOException;
 
         @Override
         public final T deserializeBody(DataInputPlus in, int version, TxnId txnId, PartialRoute<?> scope, long waitForEpoch) throws IOException
         {
             long minEpoch = in.readUnsignedVInt();
             boolean doNotComputeProgressKey = in.readBoolean();
-            return deserializeBody(in, version, txnId, scope, waitForEpoch, minEpoch, doNotComputeProgressKey);
+            return deserializeBody(in, version, txnId, scope, waitForEpoch, minEpoch);
         }
 
         @Override
         long serializedHeaderSize(T msg, int version)
         {
             long size = super.serializedHeaderSize(msg, version);
-            size += TypeSizes.sizeofUnsignedVInt(msg.minUnsyncedEpoch);
+            size += TypeSizes.sizeofUnsignedVInt(msg.minEpoch);
             size += TypeSizes.BOOL_SIZE;
             return size;
         }

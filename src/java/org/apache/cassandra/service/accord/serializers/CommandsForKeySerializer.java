@@ -41,7 +41,7 @@ import org.apache.cassandra.db.marshal.ByteBufferAccessor;
 import org.apache.cassandra.utils.vint.VIntCoding;
 
 import static accord.local.cfk.CommandsForKey.NO_PENDING_UNMANAGED;
-import static accord.local.cfk.CommandsForKey.NO_TXNIDS;
+import static accord.primitives.TxnId.NO_TXNIDS;
 import static accord.primitives.Txn.Kind.Read;
 import static accord.primitives.Txn.Kind.SyncPoint;
 import static accord.primitives.Txn.Kind.Write;
@@ -372,7 +372,7 @@ public class CommandsForKeySerializer
                 bits |= hasExecuteAt << bitIndex;
                 bitIndex += statusHasInfo & executeAtMask;
 
-                long hasMissingIds = info.getClass() == TxnInfoExtra.class && ((TxnInfoExtra)info).missing != CommandsForKey.NO_TXNIDS ? 1 : 0;
+                long hasMissingIds = info.getClass() == TxnInfoExtra.class && ((TxnInfoExtra)info).missing != NO_TXNIDS ? 1 : 0;
                 bits |= hasMissingIds << bitIndex;
                 bitIndex += statusHasInfo & missingDepsMask;
 

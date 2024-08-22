@@ -34,6 +34,10 @@ import javax.annotation.Nullable;
 
 import com.google.common.collect.Sets;
 
+import accord.api.LocalListeners;
+import accord.api.ProgressLog.NoOpProgressLog;
+import accord.api.RemoteListeners;
+import accord.impl.DefaultLocalListeners;
 import accord.utils.SortedArrays.SortedArrayList;
 import org.apache.cassandra.ServerTestUtils;
 import org.apache.cassandra.config.DatabaseDescriptor;
@@ -201,21 +205,6 @@ public class AccordTestUtils
         safeState.preExecute();
         Assert.assertEquals(val, safeState.current());
     }
-
-    public static final ProgressLog NOOP_PROGRESS_LOG = new ProgressLog()
-    {
-        @Override public void unwitnessed(TxnId txnId, ProgressShard progressShard) {}
-        @Override public void preaccepted(Command command, ProgressShard progressShard) {}
-        @Override public void accepted(Command command, ProgressShard progressShard) {}
-        @Override public void precommitted(Command command) {}
-        @Override public void stable(Command command, ProgressShard progressShard) {}
-        @Override public void readyToExecute(Command command) {}
-        @Override public void executed(Command command, ProgressShard progressShard) {}
-        @Override public void clear(TxnId txnId) {}
-        @Override public void durable(Command command) {}
-        @Override public void waiting(SafeCommand blockedBy, LocalExecution blockedUntil, Route<?> blockedOnRoute, Participants<?> blockedOnParticipants) {}
-        @Override public void waiting(TxnId blockedBy, LocalExecution blockedUntil, @Nullable Route<?> blockedOnRoute, @Nullable Participants<?> blockedOnParticipants) {}
-    };
 
     public static TxnId txnId(long epoch, long hlc, int node)
     {
@@ -385,11 +374,8 @@ public class AccordTestUtils
         };
 
         SingleEpochRanges holder = new SingleEpochRanges(Ranges.of(range));
-        InMemoryCommandStore.Synchronized result = new InMemoryCommandStore.Synchronized(0,
-                                                     time,
-                                                     new AccordAgent(),
-                                                     null,
-                                                     cs -> null, holder);
+        InMemoryCommandStore.Synchronized result = new InMemoryCommandStore.Synchronized(0, time, new AccordAgent(),
+                                                     null, null, cs -> null, holder);
         holder.set(result);
         return result;
     }
@@ -420,7 +406,12 @@ public class AccordTestUtils
                                                            time,
                                                            new AccordAgent(),
                                                            null,
-                                                           cs -> NOOP_PROGRESS_LOG,
+                                                           cs -> new NoOpProgressLog(),
+                                                           cs -> new DefaultLocalListeners(new RemoteListeners.NoOpRemoteListeners(), new DefaultLocalListeners.NotifySink()
+                                                           {
+                                                               @Override public void notify(SafeCommandStore safeStore, SafeCommand safeCommand, TxnId listener) {}
+                                                               @Override public boolean notify(SafeCommandStore safeStore, SafeCommand safeCommand, LocalListeners.ComplexListener listener) { return false; }
+                                                           }),
                                                            holder,
                                                            journal,
                                                            loadExecutor,

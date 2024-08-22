@@ -47,9 +47,9 @@ public class AcceptSerializers
         }
 
         @Override
-        public Accept deserializeBody(DataInputPlus in, int version, TxnId txnId, PartialRoute<?> scope, long waitForEpoch, long minEpoch, boolean doNotComputeProgressKey) throws IOException
+        public Accept deserializeBody(DataInputPlus in, int version, TxnId txnId, PartialRoute<?> scope, long waitForEpoch, long minEpoch) throws IOException
         {
-            return create(txnId, scope, waitForEpoch, minEpoch, doNotComputeProgressKey,
+            return create(txnId, scope, waitForEpoch, minEpoch,
                           CommandSerializers.ballot.deserialize(in, version),
                           CommandSerializers.timestamp.deserialize(in, version),
                           KeySerializers.seekables.deserialize(in, version),

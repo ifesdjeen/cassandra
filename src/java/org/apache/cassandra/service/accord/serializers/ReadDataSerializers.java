@@ -251,12 +251,13 @@ public class ReadDataSerializers
                 return nacks[id - 2];
 
             Ranges unavailable = deserializeNullable(in, version, KeySerializers.ranges);
+            Ranges notReady = deserializeNullable(in, version, KeySerializers.ranges);
             D data = dataSerializer.deserialize(in, version);
             if (id == 0)
-                return new ReadOk(unavailable, data);
+                return new ReadOk(unavailable, notReady, data);
 
             long futureEpoch = in.readUnsignedVInt();
-            return new ReadData.ReadOkWithFutureEpoch(unavailable, data, futureEpoch);
+            return new ReadData.ReadOkWithFutureEpoch(unavailable, notReady, data, futureEpoch);
         }
 
         @Override
