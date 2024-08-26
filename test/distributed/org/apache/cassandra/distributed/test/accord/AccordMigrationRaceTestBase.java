@@ -42,7 +42,6 @@ import org.slf4j.LoggerFactory;
 import accord.api.RoutingKey;
 import accord.messages.PreAccept;
 import accord.primitives.PartialKeyRoute;
-import accord.primitives.PartialRoute;
 import accord.primitives.Routable.Domain;
 import accord.primitives.Route;
 import org.apache.cassandra.ServerTestUtils;

@@ -30,7 +30,6 @@ import java.util.function.LongSupplier;
 import java.util.function.ToLongFunction;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
-import javax.annotation.Nullable;
 
 import com.google.common.collect.Sets;
 
@@ -45,7 +44,6 @@ import org.apache.cassandra.io.util.File;
 import org.junit.Assert;
 
 import accord.api.Data;
-import accord.api.ProgressLog;
 import accord.api.Result;
 import accord.api.RoutingKey;
 import accord.impl.InMemoryCommandStore;
@@ -60,17 +58,14 @@ import accord.local.PreLoadContext;
 import accord.local.SafeCommand;
 import accord.local.SafeCommandStore;
 import accord.local.SaveStatus;
-import accord.local.SaveStatus.LocalExecution;
 import accord.primitives.Ballot;
 import accord.primitives.FullKeyRoute;
 import accord.primitives.FullRoute;
 import accord.primitives.Keys;
 import accord.primitives.PartialDeps;
 import accord.primitives.PartialTxn;
-import accord.primitives.Participants;
 import accord.primitives.Ranges;
 import accord.primitives.Routable;
-import accord.primitives.Route;
 import accord.primitives.Seekable;
 import accord.primitives.Seekables;
 import accord.primitives.Timestamp;

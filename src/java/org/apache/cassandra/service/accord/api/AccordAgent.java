@@ -45,14 +45,13 @@ import org.apache.cassandra.service.accord.AccordCommandStore;
 import org.apache.cassandra.service.accord.AccordService;
 import org.apache.cassandra.service.accord.txn.TxnQuery;
 import org.apache.cassandra.service.accord.txn.TxnRead;
-import org.apache.cassandra.service.paxos.ContentionStrategy;
 import org.apache.cassandra.tcm.Epoch;
+import org.apache.cassandra.utils.Clock;
 import org.apache.cassandra.utils.JVMStabilityInspector;
 
 import static accord.primitives.Routable.Domain.Key;
 import static java.util.concurrent.TimeUnit.MICROSECONDS;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
-import static java.util.concurrent.TimeUnit.NANOSECONDS;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.apache.cassandra.config.DatabaseDescriptor.getReadRpcTimeout;
 import static org.apache.cassandra.service.consensus.migration.ConsensusKeyMigrationState.maybeSaveAccordKeyMigrationLocally;
@@ -175,7 +174,7 @@ public class AccordAgent implements Agent
         if (subSecondRemainder < perSecondStartTime)
             startTime += SECONDS.toMicros(1);
 
-        return units.convert(MICROSECONDS.toNanos(startTime) - System.nanoTime(), NANOSECONDS);
+        return units.convert(MICROSECONDS.toNanos(startTime) - MILLISECONDS.toMicros(Clock.Global.currentTimeMillis()), MICROSECONDS);
     }
 
     @Override
