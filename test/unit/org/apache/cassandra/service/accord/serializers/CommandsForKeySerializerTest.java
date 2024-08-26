@@ -150,8 +150,9 @@ public class CommandsForKeySerializerTest
                     return Command.SerializerSupport.notDefined(attributes(), Ballot.ZERO);
                 case PreAccepted:
                     return Command.SerializerSupport.preaccepted(attributes(), executeAt, Ballot.ZERO);
-                case Accepted:
                 case AcceptedInvalidate:
+                    return Command.SerializerSupport.acceptedInvalidateWithoutDefinition(attributes(), ballot, ballot);
+                case Accepted:
                 case AcceptedWithDefinition:
                 case AcceptedInvalidateWithDefinition:
                 case PreCommittedWithDefinition:

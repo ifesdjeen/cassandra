@@ -238,6 +238,7 @@ public class ReadDataSerializers
             out.writeByte(isFutureEpochOk ? 1 : 0);
             ReadOk readOk = (ReadOk) reply;
             serializeNullable(readOk.unavailable, out, version, KeySerializers.ranges);
+            serializeNullable(readOk.notReady, out, version, KeySerializers.ranges);
             dataSerializer.serialize((D) readOk.data, out, version);
             if (isFutureEpochOk)
                 out.writeUnsignedVInt(((ReadData.ReadOkWithFutureEpoch) reply).futureEpoch);
@@ -269,6 +270,7 @@ public class ReadDataSerializers
             ReadOk readOk = (ReadOk) reply;
             long size = TypeSizes.BYTE_SIZE
                         + serializedNullableSize(readOk.unavailable, version, KeySerializers.ranges)
+                        + serializedNullableSize(readOk.notReady, version, KeySerializers.ranges)
                         + dataSerializer.serializedSize((D) readOk.data, version);
             if (readOk instanceof ReadData.ReadOkWithFutureEpoch)
                 size += TypeSizes.sizeofUnsignedVInt(((ReadData.ReadOkWithFutureEpoch) readOk).futureEpoch);

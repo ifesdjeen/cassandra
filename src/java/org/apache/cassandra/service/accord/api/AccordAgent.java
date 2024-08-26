@@ -30,8 +30,9 @@ import accord.api.ProgressLog.BlockedUntil;
 import accord.api.Result;
 import accord.api.RoutingKey;
 import accord.local.Command;
-import accord.local.CommandStore;
 import accord.local.Node;
+import accord.local.SafeCommand;
+import accord.local.SafeCommandStore;
 import accord.primitives.Ranges;
 import accord.primitives.Seekables;
 import accord.primitives.Timestamp;
@@ -41,7 +42,6 @@ import accord.primitives.TxnId;
 import accord.topology.Shard;
 import accord.utils.Invariants;
 import org.apache.cassandra.metrics.AccordMetrics;
-import org.apache.cassandra.service.accord.AccordCommandStore;
 import org.apache.cassandra.service.accord.AccordService;
 import org.apache.cassandra.service.accord.txn.TxnQuery;
 import org.apache.cassandra.service.accord.txn.TxnRead;
@@ -52,6 +52,7 @@ import org.apache.cassandra.utils.JVMStabilityInspector;
 import static accord.primitives.Routable.Domain.Key;
 import static java.util.concurrent.TimeUnit.MICROSECONDS;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
+import static java.util.concurrent.TimeUnit.NANOSECONDS;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.apache.cassandra.config.DatabaseDescriptor.getReadRpcTimeout;
 import static org.apache.cassandra.service.consensus.migration.ConsensusKeyMigrationState.maybeSaveAccordKeyMigrationLocally;
@@ -157,13 +158,18 @@ public class AccordAgent implements Agent
     }
 
     @Override
-    public long attemptCoordinationDelay(Node node, CommandStore commandStore, TxnId txnId, TimeUnit units)
+    public long attemptCoordinationDelay(Node node, SafeCommandStore safeStore, TxnId txnId, TimeUnit units)
     {
-        Command command = ((AccordCommandStore) commandStore).commandCache().getValueUnsafe(txnId);
-        Invariants.checkState(command != null);
-        Timestamp mostRecentAttempt = Timestamp.max(txnId, command.promised());
+        SafeCommand safeCommand = safeStore.ifInitialised(txnId);
+        Invariants.nonNull(safeCommand);
+
+        Command command = safeCommand.current();
+        Invariants.nonNull(command);
+
+        Timestamp mostRecentAttempt = Timestamp.max(command.txnId(), command.promised());
         RoutingKey homeKey = command.route().homeKey();
-        Shard shard = node.topology().forEpoch(homeKey, txnId.epoch());
+        Shard shard = node.topology().forEpoch(homeKey, command.txnId().epoch());
+
         int position = shard.sortedNodes.indexOf(node.id());
         long perSecondStartTime = position * (SECONDS.toMicros(1) / shard.sortedNodes.size());
         // TODO (required): make this configurable and dependent upon normal request latencies / timeouts
@@ -174,11 +180,12 @@ public class AccordAgent implements Agent
         if (subSecondRemainder < perSecondStartTime)
             startTime += SECONDS.toMicros(1);
 
-        return units.convert(MICROSECONDS.toNanos(startTime) - MILLISECONDS.toMicros(Clock.Global.currentTimeMillis()), MICROSECONDS);
+        long nowMicros = MILLISECONDS.toMicros(Clock.Global.currentTimeMillis());
+        return units.convert(Math.max(1, startTime - nowMicros), MICROSECONDS);
     }
 
     @Override
-    public long seekProgressDelay(Node node, CommandStore commandStore, TxnId txnId, int retryCount, BlockedUntil blockedUntil, TimeUnit units)
+    public long seekProgressDelay(Node node, SafeCommandStore safeStore, TxnId txnId, int retryCount, BlockedUntil blockedUntil, TimeUnit units)
     {
         // TODO (required): make this configurable and dependent upon normal request latencies
         if (retryCount == 0)
@@ -188,7 +195,7 @@ public class AccordAgent implements Agent
     }
 
     @Override
-    public long retryAwaitTimeout(Node node, CommandStore commandStore, TxnId txnId, int retryCount, BlockedUntil retrying, TimeUnit units)
+    public long retryAwaitTimeout(Node node, SafeCommandStore safeStore, TxnId txnId, int retryCount, BlockedUntil retrying, TimeUnit units)
     {
         // TODO (expected): integrate with contention backoff
         if (retryCount == 0)

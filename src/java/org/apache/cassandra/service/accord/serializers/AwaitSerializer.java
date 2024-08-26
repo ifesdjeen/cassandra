@@ -66,7 +66,7 @@ public class AwaitSerializer
             return CommandSerializers.txnId.serializedSize(await.txnId, version)
                    + KeySerializers.participants.serializedSize(await.scope, version)
                    + TypeSizes.BYTE_SIZE
-                   + VIntCoding.computeVIntSize(await.callbackId + 1);
+                   + VIntCoding.computeUnsignedVIntSize(await.callbackId + 1);
         }
     };
 
