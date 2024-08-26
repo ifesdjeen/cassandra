@@ -34,8 +34,8 @@ import accord.primitives.Deps;
 import accord.primitives.FullRoute;
 import accord.primitives.Keys;
 import accord.primitives.PartialDeps;
-import accord.primitives.PartialRoute;
 import accord.primitives.PartialTxn;
+import accord.primitives.Route;
 import accord.primitives.Seekables;
 import accord.primitives.Timestamp;
 import accord.primitives.Txn;
@@ -77,7 +77,7 @@ public class AccordInteropApply extends Apply implements LocalListeners.ComplexL
     public static final IVersionedSerializer<AccordInteropApply> serializer = new ApplySerializer<AccordInteropApply>()
     {
         @Override
-        protected AccordInteropApply deserializeApply(TxnId txnId, PartialRoute<?> scope, long waitForEpoch, Apply.Kind kind, Seekables<?, ?> keys, Timestamp executeAt, PartialDeps deps, PartialTxn txn, @Nullable FullRoute<?> fullRoute, Writes writes, Result result)
+        protected AccordInteropApply deserializeApply(TxnId txnId, Route<?> scope, long waitForEpoch, Apply.Kind kind, Seekables<?, ?> keys, Timestamp executeAt, PartialDeps deps, PartialTxn txn, @Nullable FullRoute<?> fullRoute, Writes writes, Result result)
         {
             return new AccordInteropApply(kind, txnId, scope, waitForEpoch, keys, executeAt, deps, txn, fullRoute, writes, result);
         }
@@ -87,7 +87,7 @@ public class AccordInteropApply extends Apply implements LocalListeners.ComplexL
     transient int waitingOnCount;
     MpscChunkedArrayQueue<LocalListeners.Registered> listeners = new MpscChunkedArrayQueue<>(4, Integer.MAX_VALUE);
 
-    private AccordInteropApply(Kind kind, TxnId txnId, PartialRoute<?> route, long waitForEpoch, Seekables<?, ?> keys, Timestamp executeAt, PartialDeps deps, @Nullable PartialTxn txn, @Nullable FullRoute<?> fullRoute, Writes writes, Result result)
+    private AccordInteropApply(Kind kind, TxnId txnId, Route<?> route, long waitForEpoch, Seekables<?, ?> keys, Timestamp executeAt, PartialDeps deps, @Nullable PartialTxn txn, @Nullable FullRoute<?> fullRoute, Writes writes, Result result)
     {
         super(kind, txnId, route, waitForEpoch, keys, executeAt, deps, txn, fullRoute, writes, result);
     }

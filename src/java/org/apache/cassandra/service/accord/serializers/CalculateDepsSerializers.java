@@ -22,7 +22,7 @@ import java.io.IOException;
 
 import accord.messages.CalculateDeps;
 import accord.messages.CalculateDeps.CalculateDepsOk;
-import accord.primitives.PartialRoute;
+import accord.primitives.Route;
 import accord.primitives.Seekables;
 import accord.primitives.Timestamp;
 import accord.primitives.TxnId;
@@ -42,7 +42,7 @@ public class CalculateDepsSerializers
         }
 
         @Override
-        public CalculateDeps deserializeBody(DataInputPlus in, int version, TxnId txnId, PartialRoute<?> scope, long waitForEpoch, long minEpoch) throws IOException
+        public CalculateDeps deserializeBody(DataInputPlus in, int version, TxnId txnId, Route<?> scope, long waitForEpoch, long minEpoch) throws IOException
         {
             Seekables<?, ?> keys = KeySerializers.seekables.deserialize(in, version);
             Timestamp executeAt = CommandSerializers.timestamp.deserialize(in, version);

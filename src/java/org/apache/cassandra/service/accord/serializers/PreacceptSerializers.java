@@ -25,8 +25,8 @@ import accord.messages.PreAccept;
 import accord.messages.PreAccept.PreAcceptOk;
 import accord.messages.PreAccept.PreAcceptReply;
 import accord.primitives.FullRoute;
-import accord.primitives.PartialRoute;
 import accord.primitives.PartialTxn;
+import accord.primitives.Route;
 import accord.primitives.TxnId;
 import org.apache.cassandra.db.TypeSizes;
 import org.apache.cassandra.io.IVersionedSerializer;
@@ -53,7 +53,7 @@ public class PreacceptSerializers
         }
 
         @Override
-        public PreAccept deserializeBody(DataInputPlus in, int version, TxnId txnId, PartialRoute<?> scope, long waitForEpoch, long minEpoch) throws IOException
+        public PreAccept deserializeBody(DataInputPlus in, int version, TxnId txnId, Route<?> scope, long waitForEpoch, long minEpoch) throws IOException
         {
             PartialTxn partialTxn = CommandSerializers.partialTxn.deserialize(in, version);
             @Nullable FullRoute<?> fullRoute = deserializeNullable(in, version, KeySerializers.fullRoute);

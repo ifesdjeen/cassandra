@@ -22,7 +22,7 @@ import java.io.IOException;
 
 import accord.messages.Accept;
 import accord.messages.Accept.AcceptReply;
-import accord.primitives.PartialRoute;
+import accord.primitives.Route;
 import accord.primitives.TxnId;
 import org.apache.cassandra.db.TypeSizes;
 import org.apache.cassandra.io.IVersionedSerializer;
@@ -47,7 +47,7 @@ public class AcceptSerializers
         }
 
         @Override
-        public Accept deserializeBody(DataInputPlus in, int version, TxnId txnId, PartialRoute<?> scope, long waitForEpoch, long minEpoch) throws IOException
+        public Accept deserializeBody(DataInputPlus in, int version, TxnId txnId, Route<?> scope, long waitForEpoch, long minEpoch) throws IOException
         {
             return create(txnId, scope, waitForEpoch, minEpoch,
                           CommandSerializers.ballot.deserialize(in, version),
