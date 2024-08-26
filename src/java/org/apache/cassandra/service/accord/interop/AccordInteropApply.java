@@ -85,7 +85,7 @@ public class AccordInteropApply extends Apply implements LocalListeners.ComplexL
 
     transient BitSet waitingOn;
     transient int waitingOnCount;
-    MpscChunkedArrayQueue<LocalListeners.Registered> listeners = new MpscChunkedArrayQueue<>(4, Integer.MAX_VALUE);
+    final MpscChunkedArrayQueue<LocalListeners.Registered> listeners = new MpscChunkedArrayQueue<>(4, 1 << 30);
 
     private AccordInteropApply(Kind kind, TxnId txnId, Route<?> route, long waitForEpoch, Seekables<?, ?> keys, Timestamp executeAt, PartialDeps deps, @Nullable PartialTxn txn, @Nullable FullRoute<?> fullRoute, Writes writes, Result result)
     {
