@@ -518,6 +518,15 @@ public class AccordStateCache extends IntrusiveLinkedList<AccordCachingState<?,?
             return (AccordCachingState<K, V>) cache.get(key);
         }
 
+        public V getValueUnsafe(K key)
+        {
+            AccordCachingState<K, V> node = (AccordCachingState<K, V>) cache.get(key);
+            if (node == null)
+                return null;
+
+            return node.get();
+        }
+
         @VisibleForTesting
         public boolean isReferenced(K key)
         {

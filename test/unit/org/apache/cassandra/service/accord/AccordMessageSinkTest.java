@@ -32,7 +32,6 @@ import accord.api.Agent;
 import accord.impl.AbstractFetchCoordinator;
 import accord.impl.IntKey;
 import accord.local.Node;
-import accord.messages.InformOfTxnId;
 import accord.messages.MessageType;
 import accord.messages.ReadTxnData;
 import accord.messages.Reply;
@@ -73,16 +72,6 @@ public class AccordMessageSinkTest
     }
 
     @Test
-    public void informOfTxn()
-    {
-        // There was an issue where the reply was the wrong verb
-        // see CASSANDRA-18375
-        InformOfTxnId request = Mockito.mock(InformOfTxnId.class);
-        Mockito.when(request.type()).thenReturn(MessageType.INFORM_OF_TXN_REQ);
-        checkRequestReplies(request, SimpleReply.Ok);
-    }
-
-    @Test
     public void bootstrapRead()
     {
         long epoch = 42;
@@ -93,7 +82,7 @@ public class AccordMessageSinkTest
         Request request = new AbstractFetchCoordinator.FetchRequest(epoch, id, ranges, PartialDeps.NONE, partialTxn);
 
         checkRequestReplies(request,
-                            new AbstractFetchCoordinator.FetchResponse(null, null, id),
+                            new AbstractFetchCoordinator.FetchResponse(null, null, null, id),
                             CommitOrReadNack.Insufficient);
 
     }
@@ -104,7 +93,7 @@ public class AccordMessageSinkTest
         TxnId txnId = nextTxnId(42, Txn.Kind.Read, Routable.Domain.Key);
         Request request = new ReadTxnData(node, topologies, txnId, topology.ranges(), txnId.epoch());
         checkRequestReplies(request,
-                            new ReadData.ReadOk(null, null),
+                            new ReadData.ReadOk(null, null, null),
                             CommitOrReadNack.Insufficient);
     }
 

@@ -73,7 +73,7 @@ public class AccordServiceTest
                         throw AccordService.newBarrierPreempted(TxnId.NONE, true);
                     case 4:
                         attempts++;
-                        throw new Exhausted(null, null);
+                        throw new Exhausted(null, null, null);
                     case 5:
                         attempts++;
                         throw AccordService.newBarrierExhausted(TxnId.NONE, true);
@@ -123,7 +123,7 @@ public class AccordServiceTest
             timeoutFailures.add(() -> {throw AccordService.newBarrierTimeout(TxnId.NONE, true);});
             timeoutFailures.add(() -> {throw new Preempted(null, null);});
             timeoutFailures.add(() -> {throw AccordService.newBarrierPreempted(TxnId.NONE, true);});
-            timeoutFailures.add(() -> {throw new Exhausted(null, null);});
+            timeoutFailures.add(() -> {throw new Exhausted(null, null, null);});
             Collections.shuffle(timeoutFailures, rs.asJdkRandom());
             Iterator<Runnable> it = timeoutFailures.iterator();
             Supplier<Seekables> failing = () -> {
@@ -161,7 +161,7 @@ public class AccordServiceTest
             failures.add(() -> {throw AccordService.newBarrierTimeout(TxnId.NONE, true);});
             failures.add(() -> {throw new Preempted(null, null);});
             failures.add(() -> {throw AccordService.newBarrierPreempted(TxnId.NONE, true);});
-            failures.add(() -> {throw new Exhausted(null, null);});
+            failures.add(() -> {throw new Exhausted(null, null, null);});
             boolean isError = rs.nextBoolean();
             failures.add(new Unexpected(isError));
             Collections.shuffle(failures, rs.asJdkRandom());

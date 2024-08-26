@@ -27,6 +27,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
+import accord.primitives.Route;
 import accord.utils.DefaultRandom;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Maps;
@@ -197,8 +198,8 @@ public class AsyncOperationTest
         try
         {
             Command command = getUninterruptibly(commandStore.submit(contextFor(txnId, partialTxn.keys(), COMMANDS), safe -> {
-                CheckedCommands.preaccept(safe, txnId, partialTxn, route, null, appendDiffToLog(commandStore));
-                CheckedCommands.commit(safe, SaveStatus.Stable, Ballot.ZERO, txnId, route, null, partialTxn, executeAt, deps, appendDiffToLog(commandStore));
+                CheckedCommands.preaccept(safe, txnId, partialTxn, route, appendDiffToLog(commandStore));
+                CheckedCommands.commit(safe, SaveStatus.Stable, Ballot.ZERO, txnId, route, partialTxn, executeAt, deps, appendDiffToLog(commandStore));
                 return safe.ifInitialised(txnId).current();
             }).beginAsResult());
 
@@ -238,16 +239,16 @@ public class AsyncOperationTest
         RoutingKey routingKey = partialTxn.keys().get(0).asKey().toUnseekable();
         FullRoute<?> route = partialTxn.keys().toRoute(routingKey);
         Ranges ranges = AccordTestUtils.fullRange(partialTxn.keys());
-        PartialRoute<?> partialRoute = route.slice(ranges);
+        Route<?> partialRoute = route.slice(ranges);
         PartialDeps deps = PartialDeps.builder(ranges).build();
 
         try
         {
             Command command = getUninterruptibly(commandStore.submit(contextFor(txnId, partialTxn.keys(), COMMANDS), safe -> {
-                CheckedCommands.preaccept(safe, txnId, partialTxn, route, null, appendDiffToLog(commandStore));
-                CheckedCommands.accept(safe, txnId, Ballot.ZERO, partialRoute, partialTxn.keys(), null, executeAt, deps, appendDiffToLog(commandStore));
-                CheckedCommands.commit(safe, SaveStatus.Committed, Ballot.ZERO, txnId, route, null, partialTxn, executeAt, deps, appendDiffToLog(commandStore));
-                CheckedCommands.commit(safe, SaveStatus.Stable, Ballot.ZERO, txnId, route, null, partialTxn, executeAt, deps, appendDiffToLog(commandStore));
+                CheckedCommands.preaccept(safe, txnId, partialTxn, route, appendDiffToLog(commandStore));
+                CheckedCommands.accept(safe, txnId, Ballot.ZERO, partialRoute, partialTxn.keys(), executeAt, deps, appendDiffToLog(commandStore));
+                CheckedCommands.commit(safe, SaveStatus.Committed, Ballot.ZERO, txnId, route, partialTxn, executeAt, deps, appendDiffToLog(commandStore));
+                CheckedCommands.commit(safe, SaveStatus.Stable, Ballot.ZERO, txnId, route, partialTxn, executeAt, deps, appendDiffToLog(commandStore));
                 return safe.ifInitialised(txnId).current();
             }).beginAsResult());
 

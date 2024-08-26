@@ -620,7 +620,7 @@ public class AccordKeyspace
             if (current == null)
                 return null;
 
-            CommandsForKey updated = current.withRedundantBeforeAtLeast(redundantBefore);
+            CommandsForKey updated = current.withRedundantBeforeAtLeast(redundantBefore.shardRedundantBefore());
             if (current == updated)
                 return row;
 

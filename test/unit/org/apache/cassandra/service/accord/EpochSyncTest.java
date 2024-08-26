@@ -379,7 +379,7 @@ public class EpochSyncTest
                         Assertions.assertThat(tm.hasEpoch(epoch)).describedAs("node%s does not have epoch %d", id, epoch).isTrue();
                         Ranges ranges = tm.globalForEpoch(epoch).ranges().mergeTouching();
                         Ranges actual = tm.syncComplete(epoch).mergeTouching();
-                        Assertions.assertThat(actual).describedAs("node%s does not have all expected sync ranges for epoch %d; missing %s", id, epoch, ranges.subtract(actual)).isEqualTo(ranges);
+                        Assertions.assertThat(actual).describedAs("node%s does not have all expected sync ranges for epoch %d; missing %s", id, epoch, ranges.without(actual)).isEqualTo(ranges);
                     }
                     else
                     {
@@ -396,7 +396,7 @@ public class EpochSyncTest
                         if (!ranges.equals(actual) && tm.minEpoch() != epoch && !ranges.equals(tm.syncComplete(epoch - 1).mergeTouching()))
                             continue;
                         Assertions.assertThat(actual)
-                                  .describedAs("node%s does not have all expected sync ranges for epoch %d; missing %s; peers=%s; previous epochs %s", id, epoch, ranges.subtract(actual), topology.nodes(),
+                                  .describedAs("node%s does not have all expected sync ranges for epoch %d; missing %s; peers=%s; previous epochs %s", id, epoch, ranges.without(actual), topology.nodes(),
                                                LongStream.range(inst.epoch.getEpoch(), epoch + 1).mapToObj(e -> e + " -> " + conf.getEpochSnapshot(e).syncStatus + "(synced=" + globalSynced(e) + "): " + tm.syncComplete(e)).collect(Collectors.joining("\n")))
                                   .isEqualTo(ranges);
                     }

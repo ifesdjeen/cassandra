@@ -61,8 +61,7 @@ public class MockJournal implements IJournal
                                                      diff.partialDeps,
                                                      diff.additionalKeysOrRanges,
                                                      (i1, i2) -> diff.waitingOn,
-                                                     diff.writes,
-                                                     diff.listeners));
+                                                     diff.writes));
         }
         onFlush.run();
     }
