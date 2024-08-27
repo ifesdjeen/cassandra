@@ -55,6 +55,7 @@ import accord.impl.AbstractConfigurationService;
 import accord.impl.CoordinateDurabilityScheduling;
 import accord.impl.DefaultLocalListeners;
 import accord.impl.DefaultRemoteListeners;
+import accord.impl.DefaultRequestTimeouts;
 import accord.impl.SizeOfIntersectionSorter;
 import accord.impl.progresslog.DefaultProgressLogs;
 import accord.local.CommandStores;
@@ -356,6 +357,7 @@ public class AccordService implements IAccordService, Shutdownable
                              CompositeTopologySorter.create(SizeOfIntersectionSorter.SUPPLIER,
                                                             new AccordTopologySorter.Supplier(configService, DatabaseDescriptor.getEndpointSnitch())),
                              DefaultRemoteListeners::new,
+                             DefaultRequestTimeouts::new,
                              DefaultProgressLogs::new,
                              DefaultLocalListeners.Factory::new,
                              AccordCommandStores.factory(journal),

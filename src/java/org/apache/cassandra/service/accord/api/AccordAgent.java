@@ -33,6 +33,7 @@ import accord.local.Command;
 import accord.local.Node;
 import accord.local.SafeCommand;
 import accord.local.SafeCommandStore;
+import accord.messages.ReplyContext;
 import accord.primitives.Ranges;
 import accord.primitives.Seekables;
 import accord.primitives.Timestamp;
@@ -45,6 +46,7 @@ import accord.utils.Invariants;
 import accord.utils.RandomSource;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.metrics.AccordMetrics;
+import org.apache.cassandra.net.ResponseContext;
 import org.apache.cassandra.service.accord.AccordService;
 import org.apache.cassandra.service.accord.txn.TxnQuery;
 import org.apache.cassandra.service.accord.txn.TxnRead;
@@ -55,6 +57,7 @@ import org.apache.cassandra.utils.JVMStabilityInspector;
 import static accord.primitives.Routable.Domain.Key;
 import static java.util.concurrent.TimeUnit.MICROSECONDS;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
+import static java.util.concurrent.TimeUnit.NANOSECONDS;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.apache.cassandra.config.DatabaseDescriptor.getReadRpcTimeout;
 import static org.apache.cassandra.service.consensus.migration.ConsensusKeyMigrationState.maybeSaveAccordKeyMigrationLocally;
@@ -158,6 +161,12 @@ public class AccordAgent implements Agent
     public EventsListener metricsEventsListener()
     {
         return AccordMetrics.Listener.instance;
+    }
+
+    @Override
+    public long replyTimeout(ReplyContext replyContext, TimeUnit units)
+    {
+        return Math.max(1, units.convert(((ResponseContext)replyContext).expiresAtNanos() - Clock.Global.nanoTime(), NANOSECONDS));
     }
 
     @Override
