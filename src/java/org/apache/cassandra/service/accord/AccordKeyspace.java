@@ -624,7 +624,7 @@ public class AccordKeyspace
             if (current == updated)
                 return row;
 
-            if (updated.size() == 0)
+            if (updated.size() == 0 && updated.prunedBefore() == CommandsForKey.NO_INFO)
                 return null;
 
             ByteBuffer buffer = CommandsForKeySerializer.toBytesWithoutKey(updated);
