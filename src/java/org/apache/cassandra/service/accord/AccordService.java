@@ -33,7 +33,6 @@ import javax.annotation.Nullable;
 import javax.annotation.concurrent.GuardedBy;
 
 import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Preconditions;
 import com.google.common.base.Stopwatch;
 import com.google.common.base.Throwables;
 import com.google.common.collect.ImmutableMap;
@@ -43,7 +42,7 @@ import org.slf4j.LoggerFactory;
 
 import accord.api.BarrierType;
 import accord.api.Result;
-import accord.config.LocalConfig;
+import accord.api.LocalConfig;
 import accord.coordinate.Barrier;
 import accord.coordinate.CoordinateSyncPoint;
 import accord.coordinate.CoordinationFailed;
@@ -149,6 +148,7 @@ public class AccordService implements IAccordService, Shutdownable
 
     private enum State { INIT, STARTED, SHUTDOWN}
 
+    // TODO (required): these are unused?
     public static final AccordClientRequestMetrics readMetrics = new AccordClientRequestMetrics("AccordRead");
     public static final AccordClientRequestMetrics writeMetrics = new AccordClientRequestMetrics("AccordWrite");
     private static final Future<Void> BOOTSTRAP_SUCCESS = ImmediateFuture.success(null);
@@ -326,16 +326,9 @@ public class AccordService implements IAccordService, Shutdownable
         return i;
     }
 
-    public static long uniqueNow()
+    public static long now()
     {
-        // TODO (now, correctness): This is not unique it's just currentTimeMillis as microseconds
         return TimeUnit.MILLISECONDS.toMicros(Clock.Global.currentTimeMillis());
-    }
-
-    public static long unix(TimeUnit timeUnit)
-    {
-        Preconditions.checkArgument(timeUnit != TimeUnit.NANOSECONDS, "Nanoseconds since the epoch doesn't fit in a long");
-        return timeUnit.convert(Clock.Global.currentTimeMillis(), TimeUnit.MILLISECONDS);
     }
 
     private AccordService(Id localId)
@@ -353,7 +346,7 @@ public class AccordService implements IAccordService, Shutdownable
         this.node = new Node(localId,
                              messageSink,
                              configService,
-                             AccordService::uniqueNow,
+                             AccordService::now,
                              NodeTimeService.elapsedWrapperFromMonotonicSource(NANOSECONDS, Clock.Global::nanoTime),
                              () -> dataStore,
                              new KeyspaceSplitter(new EvenSplit<>(DatabaseDescriptor.getAccordShardCount(), getPartitioner().accordSplitter())),

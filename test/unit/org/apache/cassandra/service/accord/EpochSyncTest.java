@@ -51,7 +51,7 @@ import org.slf4j.LoggerFactory;
 import accord.api.ConfigurationService;
 import accord.api.ConfigurationService.EpochReady;
 import accord.api.Scheduler;
-import accord.config.LocalConfig;
+import accord.api.LocalConfig;
 import accord.impl.SizeOfIntersectionSorter;
 import accord.impl.TestAgent;
 import accord.local.Node;

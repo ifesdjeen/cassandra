@@ -40,7 +40,10 @@ import accord.primitives.Txn;
 import accord.primitives.Txn.Kind;
 import accord.primitives.TxnId;
 import accord.topology.Shard;
+import accord.utils.DefaultRandom;
 import accord.utils.Invariants;
+import accord.utils.RandomSource;
+import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.metrics.AccordMetrics;
 import org.apache.cassandra.service.accord.AccordService;
 import org.apache.cassandra.service.accord.txn.TxnQuery;
@@ -63,6 +66,7 @@ public class AccordAgent implements Agent
 
     // TODO (required): this should be configurable and have exponential back-off, escaping to operator input past a certain number of retries
     private long retryBootstrapDelayMicros = SECONDS.toMicros(1L);
+    private final RandomSource random = new DefaultRandom();
 
     public void setRetryBootstrapDelay(long delay, TimeUnit units)
     {
@@ -167,17 +171,28 @@ public class AccordAgent implements Agent
 
         Timestamp mostRecentAttempt = Timestamp.max(command.txnId(), command.promised());
         RoutingKey homeKey = command.route().homeKey();
-        Shard shard = node.topology().forEpoch(homeKey, command.txnId().epoch());
+        Shard shard = node.topology().forEpochIfKnown(homeKey, command.txnId().epoch());
 
-        int position = shard.sortedNodes.indexOf(node.id());
-        long perSecondStartTime = position * (SECONDS.toMicros(1) / shard.sortedNodes.size());
-        // TODO (required): make this configurable and dependent upon normal request latencies / timeouts
-        long startTime = mostRecentAttempt.hlc() + SECONDS.toMicros(5);
-        long subSecondRemainder = startTime % SECONDS.toMicros(1);
+        long oneSecond = SECONDS.toMicros(1L);
+        long perSecondStartTime;
+        if (shard != null)
+        {
+            int position = shard.sortedNodes.indexOf(node.id());
+            perSecondStartTime = position * (SECONDS.toMicros(1) / shard.sortedNodes.size());
+        }
+        else
+        {
+            // we've raced with topology update, this should be rare so just pick a random start time
+            perSecondStartTime = random.nextLong(oneSecond);
+        }
+
+        // TODO (expected): make this a configurable calculation on normal request latencies (like ContentionStrategy)
+        long startTime = mostRecentAttempt.hlc() + DatabaseDescriptor.getAccord().recover_delay.to(MICROSECONDS);
+        long subSecondRemainder = startTime % oneSecond;
         startTime -= subSecondRemainder;
         startTime += perSecondStartTime;
         if (subSecondRemainder < perSecondStartTime)
-            startTime += SECONDS.toMicros(1);
+            startTime += oneSecond;
 
         long nowMicros = MILLISECONDS.toMicros(Clock.Global.currentTimeMillis());
         return units.convert(Math.max(1, startTime - nowMicros), MICROSECONDS);
