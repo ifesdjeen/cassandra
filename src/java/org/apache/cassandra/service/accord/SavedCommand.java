@@ -134,29 +134,7 @@ public class SavedCommand
 
     public static void serialize(Command before, Command after, DataOutputPlus out, int userVersion) throws IOException
     {
-        int flags = 0;
-
-        flags = collectFlags(before, after, Command::txnId, true, Fields.TXN_ID, flags);
-        flags = collectFlags(before, after, Command::executeAt, true, Fields.EXECUTE_AT, flags);
-        flags = collectFlags(before, after, Command::saveStatus, false, Fields.SAVE_STATUS, flags);
-        flags = collectFlags(before, after, Command::durability, false, Fields.DURABILITY, flags);
-
-        flags = collectFlags(before, after, Command::acceptedOrCommitted, false, Fields.ACCEPTED, flags);
-        flags = collectFlags(before, after, Command::promised, false, Fields.PROMISED, flags);
-
-        flags = collectFlags(before, after, Command::route, true, Fields.ROUTE, flags);
-        flags = collectFlags(before, after, Command::partialTxn, false, Fields.PARTIAL_TXN, flags);
-        flags = collectFlags(before, after, Command::partialDeps, false, Fields.PARTIAL_DEPS, flags);
-        flags = collectFlags(before, after, Command::additionalKeysOrRanges, false, Fields.ADDITIONAL_KEYS, flags);
-
-        Command.WaitingOn waitingOn = getWaitingOn(after);
-        if (waitingOn == null)
-            flags = setFieldIsNull(Fields.WAITING_ON, flags);
-        else
-            flags = setFieldChanged(Fields.WAITING_ON, flags);
-
-        flags = collectFlags(before, after, Command::writes, false, Fields.WRITES, flags);
-        flags = collectFlags(before, after, Command::durableListeners, true, Fields.LISTENERS, flags);
+        int flags = getFlags(before, after);
 
         out.writeInt(flags);
 
@@ -184,6 +162,7 @@ public class SavedCommand
         if (getFieldChanged(Fields.ADDITIONAL_KEYS, flags) && after.additionalKeysOrRanges() != null)
             KeySerializers.seekables.serialize(after.additionalKeysOrRanges(), out, userVersion);
 
+        Command.WaitingOn waitingOn = getWaitingOn(after);
         if (getFieldChanged(Fields.WAITING_ON, flags) && waitingOn != null)
         {
             long size = WaitingOnSerializer.serializedSize(waitingOn);
@@ -201,6 +180,31 @@ public class SavedCommand
             for (Command.DurableAndIdempotentListener listener : after.durableListeners())
                 AccordKeyspace.LocalVersionedSerializers.listeners.serialize(listener, out);
         }
+    }
+
+    @VisibleForTesting
+    static int getFlags(Command before, Command after)
+    {
+        int flags = 0;
+
+        flags = collectFlags(before, after, Command::txnId, true, Fields.TXN_ID, flags);
+        flags = collectFlags(before, after, Command::executeAt, true, Fields.EXECUTE_AT, flags);
+        flags = collectFlags(before, after, Command::saveStatus, false, Fields.SAVE_STATUS, flags);
+        flags = collectFlags(before, after, Command::durability, false, Fields.DURABILITY, flags);
+
+        flags = collectFlags(before, after, Command::acceptedOrCommitted, false, Fields.ACCEPTED, flags);
+        flags = collectFlags(before, after, Command::promised, false, Fields.PROMISED, flags);
+
+        flags = collectFlags(before, after, Command::route, true, Fields.ROUTE, flags);
+        flags = collectFlags(before, after, Command::partialTxn, false, Fields.PARTIAL_TXN, flags);
+        flags = collectFlags(before, after, Command::partialDeps, false, Fields.PARTIAL_DEPS, flags);
+        flags = collectFlags(before, after, Command::additionalKeysOrRanges, false, Fields.ADDITIONAL_KEYS, flags);
+
+        flags = collectFlags(before, after, SavedCommand::getWaitingOn, false, Fields.WAITING_ON, flags);
+
+        flags = collectFlags(before, after, Command::writes, false, Fields.WRITES, flags);
+        flags = collectFlags(before, after, Command::durableListeners, true, Fields.LISTENERS, flags);
+        return flags;
     }
 
     static Command.WaitingOn getWaitingOn(Command command)
@@ -240,12 +244,14 @@ public class SavedCommand
         return oldFlags | (1 << (field.ordinal() + Short.SIZE));
     }
 
-    private static boolean getFieldChanged(Fields field, int oldFlags)
+    @VisibleForTesting
+    static boolean getFieldChanged(Fields field, int oldFlags)
     {
         return (oldFlags & (1 << (field.ordinal() + Short.SIZE))) != 0;
     }
 
-    private static boolean getFieldIsNull(Fields field, int oldFlags)
+    @VisibleForTesting
+    static boolean getFieldIsNull(Fields field, int oldFlags)
     {
         return (oldFlags & (1 << field.ordinal())) != 0;
     }
