@@ -27,6 +27,7 @@ import accord.local.Command;
 import accord.local.Command.TransientListener;
 import accord.local.Listeners;
 import accord.local.SafeCommand;
+import accord.local.SaveStatus;
 import accord.primitives.TxnId;
 import accord.utils.Invariants;
 import org.apache.cassandra.utils.concurrent.Ref;
@@ -129,7 +130,9 @@ public class AccordSafeCommand extends SafeCommand implements AccordSafeState<Tx
 
     public SavedCommand.Writer<TxnId> diff()
     {
-        if (original == current || current == null)
+        if (original == current
+            || current == null
+            || current.saveStatus() == SaveStatus.Uninitialised)
             return null;
         return new SavedCommand.DiffWriter(original, current);
     }
