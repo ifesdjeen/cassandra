@@ -22,9 +22,9 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.function.Function;
 
+import javax.annotation.Nullable;
+
 import com.google.common.annotations.VisibleForTesting;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import accord.api.Result;
 import accord.local.Command;
@@ -51,8 +51,6 @@ import org.apache.cassandra.utils.Throwables;
 
 public class SavedCommand
 {
-    private static final Logger logger = LoggerFactory.getLogger(SavedCommand.class);
-
     // This enum is order-dependent
     public enum Fields
     {
@@ -116,6 +114,16 @@ public class SavedCommand
         {
             return txnId;
         }
+    }
+
+    @Nullable
+    public static Writer<TxnId> diff(Command original, Command current)
+    {
+        if (original == current
+            || current == null
+            || current.saveStatus() == SaveStatus.Uninitialised)
+            return null;
+        return new SavedCommand.DiffWriter(original, current);
     }
 
 
