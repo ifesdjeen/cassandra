@@ -85,7 +85,6 @@ public class SavedCommandTest
                     try
                     {
                         orig = cmdBuilder.build(saveStatus);
-                        SavedCommand.serialize(null, orig, out, userVersion);
                     }
                     catch (Throwable t)
                     {
@@ -93,7 +92,7 @@ public class SavedCommandTest
                         // Skip unbuildable and non-serializable commands
                         return;
                     }
-
+                    SavedCommand.serialize(null, orig, out, userVersion);
                     SavedCommand.Builder builder = new SavedCommand.Builder();
                     builder.deserializeNext(new DataInputBuffer(out.unsafeGetBufferAndFlip(), false), userVersion);
                     // We are not persisting the result, so force it for strict equality
