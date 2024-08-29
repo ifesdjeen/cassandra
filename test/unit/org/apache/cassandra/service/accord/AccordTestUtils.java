@@ -152,7 +152,7 @@ public class AccordTestUtils
                                                        executeAt,
                                                        Ballot.ZERO,
                                                        Ballot.ZERO,
-                                                       Command.WaitingOn.EMPTY);
+                                                       Command.WaitingOn.empty(txnId.domain()));
         }
 
         private static FullRoute<?> route(PartialTxn txn)

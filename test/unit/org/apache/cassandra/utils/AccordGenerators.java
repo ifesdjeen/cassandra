@@ -174,7 +174,7 @@ public class AccordGenerators
                     throw new UnsupportedOperationException();
             }
 
-            Command.WaitingOn waitingOn = Command.WaitingOn.none(deps);
+            Command.WaitingOn waitingOn = Command.WaitingOn.none(txnId.domain(), deps);
             return new CommandBuilder(txnId, txn, executeAt, partialTxn, partialDeps, promised, accepted, waitingOn);
         };
     }
@@ -247,7 +247,7 @@ public class AccordGenerators
                 case PreApplied:
                 case Applying:
                 case Applied:
-                    return Command.SerializerSupport.executed(attributes(saveStatus), saveStatus, executeAt, promised, accepted, Command.WaitingOn.EMPTY, new Writes(txnId, executeAt, keysOrRanges, new TxnWrite(Collections.emptyList(), true)), new TxnData());
+                    return Command.SerializerSupport.executed(attributes(saveStatus), saveStatus, executeAt, promised, accepted, waitingOn, new Writes(txnId, executeAt, keysOrRanges, new TxnWrite(Collections.emptyList(), true)), new TxnData());
 
                 case TruncatedApplyWithDeps:
                 case TruncatedApply:
@@ -349,7 +349,7 @@ public class AccordGenerators
             while (offset.compareTo(size) < 0)
             {
                 BigInteger end = offset.add(update);
-                TokenRange r = (TokenRange) splitter.subRange(range, offset, end);
+                TokenRange r = splitter.subRange(range, offset, end);
                 for (TableId id : tables)
                 {
                     ranges.add(r.withTable(id));

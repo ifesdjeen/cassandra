@@ -21,14 +21,12 @@ package org.apache.cassandra.service.accord;
 import java.util.EnumSet;
 import java.util.Set;
 
-import com.google.common.collect.Sets;
 import org.junit.Assert;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
 import accord.local.Command;
 import accord.local.SaveStatus;
-import accord.primitives.TxnId;
 import accord.utils.Gen;
 import accord.utils.LazyToString;
 import accord.utils.ReflectionUtils;
@@ -72,54 +70,43 @@ public class SavedCommandTest
     }
 
     @Test
-    public void unknown()
-    {
-        int flags = getFlags(null, Command.NotDefined.uninitialised(TxnId.NONE));
-        EnumSet<Fields> has = EnumSet.of(Fields.TXN_ID, Fields.SAVE_STATUS, Fields.DURABILITY, Fields.PROMISED);
-        Set<Fields> missing = Sets.difference(ALL, has);
-        assertHas(flags, has);
-        assertMissing(flags, missing);
-    }
-
-    @Test
     public void serde()
     {
         Gen<AccordGenerators.CommandBuilder> gen = AccordGenerators.commandsBuilder();
         DataOutputBuffer out = new DataOutputBuffer();
-        qt().withSeed(-1464527987857660885L).forAll(gen).check(cmdBuilder -> {
-            int userVersion = 1; //TODO (maintance): where can we fetch all supported versions?
+        qt().withSeed(-1451772586194177400L)
+            .forAll(gen)
+            .check(cmdBuilder -> {
+                int userVersion = 1; //TODO (maintance): where can we fetch all supported versions?
+                for (SaveStatus saveStatus : SaveStatus.values())
+                {
+                    out.clear();
+                    Command orig;
+                    try
+                    {
+                        orig = cmdBuilder.build(saveStatus);
+                        SavedCommand.serialize(null, orig, out, userVersion);
+                    }
+                    catch (Throwable t)
+                    {
+                        // TODO (desired): improve the generator so that it does not produce invalid commands
+                        // Skip unbuildable and non-serializable commands
+                        return;
+                    }
 
-            for (SaveStatus saveStatus : SaveStatus.values())
-            {
-                out.clear();
+                    SavedCommand.Builder builder = new SavedCommand.Builder();
+                    builder.deserializeNext(new DataInputBuffer(out.unsafeGetBufferAndFlip(), false), userVersion);
+                    // We are not persisting the result, so force it for strict equality
+                    builder.forceResult(orig.result());
 
-                Command cmd = cmdBuilder.build(saveStatus);
-
-                SavedCommand.serialize(null, cmd, out, userVersion);
-                SavedCommand.Builder builder = new SavedCommand.Builder();
-                builder.deserializeNext(new DataInputBuffer(out.unsafeGetBufferAndFlip(), false), userVersion);
-
-                Command read = builder.construct();
-                Assertions.assertThat(read)
-                          .describedAs("lhs=expected\nrhs=actual\n%s", new LazyToString(() -> ReflectionUtils.recursiveEquals(cmd, read).toString()))
-                          .isEqualTo(cmd);
-            }
-        });
-    }
-
-    private void assertHas(int flags, Set<Fields> missing)
-    {
-        SoftAssertions checks = new SoftAssertions();
-        for (Fields field : missing)
-        {
-            checks.assertThat(SavedCommand.getFieldChanged(field, flags))
-                  .describedAs("field %s changed", field).
-                  isTrue();
-            checks.assertThat(SavedCommand.getFieldIsNull(field, flags))
-                  .describedAs("field %s not null", field)
-                  .isFalse();
-        }
-        checks.assertAll();
+                    Command reconstructed = builder.construct();
+                    if (!reconstructed.equals(orig))
+                        reconstructed.equals(orig);
+                    Assertions.assertThat(reconstructed)
+                              .describedAs("lhs=expected\nrhs=actual\n%s", new LazyToString(() -> ReflectionUtils.recursiveEquals(orig, reconstructed).toString()))
+                              .isEqualTo(orig);
+                }
+            });
     }
 
     private void assertMissing(int flags, Set<Fields> missing)

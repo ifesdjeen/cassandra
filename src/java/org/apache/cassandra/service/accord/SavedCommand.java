@@ -49,6 +49,8 @@ import org.apache.cassandra.service.accord.serializers.KeySerializers;
 import org.apache.cassandra.service.accord.serializers.WaitingOnSerializer;
 import org.apache.cassandra.utils.Throwables;
 
+import static accord.utils.Invariants.illegalState;
+
 public class SavedCommand
 {
     // This enum is order-dependent
@@ -56,6 +58,7 @@ public class SavedCommand
     {
         TXN_ID,
         EXECUTE_AT,
+        EXECUTE_AT_LEAST,
         SAVE_STATUS,
         DURABILITY,
         ACCEPTED,
@@ -143,6 +146,8 @@ public class SavedCommand
             CommandSerializers.txnId.serialize(after.txnId(), out, userVersion);
         if (getFieldChanged(Fields.EXECUTE_AT, flags) && after.executeAt() != null)
             CommandSerializers.timestamp.serialize(after.executeAt(), out, userVersion);
+        if (getFieldChanged(Fields.EXECUTE_AT_LEAST, flags) && after.executesAtLeast() != null)
+            CommandSerializers.timestamp.serialize(after.executesAtLeast(), out, userVersion);
         if (getFieldChanged(Fields.SAVE_STATUS, flags))
             out.writeInt(after.saveStatus().ordinal());
         if (getFieldChanged(Fields.DURABILITY, flags) && after.durability() != null)
@@ -189,6 +194,7 @@ public class SavedCommand
 
         flags = collectFlags(before, after, Command::txnId, true, Fields.TXN_ID, flags);
         flags = collectFlags(before, after, Command::executeAt, true, Fields.EXECUTE_AT, flags);
+        flags = collectFlags(before, after, Command::executesAtLeast, true, Fields.EXECUTE_AT_LEAST, flags);
         flags = collectFlags(before, after, Command::saveStatus, false, Fields.SAVE_STATUS, flags);
         flags = collectFlags(before, after, Command::durability, false, Fields.DURABILITY, flags);
 
@@ -204,6 +210,7 @@ public class SavedCommand
 
         flags = collectFlags(before, after, Command::writes, false, Fields.WRITES, flags);
         flags = collectFlags(before, after, Command::durableListeners, true, Fields.LISTENERS, flags);
+
         return flags;
     }
 
@@ -267,6 +274,7 @@ public class SavedCommand
         TxnId txnId = null;
 
         Timestamp executeAt = null;
+        Timestamp executeAtLeast = null;
         SaveStatus saveStatus = null;
         Status.Durability durability = null;
 
@@ -313,6 +321,14 @@ public class SavedCommand
                     executeAt = null;
                 else
                     executeAt = CommandSerializers.timestamp.deserialize(in, userVersion);
+            }
+
+            if (getFieldChanged(Fields.EXECUTE_AT_LEAST, flags))
+            {
+                if (getFieldIsNull(Fields.EXECUTE_AT_LEAST, flags))
+                    executeAtLeast = null;
+                else
+                    executeAtLeast = CommandSerializers.timestamp.deserialize(in, userVersion);
             }
 
             if (getFieldChanged(Fields.SAVE_STATUS, flags))
@@ -478,8 +494,28 @@ public class SavedCommand
                     return Command.Executed.executed(attrs, saveStatus, executeAt, promised, acceptedOrCommitted, waitingOn, writes, result);
                 case Truncated:
                 case Invalidated:
+                    return truncated(attrs, saveStatus, executeAt, executeAtLeast, writes, result);
                 default:
                     throw new IllegalStateException();
+            }
+        }
+
+        private static Command.Truncated truncated(CommonAttributes.Mutable attrs, SaveStatus status, Timestamp executeAt, Timestamp executesAtLeast, Writes writes, Result result)
+        {
+            switch (status)
+            {
+                default:
+                    throw illegalState("Unhandled SaveStatus: " + status);
+                case TruncatedApplyWithOutcome:
+                case TruncatedApplyWithDeps:
+                case TruncatedApply:
+                    return Command.Truncated.truncatedApply(attrs, status, executeAt, writes, result, executesAtLeast);
+                case ErasedOrInvalidOrVestigial:
+                    return Command.Truncated.erasedOrInvalidOrVestigial(attrs.txnId(), attrs.durability(), attrs.route());
+                case Erased:
+                    return Command.Truncated.erased(attrs.txnId(), attrs.durability(), attrs.route());
+                case Invalidated:
+                    return Command.Truncated.invalidated(attrs.txnId(), attrs.durableListeners());
             }
         }
 
