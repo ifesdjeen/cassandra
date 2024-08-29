@@ -40,7 +40,6 @@ import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.service.accord.SavedCommand.Fields;
 import org.apache.cassandra.service.consensus.TransactionalMode;
 import org.apache.cassandra.utils.AccordGenerators;
-import org.assertj.core.api.Assertions;
 import org.assertj.core.api.SoftAssertions;
 
 import static accord.utils.Property.qt;
@@ -74,37 +73,35 @@ public class SavedCommandTest
     {
         Gen<AccordGenerators.CommandBuilder> gen = AccordGenerators.commandsBuilder();
         DataOutputBuffer out = new DataOutputBuffer();
-        qt().withSeed(-1451772586194177400L)
-            .forAll(gen)
+        qt().forAll(gen)
             .check(cmdBuilder -> {
                 int userVersion = 1; //TODO (maintance): where can we fetch all supported versions?
+                SoftAssertions checks = new SoftAssertions();
                 for (SaveStatus saveStatus : SaveStatus.values())
                 {
+                    if (saveStatus == SaveStatus.TruncatedApplyWithDeps) continue;
                     out.clear();
-                    Command orig;
-                    try
-                    {
-                        orig = cmdBuilder.build(saveStatus);
-                    }
-                    catch (Throwable t)
-                    {
-                        // TODO (desired): improve the generator so that it does not produce invalid commands
-                        // Skip unbuildable and non-serializable commands
-                        return;
-                    }
+                    Command orig = cmdBuilder.build(saveStatus);
                     SavedCommand.serialize(null, orig, out, userVersion);
                     SavedCommand.Builder builder = new SavedCommand.Builder();
                     builder.deserializeNext(new DataInputBuffer(out.unsafeGetBufferAndFlip(), false), userVersion);
                     // We are not persisting the result, so force it for strict equality
                     builder.forceResult(orig.result());
-
-                    Command reconstructed = builder.construct();
-                    if (!reconstructed.equals(orig))
-                        reconstructed.equals(orig);
-                    Assertions.assertThat(reconstructed)
-                              .describedAs("lhs=expected\nrhs=actual\n%s", new LazyToString(() -> ReflectionUtils.recursiveEquals(orig, reconstructed).toString()))
-                              .isEqualTo(orig);
+                    Command reconstructed;
+                    try
+                    {
+                        reconstructed = builder.construct();
+                    }
+                    catch (Throwable t)
+                    {
+                        checks.fail("Failure constructing with SaveStatus=" + saveStatus, t);
+                        continue;
+                    }
+                    checks.assertThat(reconstructed)
+                          .describedAs("lhs=expected\nrhs=actual\n%s", new LazyToString(() -> ReflectionUtils.recursiveEquals(orig, reconstructed).toString()))
+                          .isEqualTo(orig);
                 }
+                checks.assertAll();
             });
     }
 

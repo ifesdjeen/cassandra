@@ -222,6 +222,8 @@ public class AccordGenerators
             switch (saveStatus)
             {
                 default: throw new AssertionError("Unhandled saveStatus: " + saveStatus);
+                case TruncatedApplyWithDeps:
+                    throw new IllegalArgumentException("TruncatedApplyWithDeps is not a valid state for a Command to be in, its for FetchData");
                 case Uninitialised:
                 case NotDefined:
                     return Command.SerializerSupport.notDefined(attributes(saveStatus), Ballot.ZERO);
@@ -249,7 +251,6 @@ public class AccordGenerators
                 case Applied:
                     return Command.SerializerSupport.executed(attributes(saveStatus), saveStatus, executeAt, promised, accepted, waitingOn, new Writes(txnId, executeAt, keysOrRanges, new TxnWrite(Collections.emptyList(), true)), new TxnData());
 
-                case TruncatedApplyWithDeps:
                 case TruncatedApply:
                     if (txnId.kind().awaitsOnlyDeps()) return Command.SerializerSupport.truncatedApply(attributes(saveStatus), saveStatus, executeAt, null, null, txnId);
                     else return Command.SerializerSupport.truncatedApply(attributes(saveStatus), saveStatus, executeAt, null, null);
