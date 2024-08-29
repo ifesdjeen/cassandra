@@ -209,7 +209,7 @@ public class SavedCommand
         flags = collectFlags(before, after, SavedCommand::getWaitingOn, false, Fields.WAITING_ON, flags);
 
         flags = collectFlags(before, after, Command::writes, false, Fields.WRITES, flags);
-        flags = collectFlags(before, after, Command::durableListeners, true, Fields.LISTENERS, flags);
+        flags = collectFlags(before, after, c -> c.durableListeners().isEmpty() ? null : c.durableListeners(), true, Fields.LISTENERS, flags);
 
         return flags;
     }
