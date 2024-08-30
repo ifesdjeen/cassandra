@@ -44,6 +44,7 @@ import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
+import org.apache.cassandra.journal.Params;
 import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.net.IVerbHandler;
 import org.apache.cassandra.net.Message;
@@ -146,6 +147,8 @@ public interface IAccordService
      * Fetch the redundnant befores for every command store
      */
     CompactionInfo getCompactionInfo();
+
+    Params journalConfiguration();
 
     default Id nodeId() { throw new UnsupportedOperationException(); }
 

@@ -40,6 +40,7 @@ import accord.primitives.Timestamp;
 import accord.primitives.TxnId;
 import accord.primitives.Writes;
 import org.apache.cassandra.io.util.DataInputPlus;
+import org.apache.cassandra.io.util.DataOutputBuffer;
 import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.journal.Journal;
 import org.apache.cassandra.service.accord.serializers.CommandSerializers;
@@ -120,6 +121,15 @@ public class SavedCommand
             || current.saveStatus() == SaveStatus.Uninitialised)
             return null;
         return new SavedCommand.DiffWriter(original, current);
+    }
+
+    public static ByteBuffer asSerializedDiff(Command after, int userVersion) throws IOException
+    {
+        try (DataOutputBuffer out = new DataOutputBuffer())
+        {
+            diffWriter(null, after).write(out, userVersion);
+            return out.unsafeGetBufferAndFlip();
+        }
     }
 
     public static void serialize(Command before, Command after, DataOutputPlus out, int userVersion) throws IOException

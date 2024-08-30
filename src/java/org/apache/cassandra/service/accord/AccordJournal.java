@@ -85,6 +85,7 @@ public class AccordJournal implements IJournal, Shutdownable
 
     enum Status { INITIALIZED, STARTING, STARTED, TERMINATING, TERMINATED }
     private volatile Status status = Status.INITIALIZED;
+    private final Params configuration;
 
     @VisibleForTesting
     public AccordJournal(Params params)
@@ -108,6 +109,7 @@ public class AccordJournal implements IJournal, Shutdownable
                                      },
                                      new AccordSegmentCompactor<>(JournalKey.SUPPORT, params.userVersion()));
         this.journalTable = new AccordJournalTable<>(journal, JournalKey.SUPPORT, params.userVersion());
+        this.configuration = params;
     }
 
     public AccordJournal start(Node node)
@@ -288,6 +290,11 @@ public class AccordJournal implements IJournal, Shutdownable
     public void truncateForTesting()
     {
         journal.truncateForTesting();
+    }
+
+    public Params configuration()
+    {
+        return configuration;
     }
 
     @VisibleForTesting

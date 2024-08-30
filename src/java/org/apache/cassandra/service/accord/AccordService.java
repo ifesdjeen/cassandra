@@ -102,6 +102,7 @@ import org.apache.cassandra.exceptions.ReadTimeoutException;
 import org.apache.cassandra.exceptions.RequestExecutionException;
 import org.apache.cassandra.exceptions.RequestTimeoutException;
 import org.apache.cassandra.exceptions.WriteTimeoutException;
+import org.apache.cassandra.journal.Params;
 import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.metrics.AccordClientRequestMetrics;
 import org.apache.cassandra.net.IVerbHandler;
@@ -269,6 +270,12 @@ public class AccordService implements IAccordService, Shutdownable
         public CompactionInfo getCompactionInfo()
         {
             return new CompactionInfo(new Int2ObjectHashMap<>(), new Int2ObjectHashMap<>(), DurableBefore.EMPTY);
+        }
+
+        @Override
+        public Params journalConfiguration()
+        {
+            throw new UnsupportedOperationException("Cannot return journal configuration when accord.enabled = false in cassandra.yaml");
         }
 
         @Override
@@ -1074,5 +1081,11 @@ public class AccordService implements IAccordService, Shutdownable
             durableBefore.set(DurableBefore.merge(durableBefore.get(), safeStore.commandStore().durableBefore()));
         }));
         return new CompactionInfo(redundantBefores, ranges, durableBefore.get());
+    }
+
+    @Override
+    public Params journalConfiguration()
+    {
+        return journal.configuration();
     }
 }
