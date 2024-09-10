@@ -80,7 +80,7 @@ public class AccordMessageSinkTest
         Request request = new AbstractFetchCoordinator.FetchRequest(epoch, id, ranges, PartialDeps.NONE, partialTxn);
 
         checkRequestReplies(request,
-                            new AbstractFetchCoordinator.FetchResponse(null, null, null, id),
+                            new AbstractFetchCoordinator.FetchResponse(null, null, id),
                             CommitOrReadNack.Insufficient);
 
     }
@@ -91,7 +91,7 @@ public class AccordMessageSinkTest
         TxnId txnId = nextTxnId(42, Txn.Kind.Read, Routable.Domain.Key);
         Request request = new ReadTxnData(node, topologies, txnId, topology.ranges(), txnId.epoch());
         checkRequestReplies(request,
-                            new ReadData.ReadOk(null, null, null),
+                            new ReadData.ReadOk(null, null),
                             CommitOrReadNack.Insufficient);
     }
 
