@@ -22,6 +22,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -679,5 +680,44 @@ public class AccordJournal implements IJournal, Shutdownable
     public void truncateForTesting()
     {
         journal.truncateForTesting();
+    }
+
+    @VisibleForTesting
+    public void replay()
+    {
+        Iterator<JournalKey> iter = journal.replayStaticSegmentsInKeyOrder(JournalKey.SUPPORT);
+        while (iter.hasNext())
+        {
+            JournalKey key = iter.next();
+            loadCommandsForTxn(key);
+        }
+    }
+
+    private void loadCommandsForTxn(JournalKey journalKey)
+    {
+        List<SavedCommand.LoadedDiff> diffs = (List<SavedCommand.LoadedDiff>) (List<?>) journal.readAll(journalKey);
+        Command prev = null;
+        List<SavedCommand.LoadedDiff> subset = new ArrayList<>();
+        for (int i = 0; i < diffs.size(); i++)
+        {
+            SavedCommand.LoadedDiff diff = diffs.get(i);
+            boolean isLast = i == diffs.size() - 1;
+            if (prev == null)
+                prev = Command.NotDefined.uninitialised(diff.txnId);
+
+            subset.add(diff);
+            Command current = SavedCommand.reconstructFromDiff(diffs);
+
+            try
+            {
+                AccordCommandStore commandStore = (AccordCommandStore) node.commandStores()
+                                                                           .forId(journalKey.commandStoreId);
+                commandStore.initializeFromReplay(prev, current, isLast);
+            }
+            catch (InterruptedException e)
+            {
+                throw new RuntimeException("Could not replay the log due to node shutdown.", e);
+            }
+        }
     }
 }

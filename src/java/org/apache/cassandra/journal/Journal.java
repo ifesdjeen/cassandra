@@ -22,8 +22,11 @@ import java.nio.file.FileStore;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Comparator;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
+import java.util.PriorityQueue;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
@@ -52,6 +55,7 @@ import org.apache.cassandra.io.util.PathUtils;
 import org.apache.cassandra.journal.Segments.ReferencedSegment;
 import org.apache.cassandra.journal.Segments.ReferencedSegments;
 import org.apache.cassandra.service.StorageService;
+import org.apache.cassandra.utils.AbstractIterator;
 import org.apache.cassandra.utils.Crc;
 import org.apache.cassandra.utils.JVMStabilityInspector;
 import org.apache.cassandra.utils.Simulate;
@@ -852,6 +856,79 @@ public class Journal<K, V> implements Shutdownable
         staticSegments.sort(comparing(s -> s.descriptor));
         for (StaticSegment<K, V> segment : staticSegments)
             segment.forEachRecord(consumer);
+    }
+
+    private static class DeduplicatingIterator<K> implements Iterator<K>
+    {
+        private final AbstractIterator<K> delegate;
+        private K lastKey = null;
+
+        public DeduplicatingIterator(AbstractIterator<K> delegate)
+        {
+            this.delegate = delegate;
+        }
+
+        public boolean hasNext()
+        {
+            if (lastKey == null)
+                return delegate.hasNext();
+            if (!delegate.hasNext())
+                return false;
+
+            while (delegate.peek().equals(lastKey))
+                delegate.next();
+
+            return delegate.hasNext();
+        }
+
+        public K next()
+        {
+            return delegate.next();
+        }
+    }
+
+    public Iterator<K> replayStaticSegmentsInKeyOrder(Comparator<K> comparator)
+    {
+        class SegmentIterator
+        {
+            final StaticSegment<K, V> segment;
+            final Index.IndexIterator<K> indexIterator;
+
+            SegmentIterator(StaticSegment<K, V> segment, Index.IndexIterator<K> indexIterator)
+            {
+                this.segment = segment;
+                this.indexIterator = indexIterator;
+            }
+        }
+
+        PriorityQueue<SegmentIterator> queue = new PriorityQueue<>((o1, o2) -> comparator.compare(o1.indexIterator.currentKey(),
+                                                                                          o2.indexIterator.currentKey()));
+
+        segments().selectStatic(segment -> {
+            SegmentIterator iter = new SegmentIterator(segment, segment.index().iterator());
+            if (iter.indexIterator.hasNext())
+            {
+                iter.indexIterator.next();
+                queue.add(iter);
+            }
+        });
+
+        return new DeduplicatingIterator<>(new AbstractIterator<K>()
+        {
+            protected K computeNext()
+            {
+                if (queue.isEmpty())
+                    return endOfData();
+                SegmentIterator iter = queue.poll();
+                K ret = iter.indexIterator.currentKey();
+                if (iter.indexIterator.hasNext())
+                {
+                    iter.indexIterator.next();
+                    queue.add(iter);
+                }
+                return ret;
+            }
+        });
     }
 
     @VisibleForTesting

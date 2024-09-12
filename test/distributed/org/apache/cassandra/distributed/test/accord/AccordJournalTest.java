@@ -27,8 +27,10 @@ import org.junit.Test;
 import org.apache.cassandra.config.CassandraRelevantProperties;
 import org.apache.cassandra.distributed.Cluster;
 import org.apache.cassandra.distributed.api.ConsistencyLevel;
+import org.apache.cassandra.distributed.shared.ClusterUtils;
 import org.apache.cassandra.distributed.shared.WithProperties;
 import org.apache.cassandra.distributed.test.TestBaseImpl;
+import org.apache.cassandra.service.accord.AccordService;
 import org.apache.cassandra.utils.concurrent.CountDownLatch;
 
 public class AccordJournalTest extends TestBaseImpl
@@ -84,6 +86,19 @@ public class AccordJournalTest extends TestBaseImpl
                 thread.join();
 
             cluster.coordinator(1).execute("SELECT * FROM " + TABLE + " WHERE k = ?;", ConsistencyLevel.SERIAL, 1);
+
+            cluster.get(1).flush(KEYSPACE);
+            cluster.get(1).runOnInstance(() -> {
+                ((AccordService) AccordService.instance()).journal().closeCurrentSegmentForTesting();
+            });
+
+            ClusterUtils.stopUnchecked(cluster.get(1));
+            cluster.get(1).startup();
+
+            cluster.get(1).runOnInstance(() -> {
+                ((AccordService) AccordService.instance()).journal().replay();
+            });
+            // TODO (required): validate CFK and command cache after replay
         }
     }
 }

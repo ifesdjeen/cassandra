@@ -83,4 +83,14 @@ abstract class Index<K> implements Closeable
     {
         return any(ids, this::mayContainId);
     }
+
+
+    interface IndexIterator<K>
+    {
+        boolean hasNext();
+        K currentKey();
+        int currentOffset();
+        void next();
+    }
+
 }

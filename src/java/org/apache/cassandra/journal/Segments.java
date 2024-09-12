@@ -18,6 +18,7 @@
 package org.apache.cassandra.journal;
 
 import java.util.Collection;
+import java.util.function.Consumer;
 
 import accord.utils.Invariants;
 import org.agrona.collections.Long2ObjectHashMap;
@@ -127,6 +128,13 @@ class Segments<K, V>
         for (Segment<K, V> segment : segments.values())
             if (segment.isStatic())
                 into.add(segment.asStatic());
+    }
+
+    void selectStatic(Consumer<StaticSegment<K, V>> into)
+    {
+        for (Segment<K, V> segment : segments.values())
+            if (segment.isStatic())
+                into.accept(segment.asStatic());
     }
 
     /**

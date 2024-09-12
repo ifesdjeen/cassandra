@@ -322,4 +322,46 @@ final class OnDiskIndex<K> extends Index<K>
         }
         return open(descriptor, keySupport);
     }
+
+    public IndexIterator<K> iterator()
+    {
+        return new IndexIteratorImpl();
+    }
+
+    private class IndexIteratorImpl implements IndexIterator<K>
+    {
+        int currentIdx;
+        K currentKey;
+        int currentOffset;
+
+        IndexIteratorImpl()
+        {
+            currentIdx = -1;
+        }
+
+        @Override
+        public boolean hasNext()
+        {
+            return currentIdx < (entryCount - 1);
+        }
+
+        @Override
+        public K currentKey()
+        {
+            return currentKey;
+        }
+
+        @Override
+        public int currentOffset()
+        {
+            return currentOffset;
+        }
+
+        public void next()
+        {
+            currentIdx++;
+            currentKey = keyAtIndex(currentIdx);
+            currentOffset = offsetAtIndex(currentIdx);
+        }
+    }
 }

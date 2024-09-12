@@ -41,6 +41,9 @@ import accord.api.Agent;
 import accord.api.DataStore;
 import accord.api.LocalListeners;
 import accord.api.ProgressLog;
+import accord.local.CommandStores;
+import accord.local.KeyHistory;
+import accord.local.Status;
 import accord.local.cfk.CommandsForKey;
 import accord.impl.TimestampsForKey;
 import accord.local.Command;
@@ -50,6 +53,7 @@ import accord.local.NodeTimeService;
 import accord.local.PreLoadContext;
 import accord.local.RedundantBefore;
 import accord.local.SafeCommandStore;
+import accord.primitives.Deps;
 import accord.primitives.Keys;
 import accord.primitives.Ranges;
 import accord.primitives.RoutableKey;
@@ -70,6 +74,7 @@ import org.apache.cassandra.service.accord.api.PartitionKey;
 import org.apache.cassandra.service.accord.async.AsyncOperation;
 import org.apache.cassandra.service.accord.events.CacheEvents;
 import org.apache.cassandra.utils.Clock;
+import org.apache.cassandra.utils.concurrent.AsyncPromise;
 import org.apache.cassandra.utils.concurrent.UncheckedInterruptedException;
 
 import static org.apache.cassandra.concurrent.ExecutorFactory.Global.executorFactory;
@@ -538,6 +543,47 @@ public class AccordCommandStore extends CommandStore implements CacheSize
         executor.shutdown();
     }
 
+    @Override
+    public void registerHistoricalTransactions(Deps deps, SafeCommandStore safeStore)
+    {
+        // TODO:
+        // journal.registerHistoricalTransactions(id(), deps);
+
+        if (deps.isEmpty()) return;
+
+        CommandStores.RangesForEpoch ranges = safeStore.ranges();
+        // used in places such as accord.local.CommandStore.fetchMajorityDeps
+        // We find a set of dependencies for a range then update CommandsFor to know about them
+        Ranges allRanges = safeStore.ranges().all();
+        deps.keyDeps.keys().forEach(allRanges, key -> {
+            // TODO (now): batch register to minimise GC
+            deps.keyDeps.forEach(key, (txnId, txnIdx) -> {
+                // TODO (desired, efficiency): this can be made more efficient by batching by epoch
+                if (ranges.coordinates(txnId).contains(key))
+                    return; // already coordinates, no need to replicate
+                if (!ranges.allBefore(txnId.epoch()).contains(key))
+                    return;
+
+                safeStore.get(key).registerHistorical(safeStore, txnId);
+            });
+        });
+        for (int i = 0; i < deps.rangeDeps.rangeCount(); i++)
+        {
+            var range = deps.rangeDeps.range(i);
+            if (!allRanges.intersects(range))
+                continue;
+            deps.rangeDeps.forEach(range, txnId -> {
+                // TODO (desired, efficiency): this can be made more efficient by batching by epoch
+                if (ranges.coordinates(txnId).intersects(range))
+                    return; // already coordinates, no need to replicate
+                if (!ranges.allBefore(txnId.epoch()).intersects(range))
+                    return;
+
+                diskCommandsForRanges().mergeHistoricalTransaction(txnId, Ranges.single(range).slice(allRanges), Ranges::with);
+            });
+        }
+    }
+
     protected void setRejectBefore(ReducingRangeMap<Timestamp> newRejectBefore)
     {
         super.setRejectBefore(newRejectBefore);
@@ -580,6 +626,47 @@ public class AccordCommandStore extends CommandStore implements CacheSize
     public void appendCommands(List<SavedCommand.SavedDiff> commands, List<Command> sanityCheck, Runnable onFlush)
     {
         journal.appendCommand(id, commands, sanityCheck, onFlush);
+    }
+
+    public void initializeFromReplay(Command prev, Command next, boolean load) throws InterruptedException
+    {
+        // Some commands are going to be loaded asynchronously to satisfy context. Load only last one version for each command.
+        if (load)
+            commandCache.maybeLoad(next.txnId(), next);
+
+        PreLoadContext context = PreLoadContext.EMPTY_PRELOADCONTEXT;
+        if (CommandsForKey.manages(next.txnId()))
+        {
+            Keys keys = (Keys) next.keysOrRanges();
+            if (keys == null || next.hasBeen(Status.Truncated)) keys = (Keys) prev.keysOrRanges();
+            if (keys != null)
+                context = PreLoadContext.contextFor(next.txnId(), keys, KeyHistory.COMMANDS);
+        }
+        else if (!CommandsForKey.managesExecution(next.txnId()) && next.hasBeen(Status.Stable) && !next.hasBeen(Status.Truncated) && !prev.hasBeen(Status.Stable))
+        {
+            TxnId txnId = next.txnId();
+            Keys keys = next.asCommitted().waitingOn.keys;
+            if (!keys.isEmpty())
+                context = PreLoadContext.contextFor(txnId, keys, KeyHistory.COMMANDS);
+        }
+
+        AsyncPromise<Void> condition = new AsyncPromise<>();
+        execute(context,
+                safeStore -> {
+                    safeStore.replay(() -> {
+                        safeStore.updateMaxConflicts(prev, next);
+                        safeStore.updateCommandsForKey(prev, next);
+                    });
+                })
+        .begin((unused, throwable) -> {
+            if (throwable != null)
+                condition.setSuccess(null);
+            else
+                condition.setFailure(throwable);
+        });
+
+        // TODO (desired): explore how we can allow concurrent loading without causing cache races.
+        condition.await();
     }
 
     @VisibleForTesting
