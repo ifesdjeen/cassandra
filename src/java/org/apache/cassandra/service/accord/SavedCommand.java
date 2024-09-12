@@ -21,10 +21,11 @@ package org.apache.cassandra.service.accord;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.function.Function;
-
 import javax.annotation.Nullable;
 
 import com.google.common.annotations.VisibleForTesting;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import accord.api.Result;
 import accord.local.Command;
@@ -39,6 +40,8 @@ import accord.primitives.Seekables;
 import accord.primitives.Timestamp;
 import accord.primitives.TxnId;
 import accord.primitives.Writes;
+import accord.utils.Invariants;
+import org.apache.cassandra.config.CassandraRelevantProperties;
 import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.journal.Journal;
@@ -52,6 +55,7 @@ import static accord.utils.Invariants.illegalState;
 
 public class SavedCommand
 {
+    private static final Logger logger = LoggerFactory.getLogger(SavedCommand.class);
     // This enum is order-dependent
     public enum Fields
     {
@@ -70,23 +74,21 @@ public class SavedCommand
         WRITES,
     }
 
-    public interface Writer<K> extends Journal.Writer
-    {
-        void write(DataOutputPlus out, int userVersion) throws IOException;
-        K key();
-    }
-
-    public static class DiffWriter implements Writer<TxnId>
+    // TODO: maybe rename this and enclosing classes?
+    public static class DiffWriter implements Journal.Writer
     {
         private final Command before;
         private final Command after;
         private final TxnId txnId;
 
+        // TODO: improve encapsulationd
+        @VisibleForTesting
         public DiffWriter(Command before, Command after)
         {
             this(after.txnId(), before, after);
         }
 
+        @VisibleForTesting
         public DiffWriter(TxnId txnId, Command before, Command after)
         {
             this.txnId = txnId;
@@ -94,13 +96,13 @@ public class SavedCommand
             this.after = after;
         }
 
-        @VisibleForTesting
+        @VisibleForTesting // for MockJournal
         public Command before()
         {
             return before;
         }
 
-        @VisibleForTesting
+        @VisibleForTesting // for MockJournal
         public Command after()
         {
             return after;
@@ -118,21 +120,29 @@ public class SavedCommand
     }
 
     @Nullable
-    public static Writer<TxnId> diff(Command original, Command current)
+    public static DiffWriter diff(Command before, Command after)
     {
-        if (original == current
-            || current == null
-            || current.saveStatus() == SaveStatus.Uninitialised)
+        if (before == after
+            || after == null
+            || after.saveStatus() == SaveStatus.Uninitialised
+            || anyFieldChanged(before, after))
             return null;
-        return new SavedCommand.DiffWriter(original, current);
+        return new SavedCommand.DiffWriter(before, after);
     }
 
-
-    public static Writer<TxnId> diffWriter(Command before, Command after)
+    // TODO: this is very inefficient
+    private static boolean anyFieldChanged(Command before, Command after)
     {
-        return new DiffWriter(before, after);
-    }
+        int flags = getFlags(before, after);
+        for (Fields field : Fields.values())
+        {
+            if (getFieldChanged(field, flags))
+                return true;
+        }
 
+        return false;
+    }    
+    
     public static void serialize(Command before, Command after, DataOutputPlus out, int userVersion) throws IOException
     {
         int flags = getFlags(before, after);
@@ -245,6 +255,10 @@ public class SavedCommand
     @VisibleForTesting
     static boolean getFieldChanged(Fields field, int oldFlags)
     {
+        // TODO (now): improve command generators to generate _progressions_ of commands
+        if (CassandraRelevantProperties.DTEST_ACCORD_JOURNAL_WRITE_ALL_FIELDS.getBoolean())
+            return true;
+
         return (oldFlags & (1 << (field.ordinal() + Short.SIZE))) != 0;
     }
 
@@ -387,13 +401,13 @@ public class SavedCommand
             return count;
         }
 
+        // TODO: we seem to be writing some form of empty transaction
         @SuppressWarnings({ "rawtypes", "unchecked" })
         public void deserializeNext(DataInputPlus in, int userVersion) throws IOException
         {
+            final int flags = in.readInt();
             nextCalled = true;
             count++;
-
-            final int flags = in.readInt();
 
             if (getFieldChanged(Fields.TXN_ID, flags))
             {
@@ -514,6 +528,7 @@ public class SavedCommand
                 else
                     writes = CommandSerializers.writes.deserialize(in, userVersion);
             }
+            
         }
 
         public void forceResult(Result newValue)
@@ -521,7 +536,7 @@ public class SavedCommand
             this.result = newValue;
         }
 
-        public Command construct() throws IOException
+        public Command construct()
         {
             if (!nextCalled)
                 return null;
@@ -545,6 +560,8 @@ public class SavedCommand
             if (this.waitingOn != null)
                 waitingOn = this.waitingOn.provide(txnId, partialDeps);
 
+            Invariants.checkState(saveStatus != null, "%s", this);
+
             switch (saveStatus.status)
             {
                 case NotDefined:
@@ -553,14 +570,12 @@ public class SavedCommand
                 case PreAccepted:
                     return Command.PreAccepted.preAccepted(attrs, executeAt, promised);
                 case AcceptedInvalidate:
-                    if (saveStatus == SaveStatus.AcceptedInvalidateWithDefinition)
-                        return Command.Accepted.accepted(attrs, saveStatus, executeAt, promised, acceptedOrCommitted);
-                    else
-                        return Command.AcceptedInvalidateWithoutDefinition.acceptedInvalidate(attrs, promised, acceptedOrCommitted);
-
                 case Accepted:
                 case PreCommitted:
-                    return Command.Accepted.accepted(attrs, saveStatus, executeAt, promised, acceptedOrCommitted);
+                    if (saveStatus == SaveStatus.AcceptedInvalidate)
+                        return Command.AcceptedInvalidateWithoutDefinition.acceptedInvalidate(attrs, promised, acceptedOrCommitted);
+                    else
+                        return Command.Accepted.accepted(attrs, saveStatus, executeAt, promised, acceptedOrCommitted);
                 case Committed:
                 case Stable:
                     return Command.Committed.committed(attrs, saveStatus, executeAt, promised, acceptedOrCommitted, waitingOn);

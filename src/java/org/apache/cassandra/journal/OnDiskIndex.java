@@ -25,7 +25,6 @@ import java.util.Arrays;
 import java.util.Map;
 import java.util.NavigableMap;
 import java.util.zip.CRC32;
-
 import javax.annotation.Nullable;
 
 import accord.utils.Invariants;
