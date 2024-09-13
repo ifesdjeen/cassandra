@@ -706,7 +706,7 @@ public class AccordJournal implements IJournal, Shutdownable
                 prev = Command.NotDefined.uninitialised(diff.txnId);
 
             subset.add(diff);
-            Command current = SavedCommand.reconstructFromDiff(diffs);
+            Command current = SavedCommand.reconstructFromDiff(subset);
 
             try
             {
@@ -718,6 +718,9 @@ public class AccordJournal implements IJournal, Shutdownable
             {
                 throw new RuntimeException("Could not replay the log due to node shutdown.", e);
             }
+
+            prev = current;
+
         }
     }
 }

@@ -861,7 +861,7 @@ public class Journal<K, V> implements Shutdownable
     private static class DeduplicatingIterator<K> implements Iterator<K>
     {
         private final AbstractIterator<K> delegate;
-        private K lastKey = null;
+        private K last = null;
 
         public DeduplicatingIterator(AbstractIterator<K> delegate)
         {
@@ -870,12 +870,12 @@ public class Journal<K, V> implements Shutdownable
 
         public boolean hasNext()
         {
-            if (lastKey == null)
+            if (last == null)
                 return delegate.hasNext();
             if (!delegate.hasNext())
                 return false;
 
-            while (delegate.peek().equals(lastKey))
+            while (delegate.hasNext() && delegate.peek().equals(last))
                 delegate.next();
 
             return delegate.hasNext();
@@ -883,7 +883,8 @@ public class Journal<K, V> implements Shutdownable
 
         public K next()
         {
-            return delegate.next();
+            last = delegate.next();
+            return last;
         }
     }
 
