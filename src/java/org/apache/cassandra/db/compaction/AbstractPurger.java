@@ -197,6 +197,7 @@ public abstract class AbstractPurger extends Transformation<UnfilteredRowIterato
         AccordJournalValueSerializers.FlyweightSerializer<Object, Object> serializer = null;
         Object[] lastClustering = null;
         final int userVersion;
+
         public AccordJournalPurger(OperationType type,
                                    AbstractCompactionController controller,
                                    long nowInSec,
@@ -269,7 +270,7 @@ public abstract class AbstractPurger extends Transformation<UnfilteredRowIterato
                 switch (cleanup)
                 {
                     case NO:
-                        break;
+                        return newVersion.build().unfilteredIterator();
                     case INVALIDATE:
                     case TRUNCATE_WITH_OUTCOME:
                     case TRUNCATE:
@@ -282,22 +283,14 @@ public abstract class AbstractPurger extends Transformation<UnfilteredRowIterato
                                   .add(recordColumn.name.toString(),
                                        SavedCommand.asSerializedDiff(newCommand, userVersion));
                         return newVersion.build().unfilteredIterator();
+                    default:
+                        throw new IllegalStateException("Unknown cleanup: " + cleanup);
                 }
             }
             catch (IOException e)
             {
                 throw new RuntimeException(e);
             }
-
-            UnfilteredRowIterator purged = Transformation.apply(partition, this);
-            if (purged.isEmpty())
-            {
-                onEmptyPartitionPostPurge(purged.partitionKey());
-                purged.close();
-                return null;
-            }
-
-            return purged;
         }
 
         @Override
