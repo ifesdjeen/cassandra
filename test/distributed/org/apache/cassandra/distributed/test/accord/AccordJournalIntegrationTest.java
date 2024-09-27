@@ -32,9 +32,12 @@ import org.apache.cassandra.distributed.api.ConsistencyLevel;
 import org.apache.cassandra.distributed.shared.ClusterUtils;
 import org.apache.cassandra.distributed.shared.WithProperties;
 import org.apache.cassandra.distributed.test.TestBaseImpl;
+import org.apache.cassandra.schema.SchemaConstants;
+import org.apache.cassandra.service.accord.AccordKeyspace;
 import org.apache.cassandra.service.accord.AccordService;
 import org.apache.cassandra.utils.concurrent.CountDownLatch;
 
+// TODO: would benefit from some refactoring an fuzzing
 public class AccordJournalIntegrationTest extends TestBaseImpl
 {
     @Test
@@ -120,6 +123,42 @@ public class AccordJournalIntegrationTest extends TestBaseImpl
             {
                 Assert.assertTrue(Arrays.equals(before[i], after[i]));
             }
+        }
+    }
+
+    @Test
+    public void accordJournalCompactionTest() throws Throwable
+    {
+        try (Cluster cluster = Cluster.build(1)
+                                      .withoutVNodes()
+                                      .start())
+        {
+            cluster.schemaChange("CREATE KEYSPACE " + KEYSPACE + " WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 1};");
+            final String TABLE = KEYSPACE + ".test_table";
+            cluster.schemaChange("CREATE TABLE " + TABLE + " (k int, c int, v int, primary key (k, c)) WITH transactional_mode='full'");
+
+            for (int i = 0; i < 3; i++)
+            {
+                for (int j = 0; j < 1_000; j++)
+                {
+                    cluster.coordinator(1).execute("BEGIN TRANSACTION\n" +
+                                                   "INSERT INTO " + TABLE + "(k, c, v) VALUES (?, ?, ?);\n" +
+                                                   "COMMIT TRANSACTION",
+                                                   ConsistencyLevel.ALL,
+                                                   j, j, i
+                    );
+                }
+
+                cluster.get(1).runOnInstance(() -> {
+                    ((AccordService) AccordService.instance()).journal().closeCurrentSegmentForTesting();
+                });
+            }
+
+            cluster.get(1).runOnInstance(() -> {
+                ((AccordService) AccordService.instance()).journal().runCompactorForTesting();
+            });
+
+            cluster.get(1).nodetool("compact", SchemaConstants.ACCORD_KEYSPACE_NAME, AccordKeyspace.JOURNAL);
         }
     }
 }

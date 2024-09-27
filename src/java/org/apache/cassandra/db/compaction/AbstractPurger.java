@@ -53,11 +53,13 @@ import org.apache.cassandra.db.rows.UnfilteredRowIterator;
 import org.apache.cassandra.db.transform.Transformation;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.io.util.DataInputBuffer;
+import org.apache.cassandra.io.util.DataOutputBuffer;
 import org.apache.cassandra.journal.KeySupport;
 import org.apache.cassandra.schema.ColumnMetadata;
 import org.apache.cassandra.schema.Schema;
 import org.apache.cassandra.schema.TableId;
 import org.apache.cassandra.schema.TableMetadata;
+import org.apache.cassandra.service.accord.AccordJournalValueSerializers;
 import org.apache.cassandra.service.accord.AccordKeyspace;
 import org.apache.cassandra.service.accord.IAccordService;
 import org.apache.cassandra.service.accord.JournalKey;
@@ -189,10 +191,12 @@ public abstract class AbstractPurger extends Transformation<UnfilteredRowIterato
         final ColumnMetadata recordColumn;
         final ColumnMetadata versionColumn;
         final KeySupport<JournalKey> keySupport = JournalKey.SUPPORT;
-        int storeId;
-        Timestamp txnId;
 
-        final int serializationVersion;
+        JournalKey key = null;
+        Object builder = null;
+        AccordJournalValueSerializers.FlyweightSerializer<Object, Object> serializer = null;
+        Object[] lastClustering = null;
+        final int userVersion;
         public AccordJournalPurger(OperationType type,
                                    AbstractCompactionController controller,
                                    long nowInSec,
@@ -201,7 +205,8 @@ public abstract class AbstractPurger extends Transformation<UnfilteredRowIterato
         {
             super(type, controller, nowInSec, progressListener);
             IAccordService service = accordService.get();
-            serializationVersion = service.journalConfiguration().userVersion();
+            // TODO: test serialization version logic
+            userVersion = service.journalConfiguration().userVersion();
             IAccordService.CompactionInfo compactionInfo = service.getCompactionInfo();
             this.redundantBefores = compactionInfo.redundantBefores;
             this.ranges = compactionInfo.ranges;
@@ -211,12 +216,13 @@ public abstract class AbstractPurger extends Transformation<UnfilteredRowIterato
             this.versionColumn = cfs.metadata().getColumn(ColumnIdentifier.getInterned("user_version", false));
         }
 
+        @SuppressWarnings("unchecked")
         @Override
         protected void beginPartition(UnfilteredRowIterator partition)
         {
-            JournalKey journalKey = keySupport.deserialize(partition.partitionKey().getKey(), 0, serializationVersion);
-            storeId = journalKey.commandStoreId;
-            txnId = journalKey.timestamp;
+            key = keySupport.deserialize(partition.partitionKey().getKey(), 0, userVersion);
+            serializer = (AccordJournalValueSerializers.FlyweightSerializer<Object, Object>) key.type.serializer;
+            builder = serializer.mergerFor(key);
         }
 
         @Override
@@ -229,38 +235,35 @@ public abstract class AbstractPurger extends Transformation<UnfilteredRowIterato
 
             try
             {
-                PartitionUpdate.SimpleBuilder newVersion = PartitionUpdate.simpleBuilder(AccordKeyspace.Journal,
-                                                                                         partition.partitionKey());
-                SavedCommand.Builder builder = new SavedCommand.Builder();
-                Object[] lastClustering = null;
+                PartitionUpdate.SimpleBuilder newVersion = PartitionUpdate.simpleBuilder(AccordKeyspace.Journal, partition.partitionKey());
+
                 while (partition.hasNext())
+                    applyToRow((Row) partition.next());
+
+                if (key.type != JournalKey.Type.COMMAND_DIFF)
                 {
-                    Row row = (Row) partition.next();
-                    updateProgress();
-                    ByteBuffer record = row.getCell(recordColumn).buffer();
-                    try (DataInputBuffer in = new DataInputBuffer(record, false))
+                    try (DataOutputBuffer out = DataOutputBuffer.scratchBuffer.get())
                     {
-                        int userVersion = Int32Type.instance.compose(row.getCell(versionColumn).buffer());
-                        builder.deserializeNext(in, userVersion);
-                        lastClustering = row.clustering().getBufferArray();
+                        serializer.reserialize(key, builder, out, userVersion);
                         newVersion.row(lastClustering)
-                                  .add(recordColumn.name.toString(), record);
+                                  .add("record", out.asNewBuffer())
+                                  .add("user_version", userVersion);
                     }
+
+                    return newVersion.build().unfilteredIterator();
                 }
 
-                if (builder.isEmpty())
+                SavedCommand.Builder commandBuilder = (SavedCommand.Builder) builder;
+                if (Cleanup.isSafeToCleanup(durableBefore, commandBuilder.txnId(), ranges.get(key.commandStoreId).allAt(key.timestamp.epoch())))
                     return null;
 
-                if (Cleanup.isSafeToCleanup(durableBefore, builder.txnId(), ranges.get(storeId).allAt(txnId.epoch())))
-                    return null;
+                RedundantBefore redundantBefore = redundantBefores.get(key.commandStoreId);
 
-                RedundantBefore redundantBefore = redundantBefores.get(storeId);
-
-                if (builder.saveStatus().status == Truncated || builder.saveStatus().status == Invalidated)
+                if (commandBuilder.saveStatus().status == Truncated || commandBuilder.saveStatus().status == Invalidated)
                     return newVersion.build().unfilteredIterator(); // Already truncated
 
-                Cleanup cleanup = shouldCleanup(builder.txnId(), builder.saveStatus().status,
-                                                builder.durability(), builder.executeAt(), builder.route(),
+                Cleanup cleanup = shouldCleanup(commandBuilder.txnId(), commandBuilder.saveStatus().status,
+                                                commandBuilder.durability(), commandBuilder.executeAt(), commandBuilder.route(),
                                                 redundantBefore, durableBefore,
                                                 false);
                 switch (cleanup)
@@ -271,13 +274,13 @@ public abstract class AbstractPurger extends Transformation<UnfilteredRowIterato
                     case TRUNCATE_WITH_OUTCOME:
                     case TRUNCATE:
                     case ERASE:
-                        Command command = builder.construct();
+                        Command command = commandBuilder.construct();
                         Command newCommand = Commands.purge(command, null, cleanup);
                         newVersion = PartitionUpdate.simpleBuilder(AccordKeyspace.Journal, partition.partitionKey());
 
                         newVersion.row(lastClustering)
                                   .add(recordColumn.name.toString(),
-                                       SavedCommand.asSerializedDiff(newCommand, serializationVersion));
+                                       SavedCommand.asSerializedDiff(newCommand, userVersion));
                         return newVersion.build().unfilteredIterator();
                 }
             }
@@ -300,7 +303,19 @@ public abstract class AbstractPurger extends Transformation<UnfilteredRowIterato
         @Override
         protected Row applyToRow(Row row)
         {
-            throw new IllegalStateException("Should not be called");
+            updateProgress();
+            ByteBuffer record = row.getCell(recordColumn).buffer();
+            try (DataInputBuffer in = new DataInputBuffer(record, false))
+            {
+                int userVersion = Int32Type.instance.compose(row.getCell(versionColumn).buffer());
+                serializer.deserialize(key, builder, in, userVersion);
+                lastClustering = row.clustering().getBufferArray();
+            }
+            catch (IOException e)
+            {
+                throw new RuntimeException(e);
+            }
+            return null;
         }
 
         @Override

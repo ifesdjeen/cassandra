@@ -706,6 +706,7 @@ public class CompactionIterator extends CompactionInfo.Holder implements Unfilte
         return cfs.getKeyspaceName().equals(SchemaConstants.ACCORD_KEYSPACE_NAME) &&
                ImmutableSet.of(AccordKeyspace.COMMANDS,
                                AccordKeyspace.TIMESTAMPS_FOR_KEY,
+                               AccordKeyspace.JOURNAL,
                                AccordKeyspace.COMMANDS_FOR_KEY)
                            .contains(cfs.getTableName());
     }

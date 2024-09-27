@@ -127,7 +127,7 @@ public class SavedCommand
     {
         try (DataOutputBuffer out = new DataOutputBuffer())
         {
-            diffWriter(null, after).write(out, userVersion);
+            diff(null, after).write(out, userVersion);
             return out.unsafeGetBufferAndFlip();
         }
     }
