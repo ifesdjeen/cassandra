@@ -220,6 +220,7 @@ public class AccordConfigurationService extends AbstractConfigurationService<Acc
     {
         Invariants.checkState(state == State.INITIALIZED, "Expected state to be INITIALIZED but was %s", state);
         state = State.LOADING;
+        reportMetadataInternal(ClusterMetadata.current());
         EndpointMapping snapshot = mapping;
         //TODO (restart): if there are topologies loaded then there is likely failures if reporting is needed, as mapping is not setup yet
         diskState = diskStateManager.loadTopologies(((epoch, topology, syncStatus, pendingSyncNotify, remoteSyncComplete, closed, redundant) -> {
