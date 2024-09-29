@@ -297,11 +297,10 @@ public class AsyncLoaderTest
 
             commandStore.commandCache().unsafeSetLoadFunction(txnId ->
             {
-                loadCalls.incrementAndGet();
                 if (txnId.equals(txnId1))
-                    throw failure;
-                else if (txnId.equals(txnId2))
                     return notDefined(txnId, null);
+                else if (txnId.equals(txnId2))
+                    throw failure;
                 throw new AssertionError("Unknown txnId: " + txnId);
             });
 
