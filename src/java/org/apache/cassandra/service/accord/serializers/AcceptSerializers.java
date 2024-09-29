@@ -122,9 +122,6 @@ public class AcceptSerializers
                     out.writeByte(5);
                     CommandSerializers.ballot.serialize(reply.supersededBy, out, version);
                     break;
-                case Truncated:
-                    out.writeByte(5);
-                    break;
             }
         }
 
@@ -145,8 +142,6 @@ public class AcceptSerializers
                     return AcceptReply.TRUNCATED;
                 case 5:
                     return new AcceptReply(CommandSerializers.ballot.deserialize(in, version));
-                case 5:
-                    return AcceptReply.TRUNCATED;
             }
         }
 
