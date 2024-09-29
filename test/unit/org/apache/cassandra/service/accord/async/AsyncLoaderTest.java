@@ -56,6 +56,7 @@ import org.apache.cassandra.service.accord.AccordStateCache;
 import org.apache.cassandra.service.accord.api.PartitionKey;
 import org.apache.cassandra.service.accord.async.AsyncOperation.Context;
 import org.apache.cassandra.utils.concurrent.AsyncPromise;
+import org.apache.cassandra.utils.concurrent.Condition;
 
 import static accord.local.KeyHistory.COMMANDS;
 import static accord.local.KeyHistory.TIMESTAMPS;
@@ -292,15 +293,24 @@ public class AsyncLoaderTest
         AsyncResult.Settable<Void> callback = AsyncResults.settable();
         RuntimeException failure = new RuntimeException();
 
+        Condition condition = Condition.newOneTimeCondition();
         execute(commandStore, () -> {
             AtomicInteger loadCalls = new AtomicInteger();
 
             commandStore.commandCache().unsafeSetLoadFunction(txnId ->
             {
+                loadCalls.incrementAndGet();
+
                 if (txnId.equals(txnId1))
+                {
+                    condition.signal();
                     return notDefined(txnId, null);
+                }
                 else if (txnId.equals(txnId2))
+                {
+                    condition.awaitUninterruptibly();
                     throw failure;
+                }
                 throw new AssertionError("Unknown txnId: " + txnId);
             });
 
