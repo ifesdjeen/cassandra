@@ -415,7 +415,7 @@ public class AccordTestUtils
                                                            }),
                                                            holder,
                                                            journal,
-                                                           executorFactory().sequential(CommandStore.class.getSimpleName() + '[' + 0 + ']'),
+                                                           new AccordCommandStore.CommandStoreExecutor(executorFactory().sequential(CommandStore.class.getSimpleName() + '[' + 0 + ']')),
                                                            loadExecutor,
                                                            saveExecutor,
                                                            new AccordStateCacheMetrics(AccordCommandStores.ACCORD_STATE_CACHE + System.currentTimeMillis()));
