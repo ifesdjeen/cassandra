@@ -26,7 +26,6 @@ import javax.annotation.Nullable;
 import com.google.common.annotations.VisibleForTesting;
 
 import accord.api.Result;
-import accord.impl.ErasedSafeCommand;
 import accord.local.Cleanup;
 import accord.local.Command;
 import accord.local.CommonAttributes;
@@ -42,7 +41,6 @@ import accord.primitives.Timestamp;
 import accord.primitives.TxnId;
 import accord.primitives.Writes;
 import accord.utils.Invariants;
-import org.apache.cassandra.db.partitions.PartitionUpdate;
 import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputBuffer;
 import org.apache.cassandra.io.util.DataOutputPlus;
@@ -53,7 +51,6 @@ import org.apache.cassandra.service.accord.serializers.WaitingOnSerializer;
 import org.apache.cassandra.utils.Throwables;
 
 import static accord.local.Cleanup.NO;
-import static accord.local.Cleanup.shouldCleanup;
 import static accord.primitives.Known.KnownDeps.DepsErased;
 import static accord.primitives.Known.KnownDeps.DepsUnknown;
 import static accord.primitives.Known.KnownDeps.NoDeps;
