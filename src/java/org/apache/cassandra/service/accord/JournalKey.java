@@ -220,7 +220,7 @@ public final class JournalKey
     public String toString()
     {
         return "Key{" +
-               "timestamp=" + id +
+               "id=" + id +
                "type=" + type +
                ", commandStoreId=" + commandStoreId +
                '}';

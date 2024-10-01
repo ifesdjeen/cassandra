@@ -278,6 +278,18 @@ public class AccordJournal implements IJournal, Shutdownable
         return builder;
     }
 
+    public List<SavedCommand.Builder> loadSeparateDiffs(int commandStoreId, TxnId txnId)
+    {
+        JournalKey key = new JournalKey(txnId, JournalKey.Type.COMMAND_DIFF, commandStoreId);
+        List<SavedCommand.Builder> builders = new ArrayList<>();
+        journalTable.readAll(key, (in, version) -> {
+            SavedCommand.Builder builder = new SavedCommand.Builder(txnId);
+            builder.deserializeNext(in, version);
+            builders.add(builder);
+        });
+        return builders;
+    }
+
     private <BUILDER> BUILDER readAll(JournalKey key)
     {
         BUILDER builder = (BUILDER) key.type.serializer.mergerFor(key);

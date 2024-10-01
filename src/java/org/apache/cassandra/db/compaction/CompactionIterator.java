@@ -1093,6 +1093,7 @@ public class CompactionIterator extends CompactionInfo.Holder implements Unfilte
                 SavedCommand.Builder commandBuilder = (SavedCommand.Builder) builder;
                 if (commandBuilder.isEmpty())
                 {
+                    logger.info("Journal: Encountered empty row for {}", key);
                     Invariants.checkState(rows.isEmpty());
                     return partition;
                 }
@@ -1101,19 +1102,20 @@ public class CompactionIterator extends CompactionInfo.Holder implements Unfilte
                 Cleanup cleanup = commandBuilder.shouldCleanup(redundantBefore, durableBefore);
                 if (cleanup == ERASE)
                 {
-                    logger.info("Erasing {} {}", commandBuilder.txnId(), commandBuilder.saveStatus());
+                    logger.info("Journal: Erasing {} {}", key, commandBuilder.saveStatus());
                     return PartitionUpdate.fullPartitionDelete(metadata(), partition.partitionKey(), maxSeenTimestamp, nowInSec).unfilteredIterator();
                 }
 
                 commandBuilder = commandBuilder.maybeCleanup(cleanup);
                 if (commandBuilder != builder)
                 {
-                    logger.info("Expunging {} {}", commandBuilder.txnId(), commandBuilder.saveStatus());
+                    logger.info("Journal: Expunging {} {}", key, commandBuilder.saveStatus());
                     PartitionUpdate.SimpleBuilder newVersion = PartitionUpdate.simpleBuilder(AccordKeyspace.Journal, partition.partitionKey());
                     newVersion.row(lastClustering).add(recordColumn.name.toString(), commandBuilder.asByteBuffer(userVersion));
                     return newVersion.build().unfilteredIterator();
                 }
 
+                logger.info("Journal: Rewriting {}, {}", key, rows);
                 return PartitionUpdate.multiRowUpdate(AccordKeyspace.Journal, partition.partitionKey(), rows)
                                       .unfilteredIterator();
             }

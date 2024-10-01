@@ -133,6 +133,7 @@ public class AccordSegmentCompactor<V> implements SegmentCompactor<JournalKey, V
     {
         if (builder != null)
         {
+            logger.info("Journal: writing {} to journal table", key);
             SimpleBuilder partitionBuilder = PartitionUpdate.simpleBuilder(AccordKeyspace.Journal, AccordJournalTable.makePartitionKey(cfs, key, keySupport, userVersion));
             try (DataOutputBuffer out = DataOutputBuffer.scratchBuffer.get())
             {
