@@ -407,7 +407,7 @@ public class SavedCommand
         {
             this.txnId = txnId;
             durability = NotDurable;
-            acceptedOrCommitted = Ballot.ZERO;
+            acceptedOrCommitted = promised = Ballot.ZERO;
             waitingOn = (txn, deps) -> null;
             result = CommandSerializers.APPLIED;
         }
