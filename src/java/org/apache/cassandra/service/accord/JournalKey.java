@@ -167,7 +167,7 @@ public final class JournalKey
             if (cmp != 0) return cmp;
 
             int commandStoreId = buffer.getInt(position + CS_ID_OFFSET);
-            cmp = Integer.compare((byte) k.commandStoreId, commandStoreId);
+            cmp = Integer.compare(k.commandStoreId, commandStoreId);
             return cmp;
         }
 

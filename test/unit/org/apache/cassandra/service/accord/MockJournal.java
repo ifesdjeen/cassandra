@@ -47,6 +47,7 @@ import accord.primitives.Timestamp;
 import accord.primitives.TxnId;
 import accord.primitives.Writes;
 import accord.utils.Invariants;
+import org.apache.cassandra.journal.RecordPointer;
 import org.apache.cassandra.service.accord.AccordJournalValueSerializers.DurableBeforeAccumulator;
 import org.apache.cassandra.service.accord.AccordJournalValueSerializers.HistoricalTransactionsAccumulator;
 import org.apache.cassandra.service.accord.AccordJournalValueSerializers.IdentityAccumulator;

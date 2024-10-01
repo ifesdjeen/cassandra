@@ -83,7 +83,7 @@ public class AccordLoadTest extends AccordTestBase
                  final int batchSize = 1000;
                  final int concurrency = 100;
                  final int ratePerSecond = 1000;
-                 final int keyCount = 100000;
+                 final int keyCount = 1000000;
                  final float readChance = 0.33f;
                  long nextRepairAt = repairInterval;
                  final BitSet initialised = new BitSet();
