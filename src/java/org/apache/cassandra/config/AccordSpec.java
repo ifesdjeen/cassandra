@@ -63,12 +63,12 @@ public class AccordSpec
 
     public DurationSpec.IntMillisecondsBound range_barrier_timeout = new DurationSpec.IntMillisecondsBound("2m");
 
-    public volatile DurationSpec fast_path_update_delay = new DurationSpec.IntSecondsBound(5);
+    public volatile DurationSpec.IntSecondsBound fast_path_update_delay = new DurationSpec.IntSecondsBound(5);
 
-    public volatile DurationSpec schedule_durability_frequency = new DurationSpec.IntSecondsBound(5);
-    public volatile DurationSpec durability_txnid_lag = new DurationSpec.IntSecondsBound(5);
-    public volatile DurationSpec shard_durability_cycle = new DurationSpec.IntMinutesBound(1);
-    public volatile DurationSpec global_durability_cycle = new DurationSpec.IntMinutesBound(10);
+    public volatile DurationSpec.IntSecondsBound schedule_durability_frequency = new DurationSpec.IntSecondsBound(5);
+    public volatile DurationSpec.IntSecondsBound durability_txnid_lag = new DurationSpec.IntSecondsBound(5);
+    public volatile DurationSpec.IntSecondsBound shard_durability_cycle = new DurationSpec.IntSecondsBound(1, TimeUnit.MINUTES);
+    public volatile DurationSpec.IntSecondsBound global_durability_cycle = new DurationSpec.IntSecondsBound(10, TimeUnit.MINUTES);
 
     public enum TransactionalRangeMigration
     {
