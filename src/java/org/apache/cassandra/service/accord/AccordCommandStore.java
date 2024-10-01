@@ -545,7 +545,7 @@ public class AccordCommandStore extends CommandStore
     @VisibleForTesting
     public Command loadCommand(TxnId txnId)
     {
-        return journal.loadCommand(id, txnId);
+        return journal.loadCommand(id, txnId, redundantBefore(), durableBefore());
     }
 
     public interface Loader

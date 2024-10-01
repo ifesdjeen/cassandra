@@ -83,7 +83,7 @@ public class AccordJournalOrderTest
         Runnable check = () -> {
             for (JournalKey key : res.keySet())
             {
-                SavedCommand.Builder diffs = accordJournal.loadDiffs(key.commandStoreId, (TxnId) key.timestamp);
+                SavedCommand.Builder diffs = accordJournal.loadDiffs(key.commandStoreId, (TxnId) key.id);
                 Assert.assertEquals(String.format("%d != %d for key %s", diffs.count(), res.get(key).intValue(), key),
                                     diffs.count(), res.get(key).intValue());
             }

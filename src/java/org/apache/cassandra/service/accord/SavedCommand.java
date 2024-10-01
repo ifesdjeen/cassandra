@@ -26,8 +26,12 @@ import javax.annotation.Nullable;
 import com.google.common.annotations.VisibleForTesting;
 
 import accord.api.Result;
+import accord.impl.ErasedSafeCommand;
+import accord.local.Cleanup;
 import accord.local.Command;
 import accord.local.CommonAttributes;
+import accord.local.DurableBefore;
+import accord.local.RedundantBefore;
 import accord.local.StoreParticipants;
 import accord.primitives.Ballot;
 import accord.primitives.PartialDeps;
@@ -37,6 +41,8 @@ import accord.primitives.Status;
 import accord.primitives.Timestamp;
 import accord.primitives.TxnId;
 import accord.primitives.Writes;
+import accord.utils.Invariants;
+import org.apache.cassandra.db.partitions.PartitionUpdate;
 import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputBuffer;
 import org.apache.cassandra.io.util.DataOutputPlus;
@@ -46,6 +52,8 @@ import org.apache.cassandra.service.accord.serializers.DepsSerializer;
 import org.apache.cassandra.service.accord.serializers.WaitingOnSerializer;
 import org.apache.cassandra.utils.Throwables;
 
+import static accord.local.Cleanup.NO;
+import static accord.local.Cleanup.shouldCleanup;
 import static accord.primitives.Known.KnownDeps.DepsErased;
 import static accord.primitives.Known.KnownDeps.DepsUnknown;
 import static accord.primitives.Known.KnownDeps.NoDeps;
@@ -56,7 +64,6 @@ public class SavedCommand
     // This enum is order-dependent
     public enum Fields
     {
-        TXN_ID,
         EXECUTE_AT,
         EXECUTES_AT_LEAST,
         SAVE_STATUS,
@@ -156,8 +163,6 @@ public class SavedCommand
         out.writeInt(flags);
 
         // We encode all changed fields unless their value is null
-        if (getFieldChanged(Fields.TXN_ID, flags) && after.txnId() != null)
-            CommandSerializers.txnId.serialize(after.txnId(), out, userVersion);
         if (getFieldChanged(Fields.EXECUTE_AT, flags) && after.executeAt() != null)
             CommandSerializers.timestamp.serialize(after.executeAt(), out, userVersion);
         // TODO (desired): check if this can fold into executeAt
@@ -198,7 +203,6 @@ public class SavedCommand
     {
         int flags = 0;
 
-        flags = collectFlags(before, after, Command::txnId, true, Fields.TXN_ID, flags);
         flags = collectFlags(before, after, Command::executeAt, true, Fields.EXECUTE_AT, flags);
         flags = collectFlags(before, after, Command::executesAtLeast, true, Fields.EXECUTES_AT_LEAST, flags);
         flags = collectFlags(before, after, Command::saveStatus, false, Fields.SAVE_STATUS, flags);
@@ -303,9 +307,13 @@ public class SavedCommand
         boolean nextCalled;
         int count;
 
+        public Builder(TxnId txnId)
+        {
+            init(txnId);
+        }
+
         public Builder()
         {
-            clear();
         }
 
         public TxnId txnId()
@@ -376,26 +384,30 @@ public class SavedCommand
         public void clear()
         {
             flags = 0;
-
-            txnId = null;
-
             executeAt = null;
             saveStatus = null;
             durability = null;
-
-            acceptedOrCommitted = Ballot.ZERO;
             promised = null;
-
             participants = null;
             partialTxn = null;
             partialDeps = null;
-
-            waitingOn = (txn, deps) -> null;
             writes = null;
-            result = CommandSerializers.APPLIED;
-
             nextCalled = false;
             count = 0;
+        }
+
+        public void reset(TxnId txnId)
+        {
+            clear();
+            init(txnId);
+        }
+
+        public void init(TxnId txnId)
+        {
+            this.txnId = txnId;
+            acceptedOrCommitted = Ballot.ZERO;
+            waitingOn = (txn, deps) -> null;
+            result = CommandSerializers.APPLIED;
         }
 
         public boolean isEmpty()
@@ -408,19 +420,52 @@ public class SavedCommand
             return count;
         }
 
+        public Cleanup shouldCleanup(RedundantBefore redundantBefore, DurableBefore durableBefore)
+        {
+            if (!nextCalled)
+                return NO;
+
+            if (saveStatus == null || participants == null)
+                return Cleanup.EXPUNGE_PARTIAL;
+
+            return Cleanup.shouldCleanup(txnId, saveStatus, durability, participants, redundantBefore, durableBefore);
+        }
+
+        // TODO (expected): avoid allocating new builder
+        public Builder maybeCleanup(Cleanup cleanup)
+        {
+            // Do not have txnId in selected SSTables; remove
+            if (saveStatus() == null)
+                return null;
+
+            switch (cleanup)
+            {
+                case EXPUNGE:
+                case ERASE:
+                    return null;
+
+                case EXPUNGE_PARTIAL:
+                    return expungePartial();
+                case VESTIGIAL:
+                case INVALIDATE:
+                case TRUNCATE_WITH_OUTCOME:
+                case TRUNCATE:
+                    return saveStatusOnly();
+                case NO:
+                    return this;
+                default:
+                    throw new IllegalStateException("Unknown cleanup: " + cleanup);}
+        }
+
         public Builder expungePartial()
         {
-            Builder builder = new Builder();
+            Invariants.checkState(txnId != null);
+            Builder builder = new Builder(txnId);
 
             builder.count++;
             builder.nextCalled = true;
 
             // TODO: these accesses can be abstracted away
-            if (txnId != null)
-            {
-                builder.flags = setFieldChanged(Fields.TXN_ID, builder.flags);
-                builder.txnId = txnId;
-            }
             if (executeAt != null)
             {
                 builder.flags = setFieldChanged(Fields.EXECUTE_AT, builder.flags);
@@ -442,17 +487,13 @@ public class SavedCommand
 
         public Builder saveStatusOnly()
         {
-            Builder builder = new Builder();
+            Invariants.checkState(txnId != null);
+            Builder builder = new Builder(txnId);
 
             builder.count++;
             builder.nextCalled = true;
 
             // TODO: these accesses can be abstracted away
-            if (txnId != null)
-            {
-                builder.flags = setFieldChanged(Fields.TXN_ID, builder.flags);
-                builder.txnId = txnId;
-            }
             if (saveStatus != null)
             {
                 builder.flags = setFieldChanged(Fields.SAVE_STATUS, builder.flags);
@@ -476,8 +517,6 @@ public class SavedCommand
             out.writeInt(flags);
 
             // We encode all changed fields unless their value is null
-            if (getFieldChanged(Fields.TXN_ID, flags) && !getFieldIsNull(Fields.TXN_ID, flags))
-                CommandSerializers.txnId.serialize(txnId(), out, userVersion);
             if (getFieldChanged(Fields.EXECUTE_AT, flags) && !getFieldIsNull(Fields.EXECUTE_AT, flags))
                 CommandSerializers.timestamp.serialize(executeAt(), out, userVersion);
             // TODO (desired): check if this can fold into executeAt
@@ -515,6 +554,7 @@ public class SavedCommand
         @SuppressWarnings({ "rawtypes", "unchecked" })
         public void deserializeNext(DataInputPlus in, int userVersion) throws IOException
         {
+            Invariants.checkState(txnId != null);
             final int flags = in.readInt();
             nextCalled = true;
             count++;
@@ -529,14 +569,6 @@ public class SavedCommand
                     else
                         this.flags = unsetFieldIsNull(field, this.flags);
                 }
-            }
-
-            if (getFieldChanged(Fields.TXN_ID, flags))
-            {
-                if (getFieldIsNull(Fields.TXN_ID, flags))
-                    txnId = null;
-                else
-                    txnId = CommandSerializers.txnId.deserialize(in, userVersion);
             }
 
             if (getFieldChanged(Fields.EXECUTE_AT, flags))
@@ -625,6 +657,7 @@ public class SavedCommand
                     waitingOn = (localTxnId, deps) -> {
                         try
                         {
+                            Invariants.nonNull(deps);
                             return WaitingOnSerializer.deserialize(localTxnId, deps.keyDeps.keys(), deps.rangeDeps, deps.directKeyDeps, buffer);
                         }
                         catch (IOException e)
@@ -655,6 +688,7 @@ public class SavedCommand
             if (!nextCalled)
                 return null;
 
+            Invariants.checkState(txnId != null);
             CommonAttributes.Mutable attrs = new CommonAttributes.Mutable(txnId);
             if (partialTxn != null)
                 attrs.partialTxn(partialTxn);

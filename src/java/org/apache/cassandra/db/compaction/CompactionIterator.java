@@ -32,6 +32,9 @@ import javax.annotation.Nonnull;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Ordering;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import accord.local.Cleanup;
 import accord.local.CommandStores;
 import accord.local.CommandStores.RangesForEpoch;
@@ -104,6 +107,7 @@ import org.apache.cassandra.service.paxos.PaxosRepairHistory;
 import org.apache.cassandra.service.paxos.uncommitted.PaxosRows;
 import org.apache.cassandra.utils.TimeUUID;
 
+import static accord.local.Cleanup.ERASE;
 import static accord.local.Cleanup.TRUNCATE_WITH_OUTCOME;
 import static accord.local.Cleanup.shouldCleanup;
 import static accord.local.Cleanup.shouldCleanupPartial;
@@ -142,6 +146,7 @@ import static org.apache.cassandra.service.accord.AccordKeyspace.deserializeTime
  */
 public class CompactionIterator extends CompactionInfo.Holder implements UnfilteredPartitionIterator
 {
+    private static final Logger logger = LoggerFactory.getLogger(CompactionIterator.class);
     private static final long UNFILTERED_TO_UPDATE_PROGRESS = 100;
 
     private final OperationType type;
@@ -1080,49 +1085,22 @@ public class CompactionIterator extends CompactionInfo.Holder implements Unfilte
                 }
 
                 SavedCommand.Builder commandBuilder = (SavedCommand.Builder) builder;
-
-                // Do not have txnId in selected SSTables; remove
-                if (commandBuilder.txnId() == null)
-                    return newVersion.build().unfilteredIterator();
+                if (commandBuilder.isEmpty())
+                    return null;
 
                 RedundantBefore redundantBefore = redundantBefores.get(key.commandStoreId);
-
-                Cleanup cleanup = shouldCleanup(commandBuilder.txnId(), commandBuilder.saveStatus(),
-                                                commandBuilder.durability(), commandBuilder.participants(),
-                                                redundantBefore, durableBefore);
-                switch (cleanup)
+                Cleanup cleanup = commandBuilder.shouldCleanup(redundantBefore, durableBefore);
+                if (cleanup == ERASE)
                 {
-                    case EXPUNGE:
-                        return null;
+                    logger.info("Erasing {} {}", commandBuilder.txnId(), commandBuilder.saveStatus());
+                    return PartitionUpdate.fullPartitionDelete(metadata(), partition.partitionKey(), maxSeenTimestamp, nowInSec).unfilteredIterator();
+                }
 
-                    case EXPUNGE_PARTIAL:
-                        newVersion = PartitionUpdate.simpleBuilder(AccordKeyspace.Journal, partition.partitionKey());
-                        commandBuilder = commandBuilder.expungePartial();
+                commandBuilder = commandBuilder.maybeCleanup(cleanup);
+                if (commandBuilder != builder) logger.info("Expunging {} {}", commandBuilder.txnId(), commandBuilder.saveStatus());
 
-                        newVersion.row(lastClustering)
-                                  .add(recordColumn.name.toString(), commandBuilder.asByteBuffer(userVersion));
-
-                        return newVersion.build().unfilteredIterator();
-
-                    case ERASE:
-                        return PartitionUpdate.fullPartitionDelete(metadata(), partition.partitionKey(), maxSeenTimestamp, nowInSec).unfilteredIterator();
-
-                    case VESTIGIAL:
-                    case INVALIDATE:
-                    case TRUNCATE_WITH_OUTCOME:
-                    case TRUNCATE:
-                        newVersion = PartitionUpdate.simpleBuilder(AccordKeyspace.Journal, partition.partitionKey());
-                        commandBuilder = commandBuilder.saveStatusOnly();
-
-                        newVersion.row(lastClustering)
-                                  .add(recordColumn.name.toString(), commandBuilder.asByteBuffer(userVersion));
-
-                        return newVersion.build().unfilteredIterator();
-
-                    case NO:
-                        return newVersion.build().unfilteredIterator();
-                    default:
-                        throw new IllegalStateException("Unknown cleanup: " + cleanup);}
+                newVersion.row(lastClustering).add(recordColumn.name.toString(), commandBuilder.asByteBuffer(userVersion));
+                return newVersion.build().unfilteredIterator();
             }
             catch (IOException e)
             {
@@ -1156,7 +1134,6 @@ public class CompactionIterator extends CompactionInfo.Holder implements Unfilte
             return row;
         }
     }
-
 
     private static class AbortableUnfilteredPartitionTransformation extends Transformation<UnfilteredRowIterator>
     {
