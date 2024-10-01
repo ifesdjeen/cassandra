@@ -181,7 +181,7 @@ public class SimulatedAccordCommandStore implements AutoCloseable
                                             updateHolder,
                                             journal,
                                             new AccordStateCacheMetrics("test"),
-                                            executorFactory().sequential(CommandStore.class.getSimpleName() + '[' + 0 + ']'));
+                                            new AccordCommandStore.CommandStoreExecutor(executorFactory().sequential(CommandStore.class.getSimpleName() + '[' + 0 + ']')));
 
         store.cache().instances().forEach(i -> {
             i.register(new AccordStateCache.Listener()

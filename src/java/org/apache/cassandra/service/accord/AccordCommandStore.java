@@ -26,6 +26,7 @@ import java.util.Objects;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -68,6 +69,7 @@ import accord.utils.async.AsyncChain;
 import accord.utils.async.AsyncChains;
 import org.apache.cassandra.cache.CacheSize;
 import org.apache.cassandra.concurrent.ExecutorPlus;
+import org.apache.cassandra.concurrent.SequentialExecutorPlus;
 import org.apache.cassandra.concurrent.Stage;
 import org.apache.cassandra.config.CassandraRelevantProperties;
 import org.apache.cassandra.config.DatabaseDescriptor;
@@ -94,28 +96,9 @@ public class AccordCommandStore extends CommandStore implements CacheSize
     private static final Logger logger = LoggerFactory.getLogger(AccordCommandStore.class);
     private static final boolean CHECK_THREADS = CassandraRelevantProperties.TEST_ACCORD_STORE_THREAD_CHECKS_ENABLED.getBoolean();
 
-    private static long getThreadId(ExecutorService executor)
-    {
-        if (!CHECK_THREADS)
-            return 0;
-        try
-        {
-            return executor.submit(() -> Thread.currentThread().getId()).get();
-        }
-        catch (InterruptedException e)
-        {
-            throw new AssertionError(e);
-        }
-        catch (ExecutionException e)
-        {
-            throw new RuntimeException(e);
-        }
-    }
-
-    private final long threadId;
     public final String loggingId;
     private final IJournal journal;
-    private final ExecutorService executor;
+    private final CommandStoreExecutor executor;
     private final AccordStateCache stateCache;
     private final AccordStateCache.Instance<TxnId, Command, AccordSafeCommand> commandCache;
     private final AccordStateCache.Instance<RoutingKey, TimestampsForKey, AccordSafeTimestampsForKey> timestampsForKeyCache;
@@ -134,7 +117,7 @@ public class AccordCommandStore extends CommandStore implements CacheSize
                               EpochUpdateHolder epochUpdateHolder,
                               IJournal journal,
                               AccordStateCacheMetrics cacheMetrics,
-                              ExecutorService executor)
+                              CommandStoreExecutor executor)
     {
         this(id,
              time,
@@ -225,7 +208,7 @@ public class AccordCommandStore extends CommandStore implements CacheSize
                               LocalListeners.Factory listenerFactory,
                               EpochUpdateHolder epochUpdateHolder,
                               IJournal journal,
-                              ExecutorService commandStoreExecutor,
+                              CommandStoreExecutor commandStoreExecutor,
                               ExecutorPlus loadExecutor,
                               ExecutorPlus saveExecutor,
                               AccordStateCacheMetrics cacheMetrics)
@@ -234,7 +217,6 @@ public class AccordCommandStore extends CommandStore implements CacheSize
         this.journal = journal;
         loggingId = String.format("[%s]", id);
         executor = commandStoreExecutor;
-        threadId = getThreadId(executor);
         stateCache = new AccordStateCache(loadExecutor, saveExecutor, 8 << 20, cacheMetrics);
         commandCache =
             stateCache.instance(TxnId.class,
@@ -277,7 +259,7 @@ public class AccordCommandStore extends CommandStore implements CacheSize
         executor.execute(() -> CommandStore.register(this));
     }
 
-    static Factory factory(AccordJournal journal, AccordStateCacheMetrics cacheMetrics, IntFunction<ExecutorService> executorFactory)
+    static Factory factory(AccordJournal journal, AccordStateCacheMetrics cacheMetrics, IntFunction<CommandStoreExecutor> executorFactory)
     {
         return (id, time, agent, dataStore, progressLogFactory, listenerFactory, rangesForEpoch) ->
                new AccordCommandStore(id, time, agent, dataStore, progressLogFactory, listenerFactory, rangesForEpoch, journal, cacheMetrics, executorFactory.apply(id));
@@ -297,9 +279,7 @@ public class AccordCommandStore extends CommandStore implements CacheSize
     @Override
     public boolean inStore()
     {
-        if (!CHECK_THREADS)
-            return true;
-        return Thread.currentThread().getId() == threadId;
+        return executor.isInThread();
     }
 
     @Override
@@ -341,7 +321,7 @@ public class AccordCommandStore extends CommandStore implements CacheSize
 
     public ExecutorService executor()
     {
-        return executor;
+        return executor.delegate();
     }
 
     public AccordStateCache.Instance<TxnId, Command, AccordSafeCommand> commandCache()
@@ -489,7 +469,7 @@ public class AccordCommandStore extends CommandStore implements CacheSize
     @Override
     public <T> AsyncChain<T> submit(Callable<T> task)
     {
-        return AsyncChains.ofCallable(executor, task);
+        return AsyncChains.ofCallable(executor.delegate(), task);
     }
 
     public DataStore dataStore()
@@ -768,6 +748,67 @@ public class AccordCommandStore extends CommandStore implements CacheSize
                         for (Deps dep : deps)
                             registerHistoricalTransactions(dep, safeStore);
                     });
+        }
+    }
+
+    public static class CommandStoreExecutor
+    {
+        final SequentialExecutorPlus delegate;
+        final long threadId;
+
+        CommandStoreExecutor(SequentialExecutorPlus delegate)
+        {
+            this.delegate = delegate;
+            this.threadId = getThreadId();
+        }
+
+        public boolean isInThread()
+        {
+            if (!CHECK_THREADS)
+                return true;
+
+            return threadId == Thread.currentThread().getId();
+        }
+
+        public void shutdown()
+        {
+            delegate.shutdown();
+        }
+
+        public boolean awaitTermination(long timeout, TimeUnit unit) throws InterruptedException
+        {
+            return delegate.awaitTermination(timeout, unit);
+        }
+
+        public Future<?> submit(Runnable task)
+        {
+            return delegate.submit(task);
+        }
+
+        public ExecutorService delegate()
+        {
+            return delegate;
+        }
+
+        public void execute(Runnable command)
+        {
+            delegate.submit(command);
+        }
+
+        private long getThreadId()
+        {
+            try
+            {
+                return delegate.submit(() -> Thread.currentThread().getId()).get();
+            }
+            catch (InterruptedException e)
+            {
+                throw new AssertionError(e);
+            }
+            catch (ExecutionException e)
+            {
+                throw new RuntimeException(e);
+            }
         }
     }
 }
