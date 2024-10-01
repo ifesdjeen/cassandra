@@ -64,6 +64,7 @@ import accord.primitives.Ranges;
 import accord.primitives.Routable;
 import accord.primitives.Seekable;
 import accord.primitives.Seekables;
+import accord.primitives.Status;
 import accord.primitives.Timestamp;
 import accord.primitives.Txn;
 import accord.primitives.TxnId;
@@ -126,6 +127,7 @@ public class AccordTestUtils
             CommonAttributes.Mutable attrs = new CommonAttributes.Mutable(txnId);
             attrs.partialTxn(txn);
             attrs.setParticipants(StoreParticipants.all(route(txn)));
+            attrs.durability(Status.Durability.NotDurable);
             return Command.SerializerSupport.preaccepted(attrs, executeAt, Ballot.ZERO);
         }
 

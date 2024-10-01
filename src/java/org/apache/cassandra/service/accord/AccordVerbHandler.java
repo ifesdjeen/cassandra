@@ -46,11 +46,6 @@ public class AccordVerbHandler<T extends Request> implements IVerbHandler<T>
     @Override
     public void doVerb(Message<T> message) throws IOException
     {
-        // TODO (desired): need a non-blocking way to inform CMS of an unknown epoch and add callback to it's receipt
-        ClusterMetadataService.instance().fetchLogFromPeerOrCMS(ClusterMetadata.current(),
-                                                                message.from(),
-                                                                Epoch.create(message.payload.waitForEpoch()));
-
         logger.trace("Receiving {} from {}", message.payload, message.from());
         T request = message.payload;
 
