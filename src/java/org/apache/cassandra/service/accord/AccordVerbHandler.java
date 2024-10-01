@@ -26,6 +26,9 @@ import accord.local.Node;
 import accord.messages.Request;
 import org.apache.cassandra.net.IVerbHandler;
 import org.apache.cassandra.net.Message;
+import org.apache.cassandra.tcm.ClusterMetadata;
+import org.apache.cassandra.tcm.ClusterMetadataService;
+import org.apache.cassandra.tcm.Epoch;
 
 public class AccordVerbHandler<T extends Request> implements IVerbHandler<T>
 {
@@ -44,7 +47,10 @@ public class AccordVerbHandler<T extends Request> implements IVerbHandler<T>
     public void doVerb(Message<T> message) throws IOException
     {
         // TODO (desired): need a non-blocking way to inform CMS of an unknown epoch and add callback to it's receipt
-//        ClusterMetadataService.instance().maybeCatchup(message.epoch());
+        ClusterMetadataService.instance().fetchLogFromPeerOrCMS(ClusterMetadata.current(),
+                                                                message.from(),
+                                                                Epoch.create(message.payload.waitForEpoch()));
+
         logger.trace("Receiving {} from {}", message.payload, message.from());
         T request = message.payload;
 
