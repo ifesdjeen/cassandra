@@ -78,6 +78,7 @@ import org.apache.cassandra.schema.Schema;
 import org.apache.cassandra.schema.TableId;
 import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.service.ClientState;
+import org.apache.cassandra.utils.BulkIterator;
 import org.apache.cassandra.utils.btree.BTree;
 import org.apache.cassandra.utils.btree.UpdateFunction;
 import org.apache.cassandra.utils.vint.VIntCoding;
@@ -196,6 +197,30 @@ public class PartitionUpdate extends AbstractBTreePartition
     public static PartitionUpdate singleRowUpdate(TableMetadata metadata, DecoratedKey key, Row row)
     {
         return singleRowUpdate(metadata, key, row.isStatic() ? null : row, row.isStatic() ? row : null);
+    }
+
+    /**
+     * Creates an immutable partition update that contains a single row update.
+     *
+     * @param metadata the metadata for the created update.
+     * @param key the partition key for the partition to update.
+     * @param rows the rows for the update (may not be static).
+     *
+     * @return the newly created partition update containing only {@code row}.
+     */
+    public static PartitionUpdate multiRowUpdate(TableMetadata metadata, DecoratedKey key, List<Row> rows)
+    {
+        if (rows.isEmpty())
+            return emptyUpdate(metadata, key);
+        MutableDeletionInfo deletionInfo = MutableDeletionInfo.live();
+        Columns columns = Columns.NONE;
+        for (Row row : rows)
+            columns = columns.mergeTo(Columns.from(row));
+
+        BTreePartitionData holder = new BTreePartitionData(new RegularAndStaticColumns(Columns.NONE, columns),
+                                                           BTree.build(rows), deletionInfo, Rows.EMPTY_STATIC_ROW,
+                                                           EncodingStats.NO_STATS);
+        return new PartitionUpdate(metadata, metadata.epoch, key, holder, deletionInfo, false);
     }
 
     /**

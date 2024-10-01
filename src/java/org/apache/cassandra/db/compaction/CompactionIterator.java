@@ -46,6 +46,7 @@ import accord.primitives.Status;
 import accord.primitives.Status.Durability;
 import accord.primitives.Timestamp;
 import accord.primitives.TxnId;
+import accord.utils.Invariants;
 import org.agrona.collections.Int2ObjectHashMap;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.cql3.ColumnIdentifier;
@@ -60,6 +61,7 @@ import org.apache.cassandra.db.RegularAndStaticColumns;
 import org.apache.cassandra.db.SystemKeyspace;
 import org.apache.cassandra.db.filter.ColumnFilter;
 import org.apache.cassandra.db.marshal.Int32Type;
+import org.apache.cassandra.db.partitions.BTreePartitionData;
 import org.apache.cassandra.db.partitions.PartitionUpdate;
 import org.apache.cassandra.db.partitions.PurgeFunction;
 import org.apache.cassandra.db.partitions.UnfilteredPartitionIterator;
@@ -1062,13 +1064,17 @@ public class CompactionIterator extends CompactionInfo.Holder implements Unfilte
 
             try
             {
-                PartitionUpdate.SimpleBuilder newVersion = PartitionUpdate.simpleBuilder(AccordKeyspace.Journal, partition.partitionKey());
-
+                List<Row> rows = new ArrayList<>();
                 while (partition.hasNext())
-                    applyToRow((Row) partition.next());
+                {
+                    Row row = (Row) partition.next();
+                    rows.add(row);
+                    collect(row);
+                }
 
                 if (key.type != JournalKey.Type.COMMAND_DIFF)
                 {
+                    PartitionUpdate.SimpleBuilder newVersion = PartitionUpdate.simpleBuilder(AccordKeyspace.Journal, partition.partitionKey());
                     try (DataOutputBuffer out = DataOutputBuffer.scratchBuffer.get())
                     {
                         serializer.reserialize(key, builder, out, userVersion);
@@ -1086,7 +1092,10 @@ public class CompactionIterator extends CompactionInfo.Holder implements Unfilte
 
                 SavedCommand.Builder commandBuilder = (SavedCommand.Builder) builder;
                 if (commandBuilder.isEmpty())
-                    return null;
+                {
+                    Invariants.checkState(rows.isEmpty());
+                    return partition;
+                }
 
                 RedundantBefore redundantBefore = redundantBefores.get(key.commandStoreId);
                 Cleanup cleanup = commandBuilder.shouldCleanup(redundantBefore, durableBefore);
@@ -1097,10 +1106,16 @@ public class CompactionIterator extends CompactionInfo.Holder implements Unfilte
                 }
 
                 commandBuilder = commandBuilder.maybeCleanup(cleanup);
-                if (commandBuilder != builder) logger.info("Expunging {} {}", commandBuilder.txnId(), commandBuilder.saveStatus());
+                if (commandBuilder != builder)
+                {
+                    logger.info("Expunging {} {}", commandBuilder.txnId(), commandBuilder.saveStatus());
+                    PartitionUpdate.SimpleBuilder newVersion = PartitionUpdate.simpleBuilder(AccordKeyspace.Journal, partition.partitionKey());
+                    newVersion.row(lastClustering).add(recordColumn.name.toString(), commandBuilder.asByteBuffer(userVersion));
+                    return newVersion.build().unfilteredIterator();
+                }
 
-                newVersion.row(lastClustering).add(recordColumn.name.toString(), commandBuilder.asByteBuffer(userVersion));
-                return newVersion.build().unfilteredIterator();
+                return PartitionUpdate.multiRowUpdate(AccordKeyspace.Journal, partition.partitionKey(), rows)
+                                      .unfilteredIterator();
             }
             catch (IOException e)
             {
@@ -1110,6 +1125,11 @@ public class CompactionIterator extends CompactionInfo.Holder implements Unfilte
 
         @Override
         protected Row applyToRow(Row row)
+        {
+            return row;
+        }
+
+        protected void collect(Row row)
         {
             updateProgress();
             maxSeenTimestamp = row.primaryKeyLivenessInfo().timestamp();
@@ -1124,7 +1144,6 @@ public class CompactionIterator extends CompactionInfo.Holder implements Unfilte
             {
                 throw new RuntimeException(e);
             }
-            return null;
         }
 
         @Override

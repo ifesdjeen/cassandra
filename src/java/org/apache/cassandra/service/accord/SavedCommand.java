@@ -75,6 +75,9 @@ public class SavedCommand
         PARTIAL_DEPS,
         WAITING_ON,
         WRITES,
+        ;
+
+        static final Fields[] FIELDS = values();
     }
 
     // TODO: maybe rename this and enclosing classes?
@@ -559,7 +562,7 @@ public class SavedCommand
             nextCalled = true;
             count++;
 
-            for (Fields field : Fields.values())
+            for (Fields field : Fields.FIELDS)
             {
                 if (getFieldChanged(field, flags))
                 {
@@ -675,7 +678,6 @@ public class SavedCommand
                 else
                     writes = CommandSerializers.writes.deserialize(in, userVersion);
             }
-            
         }
 
         public void forceResult(Result newValue)
