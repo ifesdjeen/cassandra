@@ -110,7 +110,7 @@ public class SimulatedAccordCommandStore implements AutoCloseable
         ExecutorFactory.Global.unsafeSet(globalExecutor);
         Stage.READ.unsafeSetExecutor(unorderedScheduled);
         Stage.MUTATION.unsafeSetExecutor(unorderedScheduled);
-        for (Stage stage : Arrays.asList(Stage.MISC, Stage.ACCORD_MIGRATION))
+        for (Stage stage : Arrays.asList(Stage.MISC, Stage.ACCORD_MIGRATION, Stage.READ, Stage.MUTATION))
             stage.unsafeSetExecutor(globalExecutor.configureSequential("ignore").build());
 
         this.updateHolder = new CommandStore.EpochUpdateHolder();
@@ -181,7 +181,7 @@ public class SimulatedAccordCommandStore implements AutoCloseable
                                             }),
                                             updateHolder,
                                             journal,
-                                            new AccordCommandStore.CommandStoreExecutor(stateCache, executorFactory().sequential(CommandStore.class.getSimpleName() + '[' + 0 + ']')));
+                                            new AccordCommandStore.CommandStoreExecutor(stateCache, executorFactory().sequential(CommandStore.class.getSimpleName() + '[' + 0 + ']'), Thread.currentThread().getId()));
 
         store.cache().instances().forEach(i -> {
             i.register(new AccordStateCache.Listener()

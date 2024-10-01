@@ -53,7 +53,6 @@ import accord.local.PreLoadContext;
 import accord.local.SafeCommand;
 import accord.local.SafeCommandStore;
 import accord.local.StoreParticipants;
-import accord.primitives.SaveStatus;
 import accord.primitives.Ballot;
 import accord.primitives.FullKeyRoute;
 import accord.primitives.FullRoute;
@@ -62,6 +61,7 @@ import accord.primitives.PartialDeps;
 import accord.primitives.PartialTxn;
 import accord.primitives.Ranges;
 import accord.primitives.Routable;
+import accord.primitives.SaveStatus;
 import accord.primitives.Seekable;
 import accord.primitives.Seekables;
 import accord.primitives.Status;
@@ -404,7 +404,7 @@ public class AccordTestUtils
         AccordJournal journal = new AccordJournal(new AccordSpec.JournalSpec());
         journal.start(null);
 
-        AccordStateCache stateCache = new AccordStateCache(Stage.READ.executor(), Stage.MUTATION.executor(), 8 << 20, new AccordStateCacheMetrics("test"));
+        AccordStateCache stateCache = new AccordStateCache(loadExecutor, saveExecutor, 8 << 20, new AccordStateCacheMetrics("test"));
         SingleEpochRanges holder = new SingleEpochRanges(topology.rangesForNode(node));
         AccordCommandStore result = new AccordCommandStore(0,
                                                            time,

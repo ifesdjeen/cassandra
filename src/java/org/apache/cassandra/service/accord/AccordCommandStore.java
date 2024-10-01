@@ -696,6 +696,13 @@ public class AccordCommandStore extends CommandStore
         final SequentialExecutorPlus delegate;
         final long threadId;
 
+        CommandStoreExecutor(AccordStateCache stateCache, SequentialExecutorPlus delegate, long threadId)
+        {
+            this.stateCache = stateCache;
+            this.delegate = delegate;
+            this.threadId = threadId;
+        }
+
         CommandStoreExecutor(AccordStateCache stateCache, SequentialExecutorPlus delegate)
         {
             this.stateCache = stateCache;
