@@ -153,6 +153,7 @@ public class SimulatedAccordCommandStore implements AutoCloseable
             }
         };
 
+        AccordStateCache stateCache = new AccordStateCache(Stage.READ.executor(), Stage.MUTATION.executor(), 8 << 20, new AccordStateCacheMetrics("test"));
         this.journal = new MockJournal();
         this.store = new AccordCommandStore(0,
                                             timeService,
@@ -180,8 +181,7 @@ public class SimulatedAccordCommandStore implements AutoCloseable
                                             }),
                                             updateHolder,
                                             journal,
-                                            new AccordStateCacheMetrics("test"),
-                                            new AccordCommandStore.CommandStoreExecutor(executorFactory().sequential(CommandStore.class.getSimpleName() + '[' + 0 + ']')));
+                                            new AccordCommandStore.CommandStoreExecutor(stateCache, executorFactory().sequential(CommandStore.class.getSimpleName() + '[' + 0 + ']')));
 
         store.cache().instances().forEach(i -> {
             i.register(new AccordStateCache.Listener()

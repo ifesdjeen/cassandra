@@ -402,6 +402,7 @@ public class AccordTestUtils
         AccordJournal journal = new AccordJournal(new AccordSpec.JournalSpec());
         journal.start(null);
 
+        AccordStateCache stateCache = new AccordStateCache(Stage.READ.executor(), Stage.MUTATION.executor(), 8 << 20, new AccordStateCacheMetrics("test"));
         SingleEpochRanges holder = new SingleEpochRanges(topology.rangesForNode(node));
         AccordCommandStore result = new AccordCommandStore(0,
                                                            time,
@@ -415,10 +416,7 @@ public class AccordTestUtils
                                                            }),
                                                            holder,
                                                            journal,
-                                                           new AccordCommandStore.CommandStoreExecutor(executorFactory().sequential(CommandStore.class.getSimpleName() + '[' + 0 + ']')),
-                                                           loadExecutor,
-                                                           saveExecutor,
-                                                           new AccordStateCacheMetrics(AccordCommandStores.ACCORD_STATE_CACHE + System.currentTimeMillis()));
+                                                           new AccordCommandStore.CommandStoreExecutor(stateCache, executorFactory().sequential(CommandStore.class.getSimpleName() + '[' + 0 + ']')));
         holder.set(result);
 
         // TODO: CompactionAccordIteratorsTest relies on this
@@ -441,7 +439,7 @@ public class AccordTestUtils
         Node.Id node = new Id(1);
         Topology topology = new Topology(1, new Shard(range, new SortedArrayList<>(new Id[] { node }), Sets.newHashSet(node), Collections.emptySet()));
         AccordCommandStore store = createAccordCommandStore(node, now, topology, loadExecutor, saveExecutor);
-        store.execute(PreLoadContext.empty(), safeStore -> ((AccordCommandStore)safeStore.commandStore()).setCapacity(1 << 20));
+        store.execute(PreLoadContext.empty(), safeStore -> ((AccordCommandStore)safeStore.commandStore()).cache().setCapacity(1 << 20));
         return store;
     }
 
