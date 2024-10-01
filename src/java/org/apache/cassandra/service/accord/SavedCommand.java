@@ -54,6 +54,7 @@ import static accord.local.Cleanup.NO;
 import static accord.primitives.Known.KnownDeps.DepsErased;
 import static accord.primitives.Known.KnownDeps.DepsUnknown;
 import static accord.primitives.Known.KnownDeps.NoDeps;
+import static accord.primitives.Status.Durability.NotDurable;
 import static accord.utils.Invariants.illegalState;
 
 public class SavedCommand
@@ -405,6 +406,7 @@ public class SavedCommand
         public void init(TxnId txnId)
         {
             this.txnId = txnId;
+            durability = NotDurable;
             acceptedOrCommitted = Ballot.ZERO;
             waitingOn = (txn, deps) -> null;
             result = CommandSerializers.APPLIED;
