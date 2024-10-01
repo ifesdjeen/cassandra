@@ -1,4 +1,4 @@
 [submodule "modules/accord"]
 	path = modules/accord
-	url = git@github.com:ifesdjeen/cassandra.git
+	url = https://github.com/ifesdjeen/cassandra-accord.git   
 	branch = cep-15-accord-stabilize-tests
