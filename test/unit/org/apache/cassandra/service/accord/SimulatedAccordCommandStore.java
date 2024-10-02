@@ -215,11 +215,6 @@ public class SimulatedAccordCommandStore implements AutoCloseable
         shouldCompact = boolSource(rs.fork());
     }
 
-    public Ranges slice(Ranges ranges)
-    {
-        return ranges.slice(topology.ranges(), Routables.Slice.Minimal);
-    }
-
     private static BooleanSupplier boolSource(RandomSource rs)
     {
         var gen = Gens.bools().mixedDistribution().next(rs);
