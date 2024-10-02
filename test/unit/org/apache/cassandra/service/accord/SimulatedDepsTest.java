@@ -86,7 +86,7 @@ public class SimulatedDepsTest extends SimulatedAccordCommandStoreTestBase
             {
                 long token = rs.nextLong(Long.MIN_VALUE  + 1, Long.MAX_VALUE);
                 Ranges partialRange = Ranges.of(tokenRange(tbl.id, token - 1, token));
-                Ranges partialRangeSliced = instance.slice(partialRange);
+
                 long outOfRangeToken = token - 10;
                 if (outOfRangeToken == Long.MIN_VALUE) // if this wraps around that is fine, just can't be min
                     outOfRangeToken++;
@@ -120,7 +120,7 @@ public class SimulatedDepsTest extends SimulatedAccordCommandStoreTestBase
                     keyConflicts.add(id);
                     outOfRangeKeyConflicts.add(id);
 
-                    rangeConflicts.add(assertDepsMessage(instance, rs.pick(DepsMessage.values()), rangeTxn, rangeRoute, Map.of(key, keyConflicts), rangeConflicts(rangeConflicts, partialRangeSliced)));
+                    rangeConflicts.add(assertDepsMessage(instance, rs.pick(DepsMessage.values()), rangeTxn, rangeRoute, Map.of(key, keyConflicts), rangeConflicts(rangeConflicts, partialRange)));
                 }
             }
         });
@@ -156,7 +156,7 @@ public class SimulatedDepsTest extends SimulatedAccordCommandStoreTestBase
                 {
                     instance.maybeCacheEvict(keyRoute, ranges);
                     keyConflicts.add(assertDepsMessage(instance, rs.pick(DepsMessage.values()), keyTxn, keyRoute, keyConflicts(keyConflicts, keyRoute)));
-                    rangeConflicts.add(assertDepsMessage(instance, rs.pick(DepsMessage.values()), rangeTxn, rangeRoute, keyConflicts(keyConflicts, keyRoute), rangeConflicts(rangeConflicts, instance.slice(ranges))));
+                    rangeConflicts.add(assertDepsMessage(instance, rs.pick(DepsMessage.values()), rangeTxn, rangeRoute, keyConflicts(keyConflicts, keyRoute), rangeConflicts(rangeConflicts, ranges)));
                 }
             }
         });
