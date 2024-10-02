@@ -548,6 +548,7 @@ public class Journal<K, V> implements Shutdownable
                     // success - change allocatingFrom and activeSegments (which must be kept in order) before leaving the critical section
                     addNewActiveSegment(currentSegment = availableSegment);
                     availableSegment = null;
+                    logger.info("Switched segment");
                     break;
                 }
             }

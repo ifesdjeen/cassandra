@@ -1109,7 +1109,9 @@ public class CompactionIterator extends CompactionInfo.Holder implements Unfilte
                 {
                     logger.info("Journal: Expunging {} {}", key, commandBuilder.saveStatus());
                     PartitionUpdate.SimpleBuilder newVersion = PartitionUpdate.simpleBuilder(AccordKeyspace.Journal, partition.partitionKey());
-                    newVersion.row(lastClustering).add(recordColumn.name.toString(), commandBuilder.asByteBuffer(userVersion));
+                    newVersion.row(lastClustering)
+                              .add(recordColumn.name.toString(), commandBuilder.asByteBuffer(userVersion))
+                              .add("user_version", userVersion);
                     return newVersion.build().unfilteredIterator();
                 }
 

@@ -27,6 +27,7 @@ import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 import com.google.common.annotations.VisibleForTesting;
 import org.slf4j.Logger;
@@ -40,9 +41,9 @@ import accord.local.CommandStores.RangesForEpoch;
 import accord.local.DurableBefore;
 import accord.local.Node;
 import accord.local.RedundantBefore;
-import accord.primitives.SaveStatus;
 import accord.primitives.Deps;
 import accord.primitives.Ranges;
+import accord.primitives.SaveStatus;
 import accord.primitives.Timestamp;
 import accord.primitives.TxnId;
 import accord.utils.Invariants;
@@ -278,18 +279,6 @@ public class AccordJournal implements IJournal, Shutdownable
         return builder;
     }
 
-    public List<SavedCommand.Builder> loadSeparateDiffs(int commandStoreId, TxnId txnId)
-    {
-        JournalKey key = new JournalKey(txnId, JournalKey.Type.COMMAND_DIFF, commandStoreId);
-        List<SavedCommand.Builder> builders = new ArrayList<>();
-        journalTable.readAll(key, (in, version) -> {
-            SavedCommand.Builder builder = new SavedCommand.Builder(txnId);
-            builder.deserializeNext(in, version);
-            builders.add(builder);
-        });
-        return builders;
-    }
-
     private <BUILDER> BUILDER readAll(JournalKey key)
     {
         BUILDER builder = (BUILDER) key.type.serializer.mergerFor(key);
@@ -313,15 +302,18 @@ public class AccordJournal implements IJournal, Shutdownable
 
     public void sanityCheck(int commandStoreId, Command orig)
     {
-        SavedCommand.Builder diffs = loadDiffs(commandStoreId, orig.txnId());
-        diffs.forceResult(orig.result());
+        JournalKey key = new JournalKey(orig.txnId(), JournalKey.Type.COMMAND_DIFF, commandStoreId);
+        SavedCommand.Builder builder = new SavedCommand.Builder(orig.txnId());
+        journalTable.readAll(key, builder::deserializeNext);
+        builder.forceResult(orig.result());
+
         // We can only use strict equality if we supply result.
-        Command reconstructed = diffs.construct();
+        Command reconstructed = builder.construct();
         Invariants.checkState(orig.equals(reconstructed),
                               '\n' +
                               "Original:      %s\n" +
                               "Reconstructed: %s\n" +
-                              "Diffs:         %s", orig, reconstructed, diffs);
+                              "Diffs:         %s", orig, reconstructed, builder);
     }
 
     @VisibleForTesting

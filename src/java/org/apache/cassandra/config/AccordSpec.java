@@ -135,7 +135,7 @@ public class AccordSpec
         @Override
         public int compactionPeriodMillis()
         {
-            return 60_000;
+            return 10_000;
         }
 
         @JsonIgnore

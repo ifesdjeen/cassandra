@@ -48,7 +48,6 @@ import org.apache.cassandra.service.accord.AccordSafeCommandsForRanges;
 import org.apache.cassandra.service.accord.AccordSafeState;
 import org.apache.cassandra.service.accord.AccordSafeTimestampsForKey;
 import org.apache.cassandra.service.accord.SavedCommand;
-import org.apache.cassandra.utils.concurrent.Condition;
 
 import static org.apache.cassandra.service.accord.async.AsyncLoader.txnIds;
 import static org.apache.cassandra.service.accord.async.AsyncOperation.State.COMPLETING;
@@ -302,14 +301,9 @@ public abstract class AsyncOperation<R> extends AsyncChains.Head<R> implements R
         if (sanityCheck != null)
         {
             Invariants.checkState(CassandraRelevantProperties.DTEST_ACCORD_JOURNAL_SANITY_CHECK_ENABLED.getBoolean());
-            Condition condition = Condition.newOneTimeCondition();
-            this.commandStore.appendCommands(diffs, condition::signal);
-            condition.awaitUninterruptibly();
-
+            this.commandStore.appendCommands(diffs, onFlush);
             for (Command check : sanityCheck)
                 this.commandStore.sanityCheckCommand(check);
-
-            if (onFlush != null) onFlush.run();
         }
         else
         {

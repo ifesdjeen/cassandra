@@ -141,6 +141,50 @@ public class AccordJournalIntegrationTest extends TestBaseImpl
         }
     }
 
+    @Test
+    public void compactionTest() throws Throwable
+    {
+        try (WithProperties wp = new WithProperties().set(CassandraRelevantProperties.DTEST_ACCORD_JOURNAL_SANITY_CHECK_ENABLED, "true");
+             Cluster cluster = init(Cluster.build(1)
+                                           .withoutVNodes()
+                                           .start()))
+        {
+            final String TABLE = createTable(cluster);
+            AtomicInteger counter = new AtomicInteger();
+            for (int j = 0; j < 100_000; j++)
+            {
+//                System.out.println("j = " + j);
+                cluster.coordinator(1).execute("BEGIN TRANSACTION\n" +
+                                               "INSERT INTO " + TABLE + "(k, c, v) VALUES (?, ?, ?);\n" +
+                                               "COMMIT TRANSACTION",
+                                               ConsistencyLevel.ALL,
+                                               j, j, 100 + j
+                )
+                ;
+                counter.incrementAndGet();
+
+                if (j % 100 == 0)
+                {
+                    cluster.get(1).runOnInstance(() -> {
+                        try
+                        {
+                            ((AccordService) AccordService.instance()).journal().closeCurrentSegmentForTesting();
+                        }
+                        catch (Throwable t)
+                        {
+                            t.printStackTrace();
+                        }
+                    });
+                }
+
+                if (j % 1000 == 0)
+                {
+                    cluster.get(1).nodetool("compact", "system_accord", "journal");
+                }
+            }
+        }
+    }
+
     private void insertData(Cluster cluster, String TABLE) {
         for (int j = 0; j < 1_000; j++)
         {
