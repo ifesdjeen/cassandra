@@ -592,7 +592,7 @@ public class Journal<K, V> implements Shutdownable
 
                 // In case we woke up due to shutdown signal or interrupt, check mode
                 State state = this.state.get();
-                if (state != State.NORMAL)
+                if (state.ordinal() > State.NORMAL.ordinal())
                     throw new IllegalStateException("Can not obtain allocated segment due to shutdown " + state);
             }
             else
