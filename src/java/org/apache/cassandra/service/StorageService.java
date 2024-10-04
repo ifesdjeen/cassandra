@@ -3961,9 +3961,6 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                 logger.debug(msg);
             transientMode = Optional.of(Mode.DRAINING);
 
-            if (DatabaseDescriptor.getAccordTransactionsEnabled())
-                AccordService.instance().shutdownAndWait(1, MINUTES);
-
             try
             {
                 /* not clear this is reasonable time, but propagated from prior embedded behaviour */
@@ -4002,6 +3999,9 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                 // drain process; otherwise drain and/or shutdown might throw
                 logger.error("Messaging service timed out shutting down", t);
             }
+
+            if (DatabaseDescriptor.getAccordTransactionsEnabled())
+                AccordService.instance().shutdownAndWait(1, MINUTES);
 
             if (!isFinalShutdown)
             {
