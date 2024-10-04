@@ -749,9 +749,8 @@ public class AccordKeyspace
     public static void truncateAllCaches()
     {
         Keyspace ks = Keyspace.open(ACCORD_KEYSPACE_NAME);
-        long now = System.currentTimeMillis();
         for (String table : new String[]{ TimestampsForKeys.name, CommandsForKeys.name })
-            ks.getColumnFamilyStore(table).discardSSTables(now);
+            ks.getColumnFamilyStore(table).truncateBlocking();
     }
 
     private static <T> ByteBuffer serialize(T obj, LocalVersionedSerializer<T> serializer) throws IOException
