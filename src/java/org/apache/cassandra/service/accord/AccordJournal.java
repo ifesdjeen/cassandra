@@ -366,6 +366,8 @@ public class AccordJournal implements IJournal, Shutdownable
 
     public void replay()
     {
+        AccordKeyspace.truncateAllCaches();
+
         // TODO (expected): optimize replay memory footprint
         class ToApply
         {
