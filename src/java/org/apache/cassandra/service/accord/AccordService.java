@@ -964,7 +964,7 @@ public class AccordService implements IAccordService, Shutdownable
     {
         if (state != State.STARTED)
             return;
-        ExecutorUtils.shutdown(shutdownableSubsystems());
+        ExecutorUtils.shutdownSequentiallyAndWait(shutdownableSubsystems(), 1, TimeUnit.MINUTES);
         state = State.SHUTDOWN;
     }
 
