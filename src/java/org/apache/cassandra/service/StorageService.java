@@ -3976,7 +3976,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
 
             if (daemon != null)
                 shutdownClientServers();
-            ScheduledExecutors.optionalTasks.shutdown();
+
             Gossiper.instance.stop();
             ActiveRepairService.instance().stop();
 
@@ -4000,7 +4000,10 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                 logger.error("Messaging service timed out shutting down", t);
             }
 
-            if (DatabaseDescriptor.getAccordTransactionsEnabled())
+            // ScheduledExecutors shuts down after MessagingService, as MessagingService may issue tasks to it.
+            ScheduledExecutors.optionalTasks.shutdown();
+
+            if (AccordService.isSetup())
                 AccordService.instance().shutdownAndWait(1, MINUTES);
 
             if (!isFinalShutdown)
