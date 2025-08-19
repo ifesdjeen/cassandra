@@ -57,7 +57,6 @@ import org.apache.cassandra.repair.SharedContext;
 import org.apache.cassandra.tcm.ClusterMetadata;
 import org.apache.cassandra.tcm.ClusterMetadataService;
 import org.apache.cassandra.tcm.Epoch;
-import org.apache.cassandra.tcm.listeners.ChangeListener;
 import org.apache.cassandra.tcm.membership.NodeState;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.Simulate;
@@ -132,17 +131,6 @@ public class AccordConfigurationService extends AbstractConfigurationService<Acc
         }
     }
 
-    //TODO (required): should not be public
-    public final ChangeListener listener = new MetadataChangeListener();
-    private class MetadataChangeListener implements ChangeListener
-    {
-        @Override
-        public void notifyPostCommit(ClusterMetadata prev, ClusterMetadata next, boolean fromSnapshot)
-        {
-            maybeReportMetadata(next);
-        }
-    }
-
     public AccordConfigurationService(Node.Id node, Agent agent, MessageDelivery messagingService, IFailureDetector failureDetector, ScheduledExecutorPlus scheduledTasks)
     {
         super(node, agent);
@@ -187,7 +175,6 @@ public class AccordConfigurationService extends AbstractConfigurationService<Acc
     {
         if (isTerminated())
             return;
-        ClusterMetadataService.instance().log().removeListener(listener);
         state = State.SHUTDOWN;
     }
 
@@ -235,8 +222,11 @@ public class AccordConfigurationService extends AbstractConfigurationService<Acc
 
     void reportMetadataInternal(ClusterMetadata metadata)
     {
-        updateMapping(metadata);
         Topology topology = AccordTopology.createAccordTopology(metadata);
+        if (topology.isEmpty() && isEmpty())
+            return;
+
+        updateMapping(metadata);
         if (Invariants.isParanoid())
         {
             for (Node.Id node : topology.nodes())
@@ -313,6 +303,10 @@ public class AccordConfigurationService extends AbstractConfigurationService<Acc
         long epoch = metadata.epoch.getEpoch();
         synchronized (epochs)
         {
+            // Accord has never been enabled for this cluster.
+            if (epochs.isEmpty() && !metadata.schema.hasAccordKeyspaces())
+                return;
+
             // On first boot, we have 2 options:
             //
             //  - we can start listening to TCM _before_ we replay topologies
